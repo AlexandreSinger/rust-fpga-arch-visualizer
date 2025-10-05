@@ -19,8 +19,30 @@ As FPGA architectures continue to become larger and more complex, there is a gro
 
 
 ## Tentative Plan
-
-
+| Task | Person Responsible | Timeline |
+| ---- | ------------------ | -------- |
+| **Milestone 0: Team Kickoff** | | |
+| Study VTR documentation (link) and analyze FPGA architecture XML format | All | Week 1: Oct 6 - Oct 13 |
+| Research Rust XML parsing crates and explore Qt integration options for visualization in Rust | All | Week 1: Oct 6 - Oct 13 |
+| **Milestone 1: Core Design**| | |
+| Design a modular and memory-safe FPGA database schema in Rust | Alex | Week 2 - 3: Oct 13 - Oct 27 |
+| Define a data serialization format and create sample datasets for visualization testing | Alex | Week 2 - 3: Oct 13 - Oct 27 |
+| Sketch visualization mockups design (confirm with the team) | Jack & Maggie| Week 2 - 3: Oct 13 - Oct 27 |
+| **Key deliverable: Present a design report/slides to VTR Industry Sync Up Meeting for feedback** | All| November 6, 1:00 PM|
+| **Milestone 2: Implementation** | | |
+| Implement XML parsing engine prototype | Alex | Week 4-7: Oct 27 - Nov 24 |
+| Implement outside view (grid-level FPGA visualization) | Maggie | Week 4-5: Oct 27 - Nov 10 |
+| Implement inside view (intra-tile visualization for LUTs, routing, etc.) | Jack| Week 4-7: Oct 27 - Nov 24 |
+| Add user interface controls (zoom, pan, element highlighting, tooltips) | Maggie | Week 6-7: Nov 10 - Nov 24 |
+| **Key deliverable: Functional prototype demonstrating FPGA visualization using sample data**| All | November 24 |
+| **Milestone 3: System Integration & Testing** | | |
+| Integrate parser and visualization modules | All | Week 8-9: Nov 24 - Dec 8|
+| End-to-end validation using multiple real VTR architecture XML files | All | Week 8-9: Nov 24 - Dec 8|
+| **Key deliverable: Fully integrated system with parser, database, and visualization modules** | All | December 8|
+| **Milestone 3: Finalization** | | |
+| Prepare documentation, usage guide, and final presentation demo | All | Week 10: Dec 8 - 15 |
+| **Key deliverable: Comprehensive documentation, and polished final demo ready for submission** | All | December 14|
+| **Final Deliverable Due** | All | Dec 15, 11:59PM|
 
 ## Resources
 

@@ -46,11 +46,11 @@ While the Rust programming language has been widely used in system programming, 
 
 The work will be divided generally as follows to ensure a fair distribution of work and a reasonable workload throughout the term. More details will be provided in the next **Tentative Plan** section.
 
-- Alex: XML parsing engine + Specialized FPGA database
+- Alex: XML parsing engine + specialized FPGA database.
 
-- Maggie: FPGA global visualization, user interface
+- Maggie: Global FPGA layout and inter-tile routing visualization, user interface.
 
-- Jack: FPGA intra-tile visualization, user interface
+- Jack: Local (intra-tile) primitive and routing visualization, user interface.
 
 
 ## Tentative Plan

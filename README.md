@@ -61,7 +61,9 @@ The work will be divided generally as follows to ensure a fair distribution of w
 
 ## Tentative Plan
 
-Weekly team meeting: Fridays, 3:00–4:00 PM
+**Weekly team meeting**: Fridays, 3:00–4:00 PM
+
+Below is our proposed plan for achieving the project objectives. It outlines the responsibilities of each team member and the steps we will take over the coming weeks to deliver a functional, fully integrated Rust-based FPGA visualizer.
 
 | Task | Person Responsible | Timeline |
 | ---- | ------------------ | -------- |
@@ -78,14 +80,14 @@ Weekly team meeting: Fridays, 3:00–4:00 PM
 | Implement outside view (grid-level FPGA visualization) | Maggie | Week 4-5: Oct 27 - Nov 10 |
 | Implement inside view (intra-tile visualization for LUTs, routing, etc.) | Jack| Week 4-7: Oct 27 - Nov 24 |
 | Add user interface controls (zoom, pan, element highlighting, tooltips) | Maggie | Week 6-7: Nov 10 - Nov 24 |
-| **Key deliverable: Functional prototype demonstrating FPGA visualization using sample data**| All | November 21, 3:00 PM |
+| **Key deliverable: Functional prototype demonstrating FPGA visualization using sample data**| All | November 24 |
 | **Milestone 3: System Integration & Testing** | | |
 | Integrate parser and visualization modules | All | Week 8-9: Nov 24 - Dec 8|
 | End-to-end validation using multiple real VTR architecture XML files | All | Week 8-9: Nov 24 - Dec 8|
-| **Key deliverable: Fully integrated system with parser, database, and visualization modules** | All | December 8, 3:00 PM |
+| **Key deliverable: Fully integrated system with parser, database, and visualization modules** | All | December 8 |
 | **Milestone 3: Finalization** | | |
-| Prepare documentation, usage guide, and final presentation demo | All | Week 10: Dec 8 - 15 |
-| **Key deliverable: Comprehensive documentation, and polished final demo ready for submission** | All | December 14, 3:00 PM |
+| Prepare documentation, usage guide, and final presentation demo | All | Week 10: Dec 8 - 14 |
+| **Key deliverable: Comprehensive documentation, and polished final demo ready for submission** | All | December 14 |
 | **Final Deliverable Due** | All | Dec 15, 11:59 PM|
 
 ## Resources

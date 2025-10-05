@@ -16,6 +16,41 @@ As FPGA architectures continue to become larger and more complex, there is a gro
 
 ## Objective and Key Features
 
+The main objective is to design a Rust-based FPGA Visualizer that can parse FPGA architecture descriptions and provide an interactive user interface for visualization and analysis.
+
+While the Rust programming language has been widely used in system programming, web services, and embedded systems, few efforts have been made to explore its application in the field of computer architecture. The Rust ecosystem lacks native support for computer architectures and CAD tools, which are traditionally dominated by C/C++ implementations. This project addresses the gap by introducing a modern, open-source tool that brings the safety and performance benefits of Rust into FPGA research and development. It not only provides a functional tool for FPGA exploration but also lays the foundation for a future Rust-based CAD tooling framework that could greatly benefit research and educational purposes.
+
+### Key features include:
+
+- XML parsing engine: 
+  - Develop a parsing engine that is able to parse FPGA architecture XML files
+  - Extract information for logic blocks, routing resources, and interconnects
+  - Build the foundation for further data processing
+
+- Specialized FPGA database: 
+  - Design efficient and type-safe Rust data structures to represent the parsed FPGA architecture
+  - Store grid layouts, routing connections, and blocks hierarchically for visualization and analysis
+  - Ensure fast and convenient data access for visualization
+
+- FPGA Visualization:
+  - Render both the general FPGA grid layout and intra-tile components
+  - Support visualization for the interconnect structures between logic blocks
+  - Provide clear insights for users into FPGA structures
+
+- Interactive User interface: 
+  - Implement an intuitive, cross-platform user interface
+  - Enable responsive user interaction, such as zooming, panning, and highlighting
+  - Allows users to explore, analyze, and experiment with the FPGA architectures
+
+### Work Distribution
+
+The work will be divided generally as follows to ensure a fair distribution of work and a reasonable workload throughout the term. More details will be provided in the next **Tentative Plan** section.
+
+- Alex: XML parsing engine + Specialized FPGA database
+
+- Maggie: FPGA global visualization, user interface
+
+- Jack: FPGA intra-tile visualization, user interface
 
 
 ## Tentative Plan

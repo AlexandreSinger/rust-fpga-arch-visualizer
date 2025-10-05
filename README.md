@@ -29,7 +29,7 @@ While the Rust programming language has been widely used in system programming, 
 ### Key features include:
 
 - FPGA description XML parsing engine: 
-  - Develop a parsing engine that is able to parse FPGA architecture description XML files, as described in the [VTR arichecture description specification](https://docs.verilogtorouting.org/en/latest/arch/).
+  - Develop a parsing engine that is able to parse FPGA architecture description XML files, as described in the [VTR architecture description specification](https://docs.verilogtorouting.org/en/latest/arch/).
   - Extract information for logic blocks, routing resources, and local / global interconnects.
   - Since the architecture description file used in VTR is under active development and constantly evolving, this parsing engine must be extensible to allow future description features to be added.
 

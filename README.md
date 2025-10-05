@@ -16,31 +16,31 @@ As FPGA architectures continue to become larger and more complex, there is a gro
 
 ## Objective and Key Features
 
-The main objective is to design a Rust-based FPGA Visualizer that can parse FPGA architecture descriptions and provide an interactive user interface for visualization and analysis.
+The main objective of this project is to design a Rust-based FPGA Visualizer that can parse a description of an FPGA architecture and provide an interactive user interface for FPGA architects to visualize and analyze an FPGA architecture.
 
-While the Rust programming language has been widely used in system programming, web services, and embedded systems, few efforts have been made to explore its application in the field of computer architecture. The Rust ecosystem lacks native support for computer architectures and CAD tools, which are traditionally dominated by C/C++ implementations. This project addresses the gap by introducing a modern, open-source tool that brings the safety and performance benefits of Rust into FPGA research and development. It not only provides a functional tool for FPGA exploration but also lays the foundation for a future Rust-based CAD tooling framework that could greatly benefit research and educational purposes.
+While the Rust programming language has been widely used in system programming, web services, and embedded systems, few efforts have been made to explore its application in the field of computer architecture. The Rust ecosystem lacks native support for computer architectures and CAD tools, which are traditionally dominated by C/C++ implementations. This project addresses this gap by introducing a modern, open-source tool that brings the safety and performance benefits of Rust into FPGA research and development. It not only provides a functional tool for FPGA exploration but also lays the foundation for a future Rust-based CAD tooling framework that could greatly benefit the research and development of FPGA devices.
 
 ### Key features include:
 
-- XML parsing engine: 
-  - Develop a parsing engine that is able to parse FPGA architecture XML files
-  - Extract information for logic blocks, routing resources, and interconnects
-  - Build the foundation for further data processing
+- FPGA description XML parsing engine: 
+  - Develop a parsing engine that is able to parse FPGA architecture description XML files, as described in the [VTR arichecture description specification](https://docs.verilogtorouting.org/en/latest/arch/).
+  - Extract information for logic blocks, routing resources, and local / global interconnects.
+  - Since the architecture description file used in VTR is under active development and constantly evolving, this parsing engine must be extensible to allow future description features to be added.
 
 - Specialized FPGA database: 
-  - Design efficient and type-safe Rust data structures to represent the parsed FPGA architecture
-  - Store grid layouts, routing connections, and blocks hierarchically for visualization and analysis
-  - Ensure fast and convenient data access for visualization
+  - Design efficient and type-safe Rust data structures to represent the parsed FPGA architecture.
+  - Store grid layouts, routing connections, and blocks hierarchically for visualization and analysis.
+  - Ensure fast and convenient data access for visualization.
 
 - FPGA Visualization:
-  - Render both the general FPGA grid layout and intra-tile components
-  - Support visualization for the interconnect structures between logic blocks
-  - Provide clear insights for users into FPGA structures
+  - Render both the general (global) FPGA grid layout and intra-tile (local) components (primitives and local interconnect).
+  - Support visualization for the local interconnect structures between logic blocks; which has not been done before for VTR architecture visualization.
+  - Provide clear insights for users into the structure of the FPGA for efficient debugging and design.
 
 - Interactive User interface: 
-  - Implement an intuitive, cross-platform user interface
-  - Enable responsive user interaction, such as zooming, panning, and highlighting
-  - Allows users to explore, analyze, and experiment with the FPGA architectures
+  - Implement an intuitive, cross-platform user interface.
+  - Enable responsive user interaction, such as zooming, panning, and highlighting.
+  - Allows users to explore, analyze, and experiment with the FPGA architectures.
 
 ### Work Distribution
 

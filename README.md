@@ -21,3 +21,17 @@ As FPGA architectures continue to become larger and more complex, there is a gro
 ## Tentative Plan
 
 
+
+## Resources
+
+This is a list of resources that will be helpful for working on this project.
+
+* “Architecture description and packing for logic blocks with hierarchy, modes and complex interconnect”, Luu et al.:
+  * https://dl-acm-org.myaccess.library.utoronto.ca/doi/10.1145/1950413.1950457
+  * This is the paper that introduced the architecture description file that is currently used in VTR.
+* VTR: FPGA Architecture Description Docs
+  * https://docs.verilogtorouting.org/en/latest/arch/
+  * This is the actual design specification docs used for VTR.
+* VPR: Graphics Docs
+  * https://docs.verilogtorouting.org/en/latest/vpr/graphics/
+  * Documentation of the graphics capability currently available in the VPR tool for the architecture description file.

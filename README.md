@@ -18,6 +18,12 @@ As FPGA architectures continue to become larger and more complex, there is a gro
 
 The main objective of this project is to design a Rust-based FPGA Visualizer that can parse a description of an FPGA architecture and provide an interactive user interface for FPGA architects to visualize and analyze an FPGA architecture.
 
+Currently, the tools within VTR can only visualize a global view of the FPGA architecture, which shows a simplified view of the tiles on the FPGA and the global routing connecting those tiles together.
+However, FPGA architects require a more detailed view within the FPGA tiles, such as the primitive elements within the tile and the local routing interconnecting those primitives.
+Thus, FPGA architects often have to read the architecture description file themselves, which is tedious and prone to error.
+The visualization currently within VTR is also very slow since it is tied to the algorithms used to place and route a circuit onto the FPGA.
+This project aims to fix these issues by providing a detailed visualizer for different FPGA architectures described by an architect; providing an improved interface for FPGA architecture design and exploration.
+
 While the Rust programming language has been widely used in system programming, web services, and embedded systems, few efforts have been made to explore its application in the field of computer architecture. The Rust ecosystem lacks native support for computer architectures and CAD tools, which are traditionally dominated by C/C++ implementations. This project addresses this gap by introducing a modern, open-source tool that brings the safety and performance benefits of Rust into FPGA research and development. It not only provides a functional tool for FPGA exploration but also lays the foundation for a future Rust-based CAD tooling framework that could greatly benefit the research and development of FPGA devices.
 
 ### Key features include:

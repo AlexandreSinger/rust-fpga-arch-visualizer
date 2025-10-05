@@ -61,7 +61,9 @@ The work will be divided generally as follows to ensure a fair distribution of w
 
 ## Tentative Plan
 
-Weekly team meeting: Fridays, 3:00–4:00 PM
+**Weekly team meeting**: Fridays, 3:00–4:00 PM
+
+Below is our proposed plan for achieving the project objectives. It outlines the responsibilities of each team member and the steps we will take over the coming weeks to deliver a functional, fully integrated Rust-based FPGA visualizer.
 
 | Task | Person Responsible | Timeline |
 | ---- | ------------------ | -------- |

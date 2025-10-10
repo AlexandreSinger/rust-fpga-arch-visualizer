@@ -1,0 +1,7 @@
+[package]
+name = "fpga_arch_viewer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fpga_arch_parser = { path = "../fpga_arch_parser" }

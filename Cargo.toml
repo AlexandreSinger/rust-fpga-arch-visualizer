@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["fpga_arch_parser","fpga_arch_viewer"]

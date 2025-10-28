@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 fpga_arch_parser = { path = "../fpga_arch_parser" }
+
+# GUI framework - using egui for cross-platform support
+eframe = "0.27"
+egui = "0.27"
+egui_plot = "0.27"

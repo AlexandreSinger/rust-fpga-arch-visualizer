@@ -5,17 +5,46 @@ use std::path::Path;
 use xml::reader::{EventReader, XmlEvent};
 use xml::attribute::OwnedAttribute;
 
+pub struct Model {
+
+}
+
 #[derive(Debug)]
 pub struct Tile {
     pub name: String,
 }
 
-pub struct AutoLayout {
+// TODO: pb_type and priority is better served as a trait.
+pub struct FillGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+}
 
+pub struct PerimeterGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+}
+
+pub struct CornersGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+}
+
+pub enum GridLocation {
+    Fill(FillGridLocation),
+    Perimeter(PerimeterGridLocation),
+    Corners(CornersGridLocation),
+}
+
+pub struct AutoLayout {
+    pub aspect_ratio: f32,
+    pub grid_locations: Vec<GridLocation>,
 }
 
 pub struct FixedLayout {
-
+    pub name: String,
+    pub width: i32,
+    pub height: i32,
 }
 
 pub enum Layout {
@@ -37,9 +66,12 @@ pub struct Segment {
 
 pub struct PBType {
     pub name: String,
+    // TODO: Add the ports.
+    // TODO: Add the modes as an optional vector.
 }
 
 pub struct FPGAArch {
+    pub models: Vec<Model>,
     pub tiles: Vec<Tile>,
     pub layouts: Vec<Layout>,
     pub device: DeviceInfo,
@@ -109,12 +141,142 @@ fn parse_tiles(_name: &str,
     return tiles;
 }
 
+fn parse_grid_location(name: &str,
+                       attributes: &Vec<OwnedAttribute>) -> GridLocation {
+
+    let mut pb_type: Option<String> = None;
+    let mut priority: Option<i32> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "type" => {
+                pb_type = Some(a.value.clone());
+            },
+            "priority" => {
+                priority = Some(a.value.parse().expect("Not a valid number"));
+            },
+            _ => {},
+        };
+    }
+
+    if pb_type.is_none() || priority.is_none() {
+        panic!("Grid location {name} missing type and/or priority");
+    }
+
+    match name.to_string().as_ref() {
+        "perimeter" => {
+            GridLocation::Perimeter(PerimeterGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+            })
+        },
+        "corners" => {
+            GridLocation::Corners(CornersGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+            })
+        },
+        "fill" => {
+            GridLocation::Fill(FillGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+            })
+        },
+        _ => {
+            panic!("Unknown grid location: {}", name.to_string());
+        },
+    }
+}
+
+fn parse_auto_layout(_name: &str,
+                     attributes: &Vec<OwnedAttribute>,
+                     parser: &mut EventReader<BufReader<File>>) -> AutoLayout {
+
+    let mut aspect_ratio: f32 = 1.0;
+    let mut grid_locations: Vec<GridLocation> = Vec::new();
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "aspect_ratio" => {
+                aspect_ratio = a.value.parse().expect("Invalid aspect ratio");
+            },
+            _ => {
+                panic!("Unknown attribute for auto layout: {}", a.name.to_string());
+            },
+        }
+    }
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                grid_locations.push(parse_grid_location(&name.to_string(), &attributes));
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "auto_layout" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return AutoLayout {
+        aspect_ratio: aspect_ratio,
+        grid_locations: grid_locations,
+    };
+}
+
+fn parse_layouts(_name: &str,
+                 _attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) -> Vec<Layout> {
+
+    // TODO: Error check the name and attributes.
+
+    let mut layouts: Vec<Layout> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "auto_layout" => {
+                        layouts.push(Layout::AutoLayout(parse_auto_layout(&name.to_string(), &attributes, parser)));
+                    },
+                    "fixed_layout" => {
+                        // FIXME: Add error.
+                        let _ = parser.skip();
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "layout" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return layouts;
+}
+
+// TODO: This result type should be changed to something better than std::io
 pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
     let file = File::open(arch_file)?;
     // Buffering is used for performance.
     let file = BufReader::new(file);
 
     let mut tiles: Vec<Tile> = Vec::new();
+    let mut layouts: Vec<Layout> = Vec::new();
 
     // TODO: We should ignore comments and maybe whitespace.
     let mut parser = EventReader::new(file);
@@ -134,8 +296,8 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                         tiles = parse_tiles(&name.to_string(), &attributes, &mut parser);
                     },
                     "layout" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        // TODO: Need to check that we do not see multiple layout tags.
+                        layouts = parse_layouts(&name.to_string(), &attributes, &mut parser);
                     },
                     "device" => {
                         // TODO: Implement.
@@ -181,8 +343,9 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
     println!("{:?}", tiles);
 
     return Ok(FPGAArch {
+        models: Vec::new(),
         tiles: tiles,
-        layouts: Vec::new(),
+        layouts: layouts,
         device: DeviceInfo {},
         switch_list: Vec::new(),
         segment_list: Vec::new(),

@@ -13,10 +13,12 @@ fn test_k4_n4_90nm() {
 
     let res = res.unwrap();
 
+    // Check tiles.
     assert!(res.tiles.len() == 2);
     assert!(res.tiles[0].name == "io");
     assert!(res.tiles[1].name == "clb");
 
+    // Check layouts.
     assert!(res.layouts.len() == 1);
     assert!(matches!(res.layouts[0], Layout::AutoLayout { .. }));
     match &res.layouts[0] {
@@ -30,6 +32,11 @@ fn test_k4_n4_90nm() {
         },
         _ => panic!("Should never hit this.")
     }
+
+    // Check complex block list.
+    assert!(res.complex_block_list.len() == 2);
+    assert!(res.complex_block_list[0].name == "io");
+    assert!(res.complex_block_list[1].name == "clb");
 
     // TODO: Collect stats on the architecture and ensure they match what is
     //       expected.

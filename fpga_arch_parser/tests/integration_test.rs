@@ -1,7 +1,7 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation};
+use fpga_arch_parser::{Layout, GridLocation, Port};
 
 #[test]
 fn test_k4_n4_90nm() {
@@ -23,6 +23,11 @@ fn test_k4_n4_90nm() {
     assert!(res.tiles[0].sub_tiles[0].equivalent_sites.len() == 1);
     assert!(res.tiles[0].sub_tiles[0].equivalent_sites[0].pb_type == "io");
     assert!(res.tiles[0].sub_tiles[0].equivalent_sites[0].pin_mapping == "direct");
+    assert!(res.tiles[0].sub_tiles[0].ports.len() == 3);
+    assert!(matches!(res.tiles[0].sub_tiles[0].ports[0], Port::Input { .. }));
+    assert!(matches!(res.tiles[0].sub_tiles[0].ports[1], Port::Output { .. }));
+    assert!(matches!(res.tiles[0].sub_tiles[0].ports[2], Port::Clock { .. }));
+    // TODO: Add stronger tests for ports.
     assert!(res.tiles[1].sub_tiles.len() == 1);
     assert!(res.tiles[1].sub_tiles[0].name == "clb");
     assert!(res.tiles[1].sub_tiles[0].capacity == 1);
@@ -51,6 +56,11 @@ fn test_k4_n4_90nm() {
     assert!(res.complex_block_list[0].num_pb == 1);
     assert!(res.complex_block_list[0].blif_model.is_none());
     assert!(res.complex_block_list[0].class.is_none());
+    assert!(res.complex_block_list[0].ports.len() == 3);
+    assert!(matches!(res.complex_block_list[0].ports[0], Port::Input { .. }));
+    assert!(matches!(res.complex_block_list[0].ports[1], Port::Output { .. }));
+    assert!(matches!(res.complex_block_list[0].ports[2], Port::Clock { .. }));
+    // TODO: Add stronger tests for pb_type ports.
     assert!(res.complex_block_list[0].pb_types.len() == 0);
     assert!(res.complex_block_list[0].modes.len() == 2);
     assert!(res.complex_block_list[0].modes[0].name == "inpad");

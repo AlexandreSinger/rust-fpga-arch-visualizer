@@ -9,6 +9,39 @@ pub struct Model {
 
 }
 
+pub struct InputPort {
+    pub name: String,
+    pub num_pins: i32,
+    // TODO: This should be an enum.
+    pub equivalent: String,
+    pub is_non_clock_global: bool,
+    pub port_class: Option<String>,
+}
+
+pub struct OutputPort {
+    pub name: String,
+    pub num_pins: i32,
+    // TODO: This should be an enum.
+    pub equivalent: String,
+    pub is_non_clock_global: bool,
+    pub port_class: Option<String>,
+}
+
+pub struct ClockPort {
+    pub name: String,
+    pub num_pins: i32,
+    // TODO: This should be an enum.
+    pub equivalent: String,
+    pub is_non_clock_global: bool,
+    pub port_class: Option<String>,
+}
+
+pub enum Port {
+    Input(InputPort),
+    Output(OutputPort),
+    Clock(ClockPort),
+}
+
 pub struct TileSite {
     pub pb_type: String,
     pub pin_mapping: String,
@@ -18,6 +51,7 @@ pub struct SubTile {
     pub name: String,
     pub capacity: i32,
     pub equivalent_sites: Vec<TileSite>,
+    pub ports: Vec<Port>,
 }
 
 pub struct Tile {
@@ -85,9 +119,9 @@ pub struct PBType {
     pub num_pb: i32,
     pub blif_model: Option<String>,
     pub class: Option<String>,
+    pub ports: Vec<Port>,
     pub modes: Vec<PBMode>,
     pub pb_types: Vec<PBType>,
-    // TODO: Add the ports.
 }
 
 pub struct FPGAArch {
@@ -98,6 +132,57 @@ pub struct FPGAArch {
     pub switch_list: Vec<Switch>,
     pub segment_list: Vec<Segment>,
     pub complex_block_list: Vec<PBType>,
+}
+
+fn parse_port(name: &str,
+              attributes: &Vec<OwnedAttribute>) -> Port {
+    let mut port_name: Option<String> = None;
+    let mut num_pins: Option<i32> = None;
+    let mut equivalent = String::from("none");
+    let is_non_clock_global = false;
+    let mut port_class: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "name" => port_name = Some(a.value.clone()),
+            "num_pins" => num_pins = Some(a.value.parse().expect("Num pins should be integer type")),
+            "equivalent" => equivalent = a.value.clone(),
+            "is_non_clock_global" => panic!("TODO: Handle is_non_clock_global"),
+            "port_class" => {
+                assert!(port_class.is_none());
+                port_class = Some(a.value.clone());
+            },
+            _ => panic!("Unnexpected attribute in port: {}", a.name.to_string()),
+        };
+    }
+
+    assert!(port_name.is_some());
+    assert!(num_pins.is_some());
+
+    match name {
+        "input" => Port::Input(InputPort {
+            name: port_name.unwrap(),
+            num_pins: num_pins.unwrap(),
+            equivalent: equivalent,
+            is_non_clock_global: is_non_clock_global,
+            port_class: port_class,
+        }),
+        "output" => Port::Output(OutputPort {
+            name: port_name.unwrap(),
+            num_pins: num_pins.unwrap(),
+            equivalent: equivalent,
+            is_non_clock_global: is_non_clock_global,
+            port_class: port_class,
+        }),
+        "clock" => Port::Clock(ClockPort {
+            name: port_name.unwrap(),
+            num_pins: num_pins.unwrap(),
+            equivalent: equivalent,
+            is_non_clock_global: is_non_clock_global,
+            port_class: port_class,
+        }),
+        _ => panic!("Unknown port tag: {}", name),
+    }
 }
 
 fn parse_tile_site(_name: &str,
@@ -181,12 +266,16 @@ fn parse_sub_tile(_name: &str,
     assert!(sub_tile_name.is_some());
 
     let mut equivalent_sites: Option<Vec<TileSite>> = None;
+    let mut ports: Vec<Port> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "equivalent_sites" => {
                         equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser));
+                    },
+                    "input" | "output" | "clock" => {
+                        ports.push(parse_port(&name.to_string(), &attributes));
                     },
                     _ => {},
                 };
@@ -211,6 +300,7 @@ fn parse_sub_tile(_name: &str,
         name: sub_tile_name.unwrap(),
         capacity: sub_tile_capacity,
         equivalent_sites: equivalent_sites.unwrap(),
+        ports: ports,
     };
 }
 
@@ -500,12 +590,16 @@ fn parse_pb_type(_name: &str,
     }
     assert!(pb_type_name.is_some());
 
+    let mut pb_ports: Vec<Port> = Vec::new();
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut pb_modes: Vec<PBMode> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
+                    "input" | "output" | "clock" => {
+                        pb_ports.push(parse_port(&name.to_string(), &attributes));
+                    },
                     "pb_type" => {
                         pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
                     },
@@ -534,6 +628,7 @@ fn parse_pb_type(_name: &str,
         num_pb: num_pb,
         blif_model: blif_model,
         class: class,
+        ports: pb_ports,
         modes: pb_modes,
         pb_types: pb_types,
     }

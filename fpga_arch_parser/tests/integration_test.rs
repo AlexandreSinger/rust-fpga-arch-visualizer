@@ -48,6 +48,18 @@ fn test_k4_n4_90nm() {
     // Check complex block list.
     assert!(res.complex_block_list.len() == 2);
     assert!(res.complex_block_list[0].name == "io");
+    assert!(res.complex_block_list[0].num_pb == 1);
+    assert!(res.complex_block_list[0].blif_model.is_none());
+    assert!(res.complex_block_list[0].class.is_none());
+    assert!(res.complex_block_list[0].pb_types.len() == 0);
+    assert!(res.complex_block_list[0].modes.len() == 2);
+    assert!(res.complex_block_list[0].modes[0].name == "inpad");
+    assert!(res.complex_block_list[0].modes[0].pb_types.len() == 1);
+    assert!(res.complex_block_list[0].modes[0].pb_types[0].name == "inpad");
+    assert!(res.complex_block_list[0].modes[0].pb_types[0].blif_model.is_some());
+    assert!(res.complex_block_list[0].modes[1].name == "outpad");
+    assert!(res.complex_block_list[0].modes[1].pb_types.len() == 1);
+    // TODO: Make these pb_type heirarchy checks more robust.
     assert!(res.complex_block_list[1].name == "clb");
 
     // TODO: Collect stats on the architecture and ensure they match what is

@@ -75,10 +75,19 @@ pub struct Segment {
 
 }
 
+pub struct PBMode {
+    pub name: String,
+    pub pb_types: Vec<PBType>,
+}
+
 pub struct PBType {
     pub name: String,
+    pub num_pb: i32,
+    pub blif_model: Option<String>,
+    pub class: Option<String>,
+    pub modes: Vec<PBMode>,
+    pub pb_types: Vec<PBType>,
     // TODO: Add the ports.
-    // TODO: Add the modes as an optional vector.
 }
 
 pub struct FPGAArch {
@@ -416,10 +425,60 @@ fn parse_layouts(_name: &str,
     return layouts;
 }
 
+fn parse_pb_mode(_name: &str,
+                 attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) ->PBMode {
+    let mut mode_name: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(mode_name.is_none());
+                mode_name = Some(a.value.clone());
+            },
+            _ => panic!("Unknown attribute in pb_type"),
+        };
+    }
+
+    assert!(mode_name.is_some());
+
+    let mut pb_types: Vec<PBType> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "pb_type" => {
+                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "mode" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return PBMode {
+        name: mode_name.unwrap(),
+        pb_types: pb_types,
+    };
+}
+
 fn parse_pb_type(_name: &str,
                  attributes: &Vec<OwnedAttribute>,
                  parser: &mut EventReader<BufReader<File>>) -> PBType {
     let mut pb_type_name: Option<String> = None;
+    let mut num_pb: i32 = 1;
+    let mut blif_model: Option<String> = None;
+    let mut class: Option<String> = None;
 
     for a in attributes {
         match a.name.to_string().as_ref() {
@@ -427,15 +486,56 @@ fn parse_pb_type(_name: &str,
                 assert!(pb_type_name.is_none());
                 pb_type_name = Some(a.value.clone());
             },
-            _ => panic!("Unknown attribute in pb_type"),
+            "num_pb" => {
+                num_pb = a.value.parse().expect("num_pb should be an integer.");
+            },
+            "blif_model" => {
+                blif_model = Some(a.value.clone());
+            },
+            "class" => {
+                class = Some(a.value.clone());
+            },
+            _ => panic!("Unknown attribute in pb_type: {}", a.name.to_string()),
         };
     }
     assert!(pb_type_name.is_some());
 
-    let _ = parser.skip();
+    let mut pb_types: Vec<PBType> = Vec::new();
+    let mut pb_modes: Vec<PBMode> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "pb_type" => {
+                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                    },
+                    "mode" => {
+                        pb_modes.push(parse_pb_mode(&name.to_string(), &attributes, parser));
+                    }
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "pb_type" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
 
     return PBType {
         name: pb_type_name.unwrap(),
+        num_pb: num_pb,
+        blif_model: blif_model,
+        class: class,
+        modes: pb_modes,
+        pb_types: pb_types,
     }
 }
 

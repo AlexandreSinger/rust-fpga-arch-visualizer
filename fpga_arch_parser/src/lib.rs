@@ -9,9 +9,20 @@ pub struct Model {
 
 }
 
-#[derive(Debug)]
+pub struct TileSite {
+    pub pb_type: String,
+    pub pin_mapping: String,
+}
+
+pub struct SubTile {
+    pub name: String,
+    pub capacity: i32,
+    pub equivalent_sites: Vec<TileSite>,
+}
+
 pub struct Tile {
     pub name: String,
+    pub sub_tiles: Vec<SubTile>,
 }
 
 // TODO: pb_type and priority is better served as a trait.
@@ -80,6 +91,120 @@ pub struct FPGAArch {
     pub complex_block_list: Vec<PBType>,
 }
 
+fn parse_tile_site(_name: &str,
+                   attributes: &Vec<OwnedAttribute>) -> TileSite {
+
+    let mut site_pb_type: Option<String> = None;
+    let mut site_pin_mapping = String::from("direct");
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "pb_type" => {
+                site_pb_type = Some(a.value.clone());
+            },
+            "pin_mapping" => {
+                site_pin_mapping = a.value.clone();
+            },
+            _ => {
+                panic!("Unnexpected attribute.");
+            },
+        };
+    }
+
+
+    return TileSite {
+        pb_type: site_pb_type.unwrap(),
+        pin_mapping: site_pin_mapping,
+    };
+}
+
+fn parse_equivalent_sites(_name: &str,
+                          _attributes: &Vec<OwnedAttribute>,
+                          parser: &mut EventReader<BufReader<File>>) -> Vec<TileSite> {
+
+    let mut equivalent_sites: Vec<TileSite> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "site" => {
+                        equivalent_sites.push(parse_tile_site(&name.to_string(), &attributes));
+                    },
+                    _ => {
+                        panic!("Unnexpected tag in equivalent_sites.");
+                    },
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "equivalent_sites" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return equivalent_sites;
+}
+
+fn parse_sub_tile(_name: &str,
+                  attributes: &Vec<OwnedAttribute>,
+                  parser: &mut EventReader<BufReader<File>>) -> SubTile {
+
+    let mut sub_tile_name: Option<String> = None;
+    let mut sub_tile_capacity: i32 = 1;
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "name" => {
+                sub_tile_name = Some(a.value.clone());
+            },
+            "capacity" => {
+                sub_tile_capacity = a.value.parse().expect("Invalid capacity");
+            },
+            _ => {},
+        };
+    }
+
+    assert!(sub_tile_name.is_some());
+
+    let mut equivalent_sites: Option<Vec<TileSite>> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "equivalent_sites" => {
+                        equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser));
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "sub_tile" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    assert!(equivalent_sites.is_some());
+
+    return SubTile {
+        name: sub_tile_name.unwrap(),
+        capacity: sub_tile_capacity,
+        equivalent_sites: equivalent_sites.unwrap(),
+    };
+}
+
 fn parse_tile(_name: &str,
               attributes: &Vec<OwnedAttribute>,
               parser: &mut EventReader<BufReader<File>>) -> Tile {
@@ -96,15 +221,37 @@ fn parse_tile(_name: &str,
         };
     }
 
-    let new_tile = Tile {
-        name: tile_name,
+    let mut sub_tiles: Vec<SubTile> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "sub_tile" => {
+                        sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser));
+                    },
+                    _ => {
+                        panic!("Unnexpected tag in tile.");
+                    },
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "tile" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
     };
 
-    // Skip the contents of the tile for now.
-    // TODO: Add error check here.
-    let _ = parser.skip();
-
-    return new_tile;
+    return Tile {
+        name: tile_name,
+        sub_tiles: sub_tiles,
+    };
 }
 
 fn parse_tiles(_name: &str,
@@ -397,8 +544,6 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
             _ => {},
         };
     }
-
-    println!("{:?}", tiles);
 
     return Ok(FPGAArch {
         models: Vec::new(),

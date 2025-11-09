@@ -269,6 +269,63 @@ fn parse_layouts(_name: &str,
     return layouts;
 }
 
+fn parse_pb_type(_name: &str,
+                 attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) -> PBType {
+    let mut pb_type_name: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(pb_type_name.is_none());
+                pb_type_name = Some(a.value.clone());
+            },
+            _ => panic!("Unknown attribute in pb_type"),
+        };
+    }
+    assert!(pb_type_name.is_some());
+
+    let _ = parser.skip();
+
+    return PBType {
+        name: pb_type_name.unwrap(),
+    }
+}
+
+fn parse_complex_block_list(_name: &str,
+                            _attributes: &Vec<OwnedAttribute>,
+                            parser: &mut EventReader<BufReader<File>>) -> Vec<PBType> {
+
+    // TODO: Error check the name and the attributes.
+
+    let mut complex_block_list: Vec<PBType> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "pb_type" => {
+                        complex_block_list.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                    },
+                    _ => panic!("Invalid tag in complex block list."),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "complexblocklist" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return complex_block_list;
+}
+
 // TODO: This result type should be changed to something better than std::io
 pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
     let file = File::open(arch_file)?;
@@ -277,6 +334,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
 
     let mut tiles: Vec<Tile> = Vec::new();
     let mut layouts: Vec<Layout> = Vec::new();
+    let mut complex_block_list: Vec<PBType> = Vec::new();
 
     // TODO: We should ignore comments and maybe whitespace.
     let mut parser = EventReader::new(file);
@@ -312,8 +370,8 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                         let _ = parser.skip();
                     },
                     "complexblocklist" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        // TODO: Need to check that we do not see multiple complex block tags.
+                        complex_block_list = parse_complex_block_list(&name.to_string(), &attributes, &mut parser);
                     },
                     _ => {
                         // TODO: Raise an error here if a tag is found that is
@@ -349,6 +407,6 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
         device: DeviceInfo {},
         switch_list: Vec::new(),
         segment_list: Vec::new(),
-        complex_block_list: Vec::new(),
+        complex_block_list: complex_block_list,
     });
 }

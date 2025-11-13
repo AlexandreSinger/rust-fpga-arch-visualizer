@@ -1,7 +1,7 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation, Port};
+use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC};
 
 #[test]
 fn test_k4_n4_90nm() {
@@ -28,6 +28,8 @@ fn test_k4_n4_90nm() {
     assert!(matches!(res.tiles[0].sub_tiles[0].ports[1], Port::Output { .. }));
     assert!(matches!(res.tiles[0].sub_tiles[0].ports[2], Port::Clock { .. }));
     // TODO: Add stronger tests for ports.
+    assert!(matches!(res.tiles[0].sub_tiles[0].fc.in_fc, SubTileIOFC::Frac { .. }));
+    assert!(matches!(res.tiles[0].sub_tiles[0].fc.out_fc, SubTileIOFC::Frac { .. }));
     assert!(res.tiles[1].sub_tiles.len() == 1);
     assert!(res.tiles[1].sub_tiles[0].name == "clb");
     assert!(res.tiles[1].sub_tiles[0].capacity == 1);

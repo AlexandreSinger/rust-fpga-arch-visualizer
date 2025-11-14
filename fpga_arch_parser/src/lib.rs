@@ -47,11 +47,30 @@ pub struct TileSite {
     pub pin_mapping: String,
 }
 
+pub struct SubTileFracFC {
+    pub val: f32,
+}
+
+pub struct SubTileAbsFC {
+    pub val: i32,
+}
+
+pub enum SubTileIOFC {
+    Frac(SubTileFracFC),
+    Abs(SubTileAbsFC),
+}
+
+pub struct SubTileFC {
+    pub in_fc: SubTileIOFC,
+    pub out_fc: SubTileIOFC,
+}
+
 pub struct SubTile {
     pub name: String,
     pub capacity: i32,
     pub equivalent_sites: Vec<TileSite>,
     pub ports: Vec<Port>,
+    pub fc: SubTileFC,
 }
 
 pub struct Tile {
@@ -245,6 +264,64 @@ fn parse_equivalent_sites(_name: &str,
     return equivalent_sites;
 }
 
+fn create_sub_tile_io_fc(ty: &str, val: &str) -> SubTileIOFC {
+    return match ty {
+        "frac" => {
+            SubTileIOFC::Frac(SubTileFracFC {
+                val: val.parse().expect("fc_val should be frac"),
+            })
+        },
+        "abs" => {
+            SubTileIOFC::Abs(SubTileAbsFC {
+                val: val.parse().expect("fc_val should be abs"),
+            })
+        },
+        _ => panic!("Unknown fc_type: {}", ty),
+    }
+}
+
+fn parse_sub_tile_fc(_name: &str,
+                     attributes: &Vec<OwnedAttribute>) -> SubTileFC {
+    let mut in_type: Option<String> = None;
+    let mut in_val: Option<String> = None;
+    let mut out_type: Option<String> = None;
+    let mut out_val: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "in_type" => {
+                assert!(in_type.is_none());
+                in_type = Some(a.value.clone());
+            },
+            "in_val" => {
+                assert!(in_val.is_none());
+                in_val = Some(a.value.clone());
+            },
+            "out_type" => {
+                assert!(out_type.is_none());
+                out_type = Some(a.value.clone());
+            },
+            "out_val" => {
+                assert!(out_val.is_none());
+                out_val = Some(a.value.clone());
+            },
+            _ => panic!("Unknown fc attribute: {}", a.name.to_string()),
+        };
+    }
+
+    assert!(in_type.is_some());
+    assert!(in_val.is_some());
+    assert!(out_type.is_some());
+    assert!(out_val.is_some());
+
+    let in_fc = create_sub_tile_io_fc(&in_type.unwrap(), &in_val.unwrap());
+    let out_fc = create_sub_tile_io_fc(&out_type.unwrap(), &out_val.unwrap());
+
+    return SubTileFC {
+        in_fc: in_fc,
+        out_fc: out_fc,
+    }
+}
+
 fn parse_sub_tile(_name: &str,
                   attributes: &Vec<OwnedAttribute>,
                   parser: &mut EventReader<BufReader<File>>) -> SubTile {
@@ -267,6 +344,7 @@ fn parse_sub_tile(_name: &str,
 
     let mut equivalent_sites: Option<Vec<TileSite>> = None;
     let mut ports: Vec<Port> = Vec::new();
+    let mut sub_tile_fc: Option<SubTileFC> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -277,6 +355,10 @@ fn parse_sub_tile(_name: &str,
                     "input" | "output" | "clock" => {
                         ports.push(parse_port(&name.to_string(), &attributes));
                     },
+                    "fc" => {
+                        assert!(sub_tile_fc.is_none());
+                        sub_tile_fc = Some(parse_sub_tile_fc(&name.to_string(), &attributes));
+                    }
                     _ => {},
                 };
             },
@@ -295,12 +377,14 @@ fn parse_sub_tile(_name: &str,
     };
 
     assert!(equivalent_sites.is_some());
+    assert!(sub_tile_fc.is_some());
 
     return SubTile {
         name: sub_tile_name.unwrap(),
         capacity: sub_tile_capacity,
         equivalent_sites: equivalent_sites.unwrap(),
         ports: ports,
+        fc: sub_tile_fc.unwrap(),
     };
 }
 

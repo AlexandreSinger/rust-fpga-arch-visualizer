@@ -9,31 +9,53 @@ pub struct Model {
 
 }
 
+pub enum PinEquivalence {
+    None,
+    Full,
+    Instance,
+}
+
+pub enum PortClass {
+    None,
+    LutIn,
+    LutOut,
+    FlipFlopD,
+    FlipFlopQ,
+    Clock,
+    MemoryAddress,
+    MemoryDataIn,
+    MemoryWriteEn,
+    MemoryDataOut,
+    MemoryAddressFirst,
+    MemoryDataInFirst,
+    MemoryWriteEnFirst,
+    MemoryDataOutFirst,
+    MemoryAddressSecond,
+    MemoryDataInSecond,
+    MemoryWriteEnSecond,
+    MemoryDataOutSecond,
+}
+
 pub struct InputPort {
     pub name: String,
     pub num_pins: i32,
-    // TODO: This should be an enum.
-    pub equivalent: String,
+    pub equivalent: PinEquivalence,
     pub is_non_clock_global: bool,
-    pub port_class: Option<String>,
+    pub port_class: PortClass,
 }
 
 pub struct OutputPort {
     pub name: String,
     pub num_pins: i32,
-    // TODO: This should be an enum.
-    pub equivalent: String,
-    pub is_non_clock_global: bool,
-    pub port_class: Option<String>,
+    pub equivalent: PinEquivalence,
+    pub port_class: PortClass,
 }
 
 pub struct ClockPort {
     pub name: String,
     pub num_pins: i32,
-    // TODO: This should be an enum.
-    pub equivalent: String,
-    pub is_non_clock_global: bool,
-    pub port_class: Option<String>,
+    pub equivalent: PinEquivalence,
+    pub port_class: PortClass,
 }
 
 pub enum Port {
@@ -42,9 +64,14 @@ pub enum Port {
     Clock(ClockPort),
 }
 
+pub enum TileSitePinMapping {
+    Direct,
+    Custom,
+}
+
 pub struct TileSite {
     pub pb_type: String,
-    pub pin_mapping: String,
+    pub pin_mapping: TileSitePinMapping,
 }
 
 pub struct SubTileFracFC {
@@ -133,11 +160,18 @@ pub struct PBMode {
     pub pb_types: Vec<PBType>,
 }
 
+pub enum PBTypeClass {
+    None,
+    Lut,
+    FlipFlop,
+    Memory,
+}
+
 pub struct PBType {
     pub name: String,
     pub num_pb: i32,
     pub blif_model: Option<String>,
-    pub class: Option<String>,
+    pub class: PBTypeClass,
     pub ports: Vec<Port>,
     pub modes: Vec<PBMode>,
     pub pb_types: Vec<PBType>,
@@ -178,26 +212,57 @@ fn parse_port(name: &str,
     assert!(port_name.is_some());
     assert!(num_pins.is_some());
 
+    let pin_equivalance = match equivalent.as_str() {
+        "none" => PinEquivalence::None,
+        "full" => PinEquivalence::Full,
+        "instance" => PinEquivalence::Instance,
+        _ => panic!("Unknown pin equivalance: {}", equivalent),
+    };
+
+    let port_class = match port_class {
+        None => PortClass::None,
+        Some(class) => match class.as_str() {
+            "lut_in" => PortClass::LutIn,
+            "lut_out" => PortClass::LutOut,
+            "D" => PortClass::FlipFlopD,
+            "Q" => PortClass::FlipFlopQ,
+            "clock" => PortClass::Clock,
+            "address" => PortClass::MemoryAddress,
+            "data_in" => PortClass::MemoryDataIn,
+            "write_en" => PortClass::MemoryWriteEn,
+            "data_out" => PortClass::MemoryDataOut,
+            "address1" => PortClass::MemoryAddressFirst,
+            "data_in1" => PortClass::MemoryDataInFirst,
+            "write_en1" => PortClass::MemoryWriteEnFirst,
+            "data_out1" => PortClass::MemoryDataOutFirst,
+            "address2" => PortClass::MemoryAddressSecond,
+            "data_in2" => PortClass::MemoryDataInSecond,
+            "write_en2" => PortClass::MemoryWriteEnSecond,
+            "data_out2" => PortClass::MemoryDataOutSecond,
+            _ => panic!("Unknown port class: {}", class),
+        },
+    };
+
+    // TODO: Check that non-clock global is only set for inputs.
+
     match name {
         "input" => Port::Input(InputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
-            equivalent: equivalent,
+            equivalent: pin_equivalance,
             is_non_clock_global: is_non_clock_global,
             port_class: port_class,
         }),
         "output" => Port::Output(OutputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
-            equivalent: equivalent,
-            is_non_clock_global: is_non_clock_global,
+            equivalent: pin_equivalance,
             port_class: port_class,
         }),
         "clock" => Port::Clock(ClockPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
-            equivalent: equivalent,
-            is_non_clock_global: is_non_clock_global,
+            equivalent: pin_equivalance,
             port_class: port_class,
         }),
         _ => panic!("Unknown port tag: {}", name),
@@ -223,6 +288,11 @@ fn parse_tile_site(_name: &str,
         };
     }
 
+    let site_pin_mapping = match site_pin_mapping.as_str() {
+        "direct" => TileSitePinMapping::Direct,
+        "custom" => TileSitePinMapping::Custom,
+        _ => panic!("Unknown site pin mapping: {}", site_pin_mapping),
+    };
 
     return TileSite {
         pb_type: site_pb_type.unwrap(),
@@ -707,11 +777,21 @@ fn parse_pb_type(_name: &str,
         }
     };
 
+    let pb_class = match class {
+        None => PBTypeClass::None,
+        Some(class_name) => match class_name.as_str() {
+            "lut" => PBTypeClass::Lut,
+            "flipflop" => PBTypeClass::FlipFlop,
+            "memory" => PBTypeClass::Memory,
+            _ => panic!("Unknown PB class: {}", class_name),
+        },
+    };
+
     return PBType {
         name: pb_type_name.unwrap(),
         num_pb: num_pb,
         blif_model: blif_model,
-        class: class,
+        class: pb_class,
         ports: pb_ports,
         modes: pb_modes,
         pb_types: pb_types,

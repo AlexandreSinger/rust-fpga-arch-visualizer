@@ -1,7 +1,7 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping};
+use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations};
 
 #[test]
 fn test_k4_n4_90nm() {
@@ -30,12 +30,14 @@ fn test_k4_n4_90nm() {
     // TODO: Add stronger tests for ports.
     assert!(matches!(res.tiles[0].sub_tiles[0].fc.in_fc, SubTileIOFC::Frac { .. }));
     assert!(matches!(res.tiles[0].sub_tiles[0].fc.out_fc, SubTileIOFC::Frac { .. }));
+    assert!(matches!(res.tiles[0].sub_tiles[0].pin_locations, SubTilePinLocations::Custom { .. }));
     assert!(res.tiles[1].sub_tiles.len() == 1);
     assert!(res.tiles[1].sub_tiles[0].name == "clb");
     assert!(res.tiles[1].sub_tiles[0].capacity == 1);
     assert!(res.tiles[1].sub_tiles[0].equivalent_sites.len() == 1);
     assert!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pb_type == "clb");
     assert!(matches!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pin_mapping, TileSitePinMapping::Direct));
+    assert!(matches!(res.tiles[1].sub_tiles[0].pin_locations, SubTilePinLocations::Spread { .. }));
 
     // Check layouts.
     assert!(res.layouts.len() == 1);

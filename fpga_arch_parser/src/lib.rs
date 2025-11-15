@@ -92,12 +92,38 @@ pub struct SubTileFC {
     pub out_fc: SubTileIOFC,
 }
 
+pub enum PinSide {
+    Left,
+    Right,
+    Bottom,
+    Top,
+}
+
+pub struct PinLoc {
+    pub side: PinSide,
+    pub xoffset: i32,
+    pub yoffset: i32,
+    pub pin_strings: Vec<String>,
+}
+
+pub struct CustomPinLocations {
+    pub pin_locations: Vec<PinLoc>,
+}
+
+pub enum SubTilePinLocations {
+    Spread,
+    Perimeter,
+    SpreadInputsPerimeterOutputs,
+    Custom(CustomPinLocations),
+}
+
 pub struct SubTile {
     pub name: String,
     pub capacity: i32,
     pub equivalent_sites: Vec<TileSite>,
     pub ports: Vec<Port>,
     pub fc: SubTileFC,
+    pub pin_locations: SubTilePinLocations,
 }
 
 pub struct Tile {
@@ -392,6 +418,133 @@ fn parse_sub_tile_fc(_name: &str,
     }
 }
 
+fn parse_pin_loc(_name: &str,
+                 attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) -> PinLoc {
+    let mut side: Option<String> = None;
+    let mut xoffset: Option<i32> = None;
+    let mut yoffset: Option<i32> = None;
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "side" => {
+                assert!(side.is_none());
+                side = Some(a.value.clone());
+            },
+            "xoffset" => {
+                assert!(xoffset.is_none());
+                xoffset = Some(a.value.parse().expect("xoffset expected to be an i32."));
+            },
+            "yoffset" => {
+                assert!(yoffset.is_none());
+                yoffset = Some(a.value.parse().expect("yoffset expected to be an i32."));
+            },
+            _ => panic!("Unnexpected attribute in loc: {}", a.name.to_string()),
+        };
+    }
+
+    let xoffset = match xoffset {
+        Some(offset) => offset,
+        None => 0,
+    };
+    let yoffset = match yoffset {
+        Some(offset) => offset,
+        None => 0,
+    };
+
+    let side = match side {
+        Some(side) => match side.as_str() {
+            "left" => PinSide::Left,
+            "right" => PinSide::Right,
+            "top" => PinSide::Top,
+            "bottom" => PinSide::Bottom,
+            _ => panic!("Unknown pin side: {}", side),
+        },
+        None => panic!("loc tag has no side attribute."),
+    };
+
+    // Parse the pin strings.
+    let pin_strings: Vec<String>;
+    match parser.next() {
+        Ok(XmlEvent::Characters(text)) => {
+            pin_strings = text.split_whitespace().map(|s| s.to_string()).collect();
+        },
+        _ => panic!("no pin strings found in loc tag."),
+    };
+
+    // Parse the end loc tag. This is just to make this method clean.
+    match parser.next() {
+        Ok(XmlEvent::EndElement { name }) => {
+            assert!(name.to_string() == "loc");
+        },
+        _ => panic!("Unexpected tag in loc tag"),
+    };
+
+    return PinLoc {
+        side: side,
+        xoffset: xoffset,
+        yoffset: yoffset,
+        pin_strings: pin_strings,
+    }
+}
+
+fn parse_sub_tile_pin_locations(_name: &str,
+                                attributes: &Vec<OwnedAttribute>,
+                                parser: &mut EventReader<BufReader<File>>) -> SubTilePinLocations {
+    let mut pattern: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "pattern" => {
+                assert!(pattern.is_none());
+                pattern = Some(a.value.clone());
+            },
+            _ => panic!("Unknown pin locations attribute: {}", a.name.to_string()),
+        };
+    }
+
+    let mut pin_locs: Vec<PinLoc> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "loc" => {
+                        pin_locs.push(parse_pin_loc(&name.to_string(), &attributes, parser));
+                    },
+                    _ => panic!("Unnexpected tag in pinlocations: {}", name.to_string()),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "pinlocations" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    // TODO: If pin locs is defined for any pattern other than custom, something
+    //       is wrong.
+
+    return match pattern {
+        Some(pattern) => match pattern.as_str() {
+            "spread" => SubTilePinLocations::Spread,
+            "perimeter" => SubTilePinLocations::Perimeter,
+            "spread_inputs_perimeter_outputs" => SubTilePinLocations::SpreadInputsPerimeterOutputs,
+            "custom" => {
+                SubTilePinLocations::Custom(CustomPinLocations{
+                    pin_locations: pin_locs,
+                })
+            },
+            _ => panic!("Unknown spreadpattern for pinlocations: {}", pattern),
+        },
+        None => panic!("pinlocations tag has no pattern attribute."),
+    };
+}
+
 fn parse_sub_tile(_name: &str,
                   attributes: &Vec<OwnedAttribute>,
                   parser: &mut EventReader<BufReader<File>>) -> SubTile {
@@ -415,6 +568,7 @@ fn parse_sub_tile(_name: &str,
     let mut equivalent_sites: Option<Vec<TileSite>> = None;
     let mut ports: Vec<Port> = Vec::new();
     let mut sub_tile_fc: Option<SubTileFC> = None;
+    let mut pin_locations: Option<SubTilePinLocations> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -428,7 +582,10 @@ fn parse_sub_tile(_name: &str,
                     "fc" => {
                         assert!(sub_tile_fc.is_none());
                         sub_tile_fc = Some(parse_sub_tile_fc(&name.to_string(), &attributes));
-                    }
+                    },
+                    "pinlocations" => {
+                        pin_locations = Some(parse_sub_tile_pin_locations(&name.to_string(), &attributes, parser));
+                    },
                     _ => {},
                 };
             },
@@ -448,6 +605,7 @@ fn parse_sub_tile(_name: &str,
 
     assert!(equivalent_sites.is_some());
     assert!(sub_tile_fc.is_some());
+    assert!(pin_locations.is_some());
 
     return SubTile {
         name: sub_tile_name.unwrap(),
@@ -455,6 +613,7 @@ fn parse_sub_tile(_name: &str,
         equivalent_sites: equivalent_sites.unwrap(),
         ports: ports,
         fc: sub_tile_fc.unwrap(),
+        pin_locations: pin_locations.unwrap(),
     };
 }
 

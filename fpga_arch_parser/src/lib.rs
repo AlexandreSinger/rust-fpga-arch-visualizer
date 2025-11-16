@@ -181,9 +181,43 @@ pub struct Segment {
 
 }
 
+pub struct PackPattern {
+    pub name: String,
+    pub in_port: String,
+    pub out_port: String,
+}
+
+pub struct CompleteInterconnect {
+    pub name: String,
+    pub input: String,
+    pub output: String,
+    pub pack_pattern: Option<PackPattern>,
+}
+
+pub struct DirectInterconnect {
+    pub name: String,
+    pub input: String,
+    pub output: String,
+    pub pack_pattern: Option<PackPattern>,
+}
+
+pub struct MuxInterconnect {
+    pub name: String,
+    pub input: String,
+    pub output: String,
+    pub pack_pattern: Option<PackPattern>,
+}
+
+pub enum Interconnect {
+    Complete(CompleteInterconnect),
+    Direct(DirectInterconnect),
+    Mux(MuxInterconnect),
+}
+
 pub struct PBMode {
     pub name: String,
     pub pb_types: Vec<PBType>,
+    pub interconnects: Vec<Interconnect>,
 }
 
 pub enum PBTypeClass {
@@ -201,6 +235,7 @@ pub struct PBType {
     pub ports: Vec<Port>,
     pub modes: Vec<PBMode>,
     pub pb_types: Vec<PBType>,
+    pub interconnects: Vec<Interconnect>,
 }
 
 pub struct FPGAArch {
@@ -828,9 +863,166 @@ fn parse_layouts(_name: &str,
     return layouts;
 }
 
+fn parse_pack_pattern(name: &str,
+                      attributes: &Vec<OwnedAttribute>,
+                      parser: &mut EventReader<BufReader<File>>) -> PackPattern {
+    assert!(name == "pack_pattern");
+
+    let mut pattern_name: Option<String> = None;
+    let mut in_port: Option<String> = None;
+    let mut out_port: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(pattern_name.is_none());
+                pattern_name = Some(a.value.clone());
+            },
+            "in_port" => {
+                assert!(in_port.is_none());
+                in_port = Some(a.value.clone());
+            },
+            "out_port" => {
+                assert!(out_port.is_none());
+                out_port = Some(a.value.clone());
+            },
+            _ => panic!("Unknown attribute for pack_pattern: {}", a.to_string()),
+        };
+    }
+
+    assert!(pattern_name.is_some());
+    assert!(in_port.is_some());
+    assert!(out_port.is_some());
+
+    match parser.next() {
+        Ok(XmlEvent::EndElement { name }) => {
+            assert!(name.to_string() == "pack_pattern");
+        },
+        _ => panic!("Unnexpected end tag."),
+    };
+
+    return PackPattern {
+        name: pattern_name.unwrap(),
+        in_port: in_port.unwrap(),
+        out_port: out_port.unwrap(),
+    };
+}
+
+fn parse_interconnect(name: &str,
+                      attributes: &Vec<OwnedAttribute>,
+                      parser: &mut EventReader<BufReader<File>>) -> Interconnect {
+
+    let mut inter_name: Option<String> = None;
+    let mut input: Option<String> = None;
+    let mut output: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(inter_name.is_none());
+                inter_name = Some(a.value.clone());
+            },
+            "input" => {
+                assert!(input.is_none());
+                input = Some(a.value.clone());
+            },
+            "output" => {
+                assert!(output.is_none());
+                output = Some(a.value.clone());
+            },
+            _ => panic!("Unknown attribute for {} tag: {}", name, a.to_string()),
+        };
+    }
+
+    assert!(inter_name.is_some());
+    assert!(input.is_some());
+    assert!(output.is_some());
+
+    let mut pack_pattern: Option<PackPattern> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "pack_pattern" => {
+                        assert!(pack_pattern.is_none());
+                        pack_pattern = Some(parse_pack_pattern(&name.to_string(), &attributes, parser));
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "direct" | "mux" | "complete" => break,
+                    _ => {},
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return match name {
+        "direct" => Interconnect::Direct(DirectInterconnect {
+            name: inter_name.unwrap(),
+            input: input.unwrap(),
+            output: output.unwrap(),
+            pack_pattern: pack_pattern,
+        }),
+        "mux" => Interconnect::Mux(MuxInterconnect {
+            name: inter_name.unwrap(),
+            input: input.unwrap(),
+            output: output.unwrap(),
+            pack_pattern: pack_pattern,
+        }),
+        "complete" => Interconnect::Complete(CompleteInterconnect {
+            name: inter_name.unwrap(),
+            input: input.unwrap(),
+            output: output.unwrap(),
+            pack_pattern: pack_pattern,
+        }),
+        _ => panic!("Unknown interconnect tag: {}", name),
+    };
+}
+
+fn parse_interconnects(name: &str,
+                       attributes: &Vec<OwnedAttribute>,
+                       parser: &mut EventReader<BufReader<File>>) -> Vec<Interconnect> {
+    assert!(name == "interconnect");
+    assert!(attributes.len() == 0);
+
+    let mut interconnects: Vec<Interconnect> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "direct" | "mux" | "complete" => {
+                        interconnects.push(parse_interconnect(&name.to_string(), &attributes, parser));
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "interconnect" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return interconnects;
+}
+
 fn parse_pb_mode(_name: &str,
                  attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) ->PBMode {
+                 parser: &mut EventReader<BufReader<File>>) -> PBMode {
     let mut mode_name: Option<String> = None;
     for a in attributes {
         match a.name.to_string().as_ref() {
@@ -845,6 +1037,7 @@ fn parse_pb_mode(_name: &str,
     assert!(mode_name.is_some());
 
     let mut pb_types: Vec<PBType> = Vec::new();
+    let mut interconnects: Vec<Interconnect> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -852,6 +1045,10 @@ fn parse_pb_mode(_name: &str,
                     "pb_type" => {
                         pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
                     },
+                    "interconnect" => {
+                        // TODO: Check that there is only a single interconnect tag.
+                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser);
+                    }
                     _ => {},
                 };
             },
@@ -872,6 +1069,7 @@ fn parse_pb_mode(_name: &str,
     return PBMode {
         name: mode_name.unwrap(),
         pb_types: pb_types,
+        interconnects: interconnects,
     };
 }
 
@@ -906,6 +1104,7 @@ fn parse_pb_type(_name: &str,
     let mut pb_ports: Vec<Port> = Vec::new();
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut pb_modes: Vec<PBMode> = Vec::new();
+    let mut interconnects: Vec<Interconnect> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -918,6 +1117,10 @@ fn parse_pb_type(_name: &str,
                     },
                     "mode" => {
                         pb_modes.push(parse_pb_mode(&name.to_string(), &attributes, parser));
+                    },
+                    "interconnect" => {
+                        // TODO: Check that there is only a single interconnect tag.
+                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser);
                     }
                     _ => {},
                 };
@@ -954,6 +1157,7 @@ fn parse_pb_type(_name: &str,
         ports: pb_ports,
         modes: pb_modes,
         pb_types: pb_types,
+        interconnects: interconnects,
     }
 }
 

@@ -169,8 +169,59 @@ pub enum Layout {
     FixedLayout(FixedLayout),
 }
 
-pub struct DeviceInfo {
+pub enum SBType {
+    Wilton,
+    Subset,
+    Universal,
+    Custom,
+}
 
+pub struct GaussianChanWDist {
+    pub peak: f32,
+    pub width: f32,
+    pub xpeak: f32,
+    pub dc: f32,
+}
+
+pub struct UniformChanWDist {
+    pub peak: f32,
+}
+
+pub struct PulseChanWDist {
+    pub peak: f32,
+    pub width: f32,
+    pub xpeak: f32,
+    pub dc: f32,
+}
+
+pub struct DeltaChanWDist {
+    pub peak: f32,
+    pub xpeak: f32,
+    pub dc: f32,
+}
+
+pub enum ChanWDist {
+    Gaussian(GaussianChanWDist),
+    Uniform(UniformChanWDist),
+    Pulse(PulseChanWDist),
+    Delta(DeltaChanWDist),
+}
+
+pub struct DeviceInfo {
+    // Sizing.
+    pub r_min_w_nmos: f32,
+    pub r_min_w_pmos: f32,
+    // Connection block.
+    pub input_switch_name: String,
+    // Area.
+    pub grid_logic_tile_area: f32,
+    // Switch block.
+    pub sb_type: SBType,
+    pub sb_fs: i32,
+    // Chan width distribution.
+    pub x_distr: ChanWDist,
+    pub y_distr: ChanWDist,
+    // TODO: default_fc
 }
 
 pub struct Switch {
@@ -863,6 +914,241 @@ fn parse_layouts(_name: &str,
     return layouts;
 }
 
+fn parse_chan_w_dist(name: &str,
+                     attributes: &Vec<OwnedAttribute>,
+                     parser: &mut EventReader<BufReader<File>>) -> ChanWDist {
+    assert!(name == "x" || name == "y");
+    let mut distr: Option<String> = None;
+    let mut peak: Option<f32> = None;
+    let mut width: Option<f32> = None;
+    let mut xpeak: Option<f32> = None;
+    let mut dc: Option<f32> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "distr" => {
+                assert!(distr.is_none());
+                distr = Some(a.value.clone());
+            },
+            "peak" => {
+                assert!(peak.is_none());
+                peak = Some(a.value.parse().expect("chan_w_dist peak expected to be f32"));
+            },
+            "width" => {
+                assert!(width.is_none());
+                width = Some(a.value.parse().expect("chan_w_dist width expected to be f32"));
+            },
+            "xpeak" => {
+                assert!(xpeak.is_none());
+                xpeak = Some(a.value.parse().expect("chan_w_dist xpeak expected to be f32"));
+            },
+            "dc" => {
+                assert!(dc.is_none());
+                dc = Some(a.value.parse().expect("chan_w_dist dc expected to be f32"));
+            },
+            _ => panic!("Unexpected attribute in chan_w_distr: {}", a.to_string()),
+        };
+    }
+
+    match parser.next() {
+        Ok(XmlEvent::EndElement { name: end_name }) => {
+            assert!(end_name.to_string() == name);
+        },
+        _ => panic!("Unnexpected tag in chan_w_distr x/y tag"),
+    };
+
+    return match distr {
+        Some(distr_str) => {
+            match distr_str.as_str() {
+                "gaussian" => ChanWDist::Gaussian(GaussianChanWDist {
+                    peak: peak.unwrap(),
+                    width: width.unwrap(),
+                    xpeak: xpeak.unwrap(),
+                    dc: dc.unwrap(),
+                }),
+                "uniform" => ChanWDist::Uniform(UniformChanWDist {
+                    peak: peak.unwrap(),
+                }),
+                "pulse" => ChanWDist::Pulse(PulseChanWDist {
+                    peak: peak.unwrap(),
+                    width: width.unwrap(),
+                    xpeak: xpeak.unwrap(),
+                    dc: dc.unwrap(),
+                }),
+                "delta" => ChanWDist::Delta(DeltaChanWDist {
+                    peak: peak.unwrap(),
+                    xpeak: xpeak.unwrap(),
+                    dc: dc.unwrap(),
+                }),
+                _ => panic!("Unknown distr for chan_w_distr: {}", distr_str),
+            }
+        },
+        None => panic!("No distr provided for chan_w_distr"),
+    };
+}
+
+fn parse_device(name: &str,
+                attributes: &Vec<OwnedAttribute>,
+                parser: &mut EventReader<BufReader<File>>) -> DeviceInfo {
+    assert!(name == "device");
+    assert!(attributes.len() == 0);
+
+    let mut r_min_w_nmos: Option<f32> = None;
+    let mut r_min_w_pmos: Option<f32> = None;
+    let mut grid_logic_tile_area: Option<f32> = None;
+    let mut x_distr: Option<ChanWDist> = None;
+    let mut y_distr: Option<ChanWDist> = None;
+    let mut sb_type: Option<SBType> = None;
+    let mut sb_fs: Option<i32> = None;
+    let mut input_switch_name: Option<String> = None;
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "sizing" => {
+                        for a in attributes {
+                            match a.name.to_string().as_ref() {
+                                "R_minW_nmos" => {
+                                    assert!(r_min_w_nmos.is_none());
+                                    r_min_w_nmos = Some(a.value.parse().expect("R_minW_nmos expected to be f32 type"));
+                                },
+                                "R_minW_pmos" => {
+                                    assert!(r_min_w_pmos.is_none());
+                                    r_min_w_pmos = Some(a.value.parse().expect("R_minW_pmos expected to be f32 type"));
+                                },
+                                _ => panic!("Unknown attribute for sizing tag: {}", a.to_string()),
+                            };
+                        }
+                        match parser.next() {
+                            Ok(XmlEvent::EndElement { name: end_name }) => {
+                                assert!(end_name.to_string() == "sizing");
+                            },
+                            _ => panic!("Unnexpected tag in sizing tag"),
+                        };
+                    },
+                    "area" => {
+                        for a in attributes {
+                            match a.name.to_string().as_ref() {
+                                "grid_logic_tile_area" => {
+                                    assert!(grid_logic_tile_area.is_none());
+                                    grid_logic_tile_area = Some(a.value.parse().expect("grid_logic_tile_area expected to be f32 type"));
+                                },
+                                _ => panic!("Unknown attribute for area tag: {}", a.to_string()),
+                            };
+                        }
+                        match parser.next() {
+                            Ok(XmlEvent::EndElement { name: end_name }) => {
+                                assert!(end_name.to_string() == "area");
+                            },
+                            _ => panic!("Unnexpected tag in area tag"),
+                        };
+                    },
+                    "chan_width_distr" => {
+                        loop {
+                            match parser.next() {
+                                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                                    match name.to_string().as_str() {
+                                        "x" => {
+                                            assert!(x_distr.is_none());
+                                            x_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser));
+                                        },
+                                        "y" => {
+                                            assert!(y_distr.is_none());
+                                            y_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser));
+                                        },
+                                        _ => panic!("Unexpected tag in chan_width_distr: {}", name.to_string()),
+                                    };
+                                },
+                                Ok(XmlEvent::EndElement { name }) => {
+                                    match name.to_string().as_str() {
+                                        "chan_width_distr" => break,
+                                        _ => panic!("Unexpected end tag in chan_width_distr: {}", name.to_string()),
+                                    }
+                                },
+                                Err(e) => {
+                                    eprintln!("Error: {e}");
+                                    break;
+                                },
+                                // TODO: Handle the other cases.
+                                _ => {},
+                            }
+                        };
+
+                    },
+                    "switch_block" => {
+                        for a in attributes {
+                            match a.name.to_string().as_ref() {
+                                "type" => {
+                                    assert!(sb_type.is_none());
+                                    sb_type = match a.value.as_ref() {
+                                        "wilton" => Some(SBType::Wilton),
+                                        "subset" => Some(SBType::Subset),
+                                        "universal" => Some(SBType::Universal),
+                                        "custom" => Some(SBType::Custom),
+                                        _ => panic!("Unknown switch_block type: {}", a.value),
+                                    };
+                                },
+                                "fs" => {
+                                    assert!(sb_fs.is_none());
+                                    sb_fs = Some(a.value.parse().expect("switch_block fs expected to be i32 type, got"));
+                                },
+                                _ => panic!("Unknown attribute for area tag: {}", a.to_string()),
+                            };
+                        }
+                        match parser.next() {
+                            Ok(XmlEvent::EndElement { name: end_name }) => {
+                                assert!(end_name.to_string() == "switch_block");
+                            },
+                            _ => panic!("Unnexpected tag in switch_block tag"),
+                        };
+                    },
+                    "connection_block" => {
+                        for a in attributes {
+                            match a.name.to_string().as_ref() {
+                                "input_switch_name" => {
+                                    assert!(input_switch_name.is_none());
+                                    input_switch_name = Some(a.value.clone());
+                                },
+                                _ => panic!("Unknown attribute for connection_block tag: {}", a.to_string()),
+                            };
+                        }
+                        match parser.next() {
+                            Ok(XmlEvent::EndElement { name: end_name }) => {
+                                assert!(end_name.to_string() == "connection_block");
+                            },
+                            _ => panic!("Unnexpected tag in connection_block tag"),
+                        };
+
+                    },
+                    _ => {},
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == "device" {
+                    break;
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return DeviceInfo {
+        r_min_w_nmos: r_min_w_nmos.unwrap(),
+        r_min_w_pmos: r_min_w_pmos.unwrap(),
+        input_switch_name: input_switch_name.unwrap(),
+        grid_logic_tile_area: grid_logic_tile_area.unwrap(),
+        sb_type: sb_type.unwrap(),
+        sb_fs: sb_fs.unwrap(),
+        x_distr: x_distr.unwrap(),
+        y_distr: y_distr.unwrap(),
+    };
+}
+
 fn parse_pack_pattern(name: &str,
                       attributes: &Vec<OwnedAttribute>,
                       parser: &mut EventReader<BufReader<File>>) -> PackPattern {
@@ -1203,6 +1489,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
 
     let mut tiles: Vec<Tile> = Vec::new();
     let mut layouts: Vec<Layout> = Vec::new();
+    let mut device: Option<DeviceInfo> = None;
     let mut complex_block_list: Vec<PBType> = Vec::new();
 
     // TODO: We should ignore comments and maybe whitespace.
@@ -1227,8 +1514,8 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                         layouts = parse_layouts(&name.to_string(), &attributes, &mut parser);
                     },
                     "device" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        assert!(device.is_none());
+                        device = Some(parse_device(&name.to_string(), &attributes, &mut parser));
                     },
                     "switchlist" => {
                         // TODO: Implement.
@@ -1267,11 +1554,13 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
         };
     }
 
+    assert!(device.is_some());
+
     return Ok(FPGAArch {
         models: Vec::new(),
         tiles: tiles,
         layouts: layouts,
-        device: DeviceInfo {},
+        device: device.unwrap(),
         switch_list: Vec::new(),
         segment_list: Vec::new(),
         complex_block_list: complex_block_list,

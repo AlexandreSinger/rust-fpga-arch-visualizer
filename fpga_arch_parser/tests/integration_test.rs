@@ -1,7 +1,7 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations};
+use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist};
 
 #[test]
 fn test_k4_n4_90nm() {
@@ -53,6 +53,15 @@ fn test_k4_n4_90nm() {
         },
         _ => panic!("Should never hit this.")
     }
+
+    // Check device.
+    assert!(res.device.r_min_w_nmos == 4220.930176);
+    assert!(res.device.r_min_w_pmos == 11207.599609);
+    assert!(matches!(res.device.x_distr, ChanWDist::Uniform { .. }));
+    assert!(matches!(res.device.y_distr, ChanWDist::Uniform { .. }));
+    assert!(matches!(res.device.sb_type, SBType::Wilton { .. }));
+    assert!(res.device.sb_fs == 3);
+    assert!(res.device.input_switch_name == "ipin_cblock");
 
     // Check complex block list.
     assert!(res.complex_block_list.len() == 2);

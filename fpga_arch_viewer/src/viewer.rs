@@ -1,4 +1,6 @@
 use eframe::egui;
+use crate::block_style::DefaultBlockStyles;
+use crate::settings;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ViewMode {
@@ -19,6 +21,8 @@ pub struct FpgaViewer {
     // Navigation state
     show_layer_list: bool,
     navigation_history: Vec<String>, // Will store layer/element navigation history
+    // Block styles
+    block_styles: DefaultBlockStyles,
 }
 
 impl FpgaViewer {
@@ -29,6 +33,7 @@ impl FpgaViewer {
             current_page: Page::Main,
             show_layer_list: false,
             navigation_history: Vec::new(),
+            block_styles: DefaultBlockStyles::new(),
         }
     }
 
@@ -210,13 +215,7 @@ impl eframe::App for FpgaViewer {
                     });
                 }
                 Page::Settings => {
-                    ui.centered_and_justified(|ui| {
-                        ui.heading("Settings");
-                        ui.add_space(20.0);
-                        ui.label("Settings page - Coming soon");
-                        ui.add_space(10.0);
-                        ui.label("This is where you can customize how each block looks.");
-                    });
+                    settings::render_settings_page(ui, &self.block_styles);
                 }
             }
         });

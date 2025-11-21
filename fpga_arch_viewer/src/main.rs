@@ -4,6 +4,8 @@
 
 use eframe::egui;
 
+mod block_style;
+mod settings;
 mod viewer;
 
 use viewer::FpgaViewer;

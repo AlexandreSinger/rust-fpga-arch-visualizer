@@ -34,6 +34,9 @@ pub enum PortClass {
     MemoryDataInSecond,
     MemoryWriteEnSecond,
     MemoryDataOutSecond,
+    // FIXME: These are not documented by VTR. Documentation needs to be updated.
+    MemoryReadEnFirst,
+    MemoryReadEnSecond,
 }
 
 pub struct InputPort {
@@ -260,7 +263,8 @@ pub struct DeviceInfo {
     pub grid_logic_tile_area: f32,
     // Switch block.
     pub sb_type: SBType,
-    pub sb_fs: i32,
+    //      NOTE: SB fs is required if the sb type is non-custom.
+    pub sb_fs: Option<i32>,
     // Chan width distribution.
     pub x_distr: ChanWDist,
     pub y_distr: ChanWDist,
@@ -309,21 +313,24 @@ pub struct CompleteInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    // FIXME: The documentation needs to be updated. The documentation says there
+    //        may be a single pack pattern; however, an interconnect may have many
+    //        pack patterns.
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub struct DirectInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub struct MuxInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub enum Interconnect {
@@ -418,6 +425,8 @@ fn parse_port(name: &str,
             "data_in2" => PortClass::MemoryDataInSecond,
             "write_en2" => PortClass::MemoryWriteEnSecond,
             "data_out2" => PortClass::MemoryDataOutSecond,
+            "read_en1" => PortClass::MemoryReadEnFirst,
+            "read_en2" => PortClass::MemoryReadEnSecond,
             _ => panic!("Unknown port class: {}", class),
         },
     };
@@ -620,16 +629,25 @@ fn parse_pin_loc(_name: &str,
     match parser.next() {
         Ok(XmlEvent::Characters(text)) => {
             pin_strings = text.split_whitespace().map(|s| s.to_string()).collect();
-        },
-        _ => panic!("no pin strings found in loc tag."),
-    };
 
-    // Parse the end loc tag. This is just to make this method clean.
-    match parser.next() {
+            // Parse the end loc tag. This is just to make this method clean.
+            match parser.next() {
+                Ok(XmlEvent::EndElement { name }) => {
+                    assert!(name.to_string() == "loc");
+                },
+                _ => panic!("Unexpected tag in loc tag"),
+            };
+        },
         Ok(XmlEvent::EndElement { name }) => {
             assert!(name.to_string() == "loc");
+
+            // FIXME: The Stratix-IV has cases where a loc is provided with no
+            //        pin strings. Need to update the documentation to make this
+            //        clear what to do in this case.
+            // For now, just make the pin strings empty.
+            pin_strings = Vec::new();
         },
-        _ => panic!("Unexpected tag in loc tag"),
+        _ => panic!("Unexpected XML element found in loc tag"),
     };
 
     return PinLoc {
@@ -1337,7 +1355,7 @@ fn parse_device(name: &str,
         input_switch_name: input_switch_name.unwrap(),
         grid_logic_tile_area: grid_logic_tile_area.unwrap(),
         sb_type: sb_type.unwrap(),
-        sb_fs: sb_fs.unwrap(),
+        sb_fs: sb_fs,
         x_distr: x_distr.unwrap(),
         y_distr: y_distr.unwrap(),
     };
@@ -1536,14 +1554,13 @@ fn parse_interconnect(name: &str,
     assert!(input.is_some());
     assert!(output.is_some());
 
-    let mut pack_pattern: Option<PackPattern> = None;
+    let mut pack_patterns: Vec<PackPattern> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pack_pattern" => {
-                        assert!(pack_pattern.is_none());
-                        pack_pattern = Some(parse_pack_pattern(&name.to_string(), &attributes, parser));
+                        pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser));
                     },
                     _ => {},
                 };
@@ -1568,19 +1585,19 @@ fn parse_interconnect(name: &str,
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         "mux" => Interconnect::Mux(MuxInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         "complete" => Interconnect::Complete(CompleteInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         _ => panic!("Unknown interconnect tag: {}", name),
     };

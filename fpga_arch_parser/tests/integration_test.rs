@@ -4,7 +4,7 @@ use std::path::{PathBuf, absolute};
 use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist, SegmentType};
 
 #[test]
-fn test_k4_n4_90nm() {
+fn test_k4_n4_90nm_parse() {
     let input_xml_relative = PathBuf::from("tests/k4_N4_90nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
@@ -60,7 +60,7 @@ fn test_k4_n4_90nm() {
     assert!(matches!(res.device.x_distr, ChanWDist::Uniform { .. }));
     assert!(matches!(res.device.y_distr, ChanWDist::Uniform { .. }));
     assert!(matches!(res.device.sb_type, SBType::Wilton { .. }));
-    assert!(res.device.sb_fs == 3);
+    assert!(res.device.sb_fs == Some(3));
     assert!(res.device.input_switch_name == "ipin_cblock");
 
     // Check segment list
@@ -118,4 +118,18 @@ fn test_vtr_flagship_parse() {
     assert!(io_subtile.capacity == 8);
 
     // TODO: Add stronger tests for the tiles.
+}
+
+#[test]
+fn test_stratix_iv_parse() {
+    let input_xml_relative = PathBuf::from("tests/stratixiv_arch.timing.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+
+    // Check tiles
+    assert!(res.tiles.len() == 6);
 }

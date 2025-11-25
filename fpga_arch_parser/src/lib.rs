@@ -228,8 +228,32 @@ pub struct Switch {
 
 }
 
-pub struct Segment {
+pub enum SegmentAxis {
+    X,
+    Y,
+    XY,
+    Z,
+}
 
+pub enum SegmentType {
+    Bidir,
+    Unidir,
+}
+
+pub enum SegmentResourceType {
+    Gclk,
+    General,
+}
+
+pub struct Segment {
+    pub axis: SegmentAxis,
+    pub name: String,
+    pub length: i32,
+    pub segment_type: SegmentType,
+    pub res_type: SegmentResourceType,
+    pub freq: f32,
+    pub r_metal: f32,
+    pub c_metal: f32,
 }
 
 pub struct PackPattern {
@@ -1149,6 +1173,126 @@ fn parse_device(name: &str,
     };
 }
 
+fn parse_segment(name: &str,
+                 attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) -> Segment {
+    assert!(name == "segment");
+
+    let mut axis = SegmentAxis::XY;
+    let mut name: Option<String> = None;
+    let mut length: Option<i32> = None;
+    let mut segment_type: Option<SegmentType> = None;
+    let mut res_type = SegmentResourceType::General;
+    let mut freq: Option<f32> = None;
+    let mut r_metal: Option<f32> = None;
+    let mut c_metal: Option<f32> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "axis" => {
+                axis = match a.value.as_ref() {
+                    "x" => SegmentAxis::X,
+                    "y" => SegmentAxis::Y,
+                    "z" => SegmentAxis::Z,
+                    _ => panic!("Unknown segment axis for segment: {}", a.value),
+                }
+            },
+            "name" => {
+                assert!(name.is_none());
+                name = Some(a.value.clone());
+            },
+            "length" => {
+                assert!(length.is_none());
+                length = Some(a.value.parse().expect("Segment length expected to be i32 type"));
+            },
+            "type" => {
+                assert!(segment_type.is_none());
+                segment_type = Some(match a.value.as_ref() {
+                    "bidir" => SegmentType::Bidir,
+                    "unidir" => SegmentType::Unidir,
+                    _ => panic!("Unknown segment type: {}", a.value),
+                });
+            },
+            "res_type" => {
+                res_type = match a.value.as_ref() {
+                    "GCLK" => SegmentResourceType::Gclk,
+                    "GENERAL" => SegmentResourceType::General,
+                    _ => panic!("Unknown segment resource type: {}", a.value),
+                };
+            },
+            "freq" => {
+                assert!(freq.is_none());
+                freq = Some(a.value.parse().expect("Segment frequency expected to be f32 type"));
+            },
+            "Rmetal" => {
+                assert!(r_metal.is_none());
+                r_metal = Some(a.value.parse().expect("Segment Rmetal expected to be f32 type"));
+            },
+            "Cmetal" => {
+                assert!(c_metal.is_none());
+                c_metal = Some(a.value.parse().expect("Segment Cmetal expected to be f32 type"));
+            },
+            _ => panic!("Unknown attribute in segment tag: {}", a.to_string()),
+        };
+    }
+
+    // TODO: Need to parse the mux, sb, and cb tags. For now just ignore.
+    let _ = parser.skip();
+
+    // DOCUMENTATION ISSUE: Some architectures do not specify names. This either
+    //                      needs to be enforced or documented as optional.
+    let name = match name {
+        Some(n) => n,
+        None => String::from("UnnamedSegment"),
+    };
+
+    return Segment {
+        name: name,
+        axis: axis,
+        length: length.unwrap(),
+        segment_type: segment_type.unwrap(),
+        res_type: res_type,
+        freq: freq.unwrap(),
+        r_metal: r_metal.unwrap(),
+        c_metal: c_metal.unwrap(),
+    }
+}
+
+fn parse_segment_list(name: &str,
+                      attributes: &Vec<OwnedAttribute>,
+                      parser: &mut EventReader<BufReader<File>>) -> Vec<Segment> {
+    assert!(name == "segmentlist");
+    assert!(attributes.len() == 0);
+
+    let mut segments: Vec<Segment> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "segment" => {
+                        segments.push(parse_segment(&name.to_string(), &attributes, parser));
+                    },
+                    _ => panic!("Unnexpected tag in segmentlist: {}", name.to_string()),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "segmentlist" => break,
+                    _ => panic!("Unnexpected end element in segmentlist: {}", name.to_string()),
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return segments;
+}
+
 fn parse_pack_pattern(name: &str,
                       attributes: &Vec<OwnedAttribute>,
                       parser: &mut EventReader<BufReader<File>>) -> PackPattern {
@@ -1490,6 +1634,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
     let mut tiles: Vec<Tile> = Vec::new();
     let mut layouts: Vec<Layout> = Vec::new();
     let mut device: Option<DeviceInfo> = None;
+    let mut segment_list: Vec<Segment> = Vec::new();
     let mut complex_block_list: Vec<PBType> = Vec::new();
 
     // TODO: We should ignore comments and maybe whitespace.
@@ -1522,8 +1667,8 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                         let _ = parser.skip();
                     },
                     "segmentlist" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        assert!(segment_list.is_empty());
+                        segment_list = parse_segment_list(&name.to_string(), &attributes, &mut parser);
                     },
                     "complexblocklist" => {
                         // TODO: Need to check that we do not see multiple complex block tags.
@@ -1562,7 +1707,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
         layouts: layouts,
         device: device.unwrap(),
         switch_list: Vec::new(),
-        segment_list: Vec::new(),
+        segment_list: segment_list,
         complex_block_list: complex_block_list,
     });
 }

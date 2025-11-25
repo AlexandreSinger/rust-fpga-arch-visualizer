@@ -1,7 +1,7 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist};
+use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist, SegmentType};
 
 #[test]
 fn test_k4_n4_90nm() {
@@ -62,6 +62,14 @@ fn test_k4_n4_90nm() {
     assert!(matches!(res.device.sb_type, SBType::Wilton { .. }));
     assert!(res.device.sb_fs == 3);
     assert!(res.device.input_switch_name == "ipin_cblock");
+
+    // Check segment list
+    assert!(res.segment_list.len() == 1);
+    assert!(res.segment_list[0].freq == 1.0);
+    assert!(res.segment_list[0].length == 1);
+    assert!(matches!(res.segment_list[0].segment_type, SegmentType::Unidir { .. }));
+    assert!(res.segment_list[0].r_metal == 0.0);
+    assert!(res.segment_list[0].c_metal == 0.0);
 
     // Check complex block list.
     assert!(res.complex_block_list.len() == 2);

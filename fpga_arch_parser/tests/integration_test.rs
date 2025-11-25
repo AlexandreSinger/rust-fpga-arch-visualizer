@@ -95,3 +95,27 @@ fn test_k4_n4_90nm() {
     // TODO: Collect stats on the architecture and ensure they match what is
     //       expected.
 }
+
+#[test]
+fn test_vtr_flagship_parse() {
+    let input_xml_relative = PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+
+    // Check tiles
+    let tiles = &res.tiles;
+    assert!(tiles.len() == 4);
+
+    let io_tile = &tiles[0];
+    assert!(io_tile.name == "io");
+    assert!(io_tile.sub_tiles.len() == 1);
+    let io_subtile = &io_tile.sub_tiles[0];
+    assert!(io_subtile.name == "io");
+    assert!(io_subtile.capacity == 8);
+
+    // TODO: Add stronger tests for the tiles.
+}

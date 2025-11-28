@@ -34,6 +34,9 @@ pub enum PortClass {
     MemoryDataInSecond,
     MemoryWriteEnSecond,
     MemoryDataOutSecond,
+    // FIXME: These are not documented by VTR. Documentation needs to be updated.
+    MemoryReadEnFirst,
+    MemoryReadEnSecond,
 }
 
 pub struct InputPort {
@@ -147,10 +150,52 @@ pub struct CornersGridLocation {
     pub priority: i32,
 }
 
+pub struct SingleGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+    pub x_expr: String,
+    pub y_expr: String,
+}
+
+pub struct ColGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+    pub start_x_expr: String,
+    pub repeat_x_expr: Option<String>,
+    pub start_y_expr: String,
+    pub incr_y_expr: String,
+}
+
+pub struct RowGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+    pub start_x_expr: String,
+    pub incr_x_expr: String,
+    pub start_y_expr: String,
+    pub repeat_y_expr: Option<String>,
+}
+
+pub struct RegionGridLocation {
+    pub pb_type: String,
+    pub priority: i32,
+    pub start_x_expr: String,
+    pub end_x_expr: String,
+    pub repeat_x_expr: Option<String>,
+    pub incr_x_expr: String,
+    pub start_y_expr: String,
+    pub end_y_expr: String,
+    pub repeat_y_expr: Option<String>,
+    pub incr_y_expr: String,
+}
+
 pub enum GridLocation {
     Fill(FillGridLocation),
     Perimeter(PerimeterGridLocation),
     Corners(CornersGridLocation),
+    Single(SingleGridLocation),
+    Col(ColGridLocation),
+    Row(RowGridLocation),
+    Region(RegionGridLocation),
 }
 
 pub struct AutoLayout {
@@ -162,6 +207,7 @@ pub struct FixedLayout {
     pub name: String,
     pub width: i32,
     pub height: i32,
+    pub grid_locations: Vec<GridLocation>,
 }
 
 pub enum Layout {
@@ -217,7 +263,8 @@ pub struct DeviceInfo {
     pub grid_logic_tile_area: f32,
     // Switch block.
     pub sb_type: SBType,
-    pub sb_fs: i32,
+    //      NOTE: SB fs is required if the sb type is non-custom.
+    pub sb_fs: Option<i32>,
     // Chan width distribution.
     pub x_distr: ChanWDist,
     pub y_distr: ChanWDist,
@@ -228,8 +275,32 @@ pub struct Switch {
 
 }
 
-pub struct Segment {
+pub enum SegmentAxis {
+    X,
+    Y,
+    XY,
+    Z,
+}
 
+pub enum SegmentType {
+    Bidir,
+    Unidir,
+}
+
+pub enum SegmentResourceType {
+    Gclk,
+    General,
+}
+
+pub struct Segment {
+    pub axis: SegmentAxis,
+    pub name: String,
+    pub length: i32,
+    pub segment_type: SegmentType,
+    pub res_type: SegmentResourceType,
+    pub freq: f32,
+    pub r_metal: f32,
+    pub c_metal: f32,
 }
 
 pub struct PackPattern {
@@ -242,21 +313,24 @@ pub struct CompleteInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    // FIXME: The documentation needs to be updated. The documentation says there
+    //        may be a single pack pattern; however, an interconnect may have many
+    //        pack patterns.
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub struct DirectInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub struct MuxInterconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    pub pack_pattern: Option<PackPattern>,
+    pub pack_patterns: Vec<PackPattern>,
 }
 
 pub enum Interconnect {
@@ -351,6 +425,8 @@ fn parse_port(name: &str,
             "data_in2" => PortClass::MemoryDataInSecond,
             "write_en2" => PortClass::MemoryWriteEnSecond,
             "data_out2" => PortClass::MemoryDataOutSecond,
+            "read_en1" => PortClass::MemoryReadEnFirst,
+            "read_en2" => PortClass::MemoryReadEnSecond,
             _ => panic!("Unknown port class: {}", class),
         },
     };
@@ -553,16 +629,25 @@ fn parse_pin_loc(_name: &str,
     match parser.next() {
         Ok(XmlEvent::Characters(text)) => {
             pin_strings = text.split_whitespace().map(|s| s.to_string()).collect();
-        },
-        _ => panic!("no pin strings found in loc tag."),
-    };
 
-    // Parse the end loc tag. This is just to make this method clean.
-    match parser.next() {
+            // Parse the end loc tag. This is just to make this method clean.
+            match parser.next() {
+                Ok(XmlEvent::EndElement { name }) => {
+                    assert!(name.to_string() == "loc");
+                },
+                _ => panic!("Unexpected tag in loc tag"),
+            };
+        },
         Ok(XmlEvent::EndElement { name }) => {
             assert!(name.to_string() == "loc");
+
+            // FIXME: The Stratix-IV has cases where a loc is provided with no
+            //        pin strings. Need to update the documentation to make this
+            //        clear what to do in this case.
+            // For now, just make the pin strings empty.
+            pin_strings = Vec::new();
         },
-        _ => panic!("Unexpected tag in loc tag"),
+        _ => panic!("Unexpected XML element found in loc tag"),
     };
 
     return PinLoc {
@@ -791,6 +876,16 @@ fn parse_grid_location(name: &str,
 
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
+    let mut x_expr: Option<String> = None;
+    let mut y_expr: Option<String> = None;
+    let mut start_x_expr = String::from("0");
+    let mut end_x_expr = String::from("W - 1");
+    let mut repeat_x_expr: Option<String> = None;
+    let mut incr_x_expr = String::from("w");
+    let mut start_y_expr = String::from("0");
+    let mut end_y_expr = String::from("H - 1");
+    let mut repeat_y_expr: Option<String> = None;
+    let mut incr_y_expr = String::from("h");
 
     for a in attributes {
         match a.name.to_string().as_ref() {
@@ -800,7 +895,39 @@ fn parse_grid_location(name: &str,
             "priority" => {
                 priority = Some(a.value.parse().expect("Not a valid number"));
             },
-            _ => {},
+            "x" => {
+                assert!(x_expr.is_none());
+                x_expr = Some(a.value.clone());
+            },
+            "y" => {
+                assert!(y_expr.is_none());
+                y_expr = Some(a.value.clone());
+            },
+            "startx" => {
+                start_x_expr = a.value.clone();
+            },
+            "endx" => {
+                end_x_expr = a.value.clone();
+            },
+            "repeatx" => {
+                repeat_x_expr = Some(a.value.clone());
+            },
+            "incrx" => {
+                incr_x_expr = a.value.clone();
+            },
+            "starty" => {
+                start_y_expr = a.value.clone();
+            },
+            "endy" => {
+                end_y_expr = a.value.clone();
+            },
+            "repeaty" => {
+                repeat_y_expr = Some(a.value.clone());
+            },
+            "incry" => {
+                incr_y_expr = a.value.clone();
+            },
+            _ => panic!("Unnexpected attribute in grid location: {}", a.to_string()),
         };
     }
 
@@ -827,37 +954,64 @@ fn parse_grid_location(name: &str,
                 priority: priority.unwrap(),
             })
         },
+        "single" => {
+            GridLocation::Single(SingleGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+                x_expr: x_expr.unwrap(),
+                y_expr: y_expr.unwrap(),
+            })
+        },
+        "col" => {
+            GridLocation::Col(ColGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+                start_x_expr: start_x_expr,
+                repeat_x_expr: repeat_x_expr,
+                start_y_expr: start_y_expr,
+                incr_y_expr: incr_y_expr,
+            })
+        },
+        "row" => {
+            GridLocation::Row(RowGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+                start_x_expr: start_x_expr,
+                incr_x_expr: incr_x_expr,
+                start_y_expr: start_y_expr,
+                repeat_y_expr: repeat_y_expr,
+            })
+        },
+        "region" => {
+            GridLocation::Region(RegionGridLocation {
+                pb_type: pb_type.unwrap(),
+                priority: priority.unwrap(),
+                start_x_expr: start_x_expr,
+                end_x_expr: end_x_expr,
+                repeat_x_expr: repeat_x_expr,
+                incr_x_expr: incr_x_expr,
+                start_y_expr: start_y_expr,
+                end_y_expr: end_y_expr,
+                repeat_y_expr: repeat_y_expr,
+                incr_y_expr: incr_y_expr,
+            })
+        },
         _ => {
             panic!("Unknown grid location: {}", name.to_string());
         },
     }
 }
 
-fn parse_auto_layout(_name: &str,
-                     attributes: &Vec<OwnedAttribute>,
-                     parser: &mut EventReader<BufReader<File>>) -> AutoLayout {
-
-    let mut aspect_ratio: f32 = 1.0;
+fn parse_grid_location_list(layout_type_name: &str,
+                            parser: &mut EventReader<BufReader<File>>) -> Vec<GridLocation> {
     let mut grid_locations: Vec<GridLocation> = Vec::new();
-
-    for a in attributes {
-        match a.name.to_string().as_ref() {
-            "aspect_ratio" => {
-                aspect_ratio = a.value.parse().expect("Invalid aspect ratio");
-            },
-            _ => {
-                panic!("Unknown attribute for auto layout: {}", a.name.to_string());
-            },
-        }
-    }
-
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 grid_locations.push(parse_grid_location(&name.to_string(), &attributes));
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "auto_layout" {
+                if name.to_string() == layout_type_name {
                     break;
                 }
             },
@@ -870,10 +1024,69 @@ fn parse_auto_layout(_name: &str,
         }
     };
 
+    return grid_locations;
+}
+
+fn parse_auto_layout(name: &str,
+                     attributes: &Vec<OwnedAttribute>,
+                     parser: &mut EventReader<BufReader<File>>) -> AutoLayout {
+
+    let mut aspect_ratio: f32 = 1.0;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "aspect_ratio" => {
+                aspect_ratio = a.value.parse().expect("Invalid aspect ratio");
+            },
+            _ => {
+                panic!("Unknown attribute for auto layout: {}", a.name.to_string());
+            },
+        }
+    }
+
+    let grid_locations = parse_grid_location_list(name, parser);
+
     return AutoLayout {
         aspect_ratio: aspect_ratio,
         grid_locations: grid_locations,
     };
+}
+
+fn parse_fixed_layout(name: &str,
+                      attributes: &Vec<OwnedAttribute>,
+                      parser: &mut EventReader<BufReader<File>>) -> FixedLayout {
+    let mut layout_name: Option<String> = None;
+    let mut width: Option<i32> = None;
+    let mut height: Option<i32> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(layout_name.is_none());
+                layout_name = Some(a.value.clone());
+            },
+            "width" => {
+                assert!(width.is_none());
+                width = Some(a.value.parse().expect("Width for fixed layout expected to be i32."));
+            },
+            "height" => {
+                assert!(height.is_none());
+                height = Some(a.value.parse().expect("Height for fixed layout expected to be i32."));
+            },
+            _ => {
+                panic!("Unknown attribute for fixed layout: {}", a.name.to_string());
+            },
+        }
+    }
+
+    let grid_locations = parse_grid_location_list(name, parser);
+
+    return FixedLayout {
+        name: layout_name.unwrap(),
+        width: width.unwrap(),
+        height: height.unwrap(),
+        grid_locations: grid_locations,
+    }
 }
 
 fn parse_layouts(_name: &str,
@@ -891,8 +1104,7 @@ fn parse_layouts(_name: &str,
                         layouts.push(Layout::AutoLayout(parse_auto_layout(&name.to_string(), &attributes, parser)));
                     },
                     "fixed_layout" => {
-                        // FIXME: Add error.
-                        let _ = parser.skip();
+                        layouts.push(Layout::FixedLayout(parse_fixed_layout(&name.to_string(), &attributes, parser)));
                     },
                     _ => {},
                 };
@@ -1143,10 +1355,130 @@ fn parse_device(name: &str,
         input_switch_name: input_switch_name.unwrap(),
         grid_logic_tile_area: grid_logic_tile_area.unwrap(),
         sb_type: sb_type.unwrap(),
-        sb_fs: sb_fs.unwrap(),
+        sb_fs: sb_fs,
         x_distr: x_distr.unwrap(),
         y_distr: y_distr.unwrap(),
     };
+}
+
+fn parse_segment(name: &str,
+                 attributes: &Vec<OwnedAttribute>,
+                 parser: &mut EventReader<BufReader<File>>) -> Segment {
+    assert!(name == "segment");
+
+    let mut axis = SegmentAxis::XY;
+    let mut name: Option<String> = None;
+    let mut length: Option<i32> = None;
+    let mut segment_type: Option<SegmentType> = None;
+    let mut res_type = SegmentResourceType::General;
+    let mut freq: Option<f32> = None;
+    let mut r_metal: Option<f32> = None;
+    let mut c_metal: Option<f32> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "axis" => {
+                axis = match a.value.as_ref() {
+                    "x" => SegmentAxis::X,
+                    "y" => SegmentAxis::Y,
+                    "z" => SegmentAxis::Z,
+                    _ => panic!("Unknown segment axis for segment: {}", a.value),
+                }
+            },
+            "name" => {
+                assert!(name.is_none());
+                name = Some(a.value.clone());
+            },
+            "length" => {
+                assert!(length.is_none());
+                length = Some(a.value.parse().expect("Segment length expected to be i32 type"));
+            },
+            "type" => {
+                assert!(segment_type.is_none());
+                segment_type = Some(match a.value.as_ref() {
+                    "bidir" => SegmentType::Bidir,
+                    "unidir" => SegmentType::Unidir,
+                    _ => panic!("Unknown segment type: {}", a.value),
+                });
+            },
+            "res_type" => {
+                res_type = match a.value.as_ref() {
+                    "GCLK" => SegmentResourceType::Gclk,
+                    "GENERAL" => SegmentResourceType::General,
+                    _ => panic!("Unknown segment resource type: {}", a.value),
+                };
+            },
+            "freq" => {
+                assert!(freq.is_none());
+                freq = Some(a.value.parse().expect("Segment frequency expected to be f32 type"));
+            },
+            "Rmetal" => {
+                assert!(r_metal.is_none());
+                r_metal = Some(a.value.parse().expect("Segment Rmetal expected to be f32 type"));
+            },
+            "Cmetal" => {
+                assert!(c_metal.is_none());
+                c_metal = Some(a.value.parse().expect("Segment Cmetal expected to be f32 type"));
+            },
+            _ => panic!("Unknown attribute in segment tag: {}", a.to_string()),
+        };
+    }
+
+    // TODO: Need to parse the mux, sb, and cb tags. For now just ignore.
+    let _ = parser.skip();
+
+    // DOCUMENTATION ISSUE: Some architectures do not specify names. This either
+    //                      needs to be enforced or documented as optional.
+    let name = match name {
+        Some(n) => n,
+        None => String::from("UnnamedSegment"),
+    };
+
+    return Segment {
+        name: name,
+        axis: axis,
+        length: length.unwrap(),
+        segment_type: segment_type.unwrap(),
+        res_type: res_type,
+        freq: freq.unwrap(),
+        r_metal: r_metal.unwrap(),
+        c_metal: c_metal.unwrap(),
+    }
+}
+
+fn parse_segment_list(name: &str,
+                      attributes: &Vec<OwnedAttribute>,
+                      parser: &mut EventReader<BufReader<File>>) -> Vec<Segment> {
+    assert!(name == "segmentlist");
+    assert!(attributes.len() == 0);
+
+    let mut segments: Vec<Segment> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "segment" => {
+                        segments.push(parse_segment(&name.to_string(), &attributes, parser));
+                    },
+                    _ => panic!("Unnexpected tag in segmentlist: {}", name.to_string()),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "segmentlist" => break,
+                    _ => panic!("Unnexpected end element in segmentlist: {}", name.to_string()),
+                }
+            },
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            },
+            // TODO: Handle the other cases.
+            _ => {},
+        }
+    };
+
+    return segments;
 }
 
 fn parse_pack_pattern(name: &str,
@@ -1222,14 +1554,13 @@ fn parse_interconnect(name: &str,
     assert!(input.is_some());
     assert!(output.is_some());
 
-    let mut pack_pattern: Option<PackPattern> = None;
+    let mut pack_patterns: Vec<PackPattern> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pack_pattern" => {
-                        assert!(pack_pattern.is_none());
-                        pack_pattern = Some(parse_pack_pattern(&name.to_string(), &attributes, parser));
+                        pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser));
                     },
                     _ => {},
                 };
@@ -1254,19 +1585,19 @@ fn parse_interconnect(name: &str,
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         "mux" => Interconnect::Mux(MuxInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         "complete" => Interconnect::Complete(CompleteInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_pattern: pack_pattern,
+            pack_patterns: pack_patterns,
         }),
         _ => panic!("Unknown interconnect tag: {}", name),
     };
@@ -1490,6 +1821,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
     let mut tiles: Vec<Tile> = Vec::new();
     let mut layouts: Vec<Layout> = Vec::new();
     let mut device: Option<DeviceInfo> = None;
+    let mut segment_list: Vec<Segment> = Vec::new();
     let mut complex_block_list: Vec<PBType> = Vec::new();
 
     // TODO: We should ignore comments and maybe whitespace.
@@ -1522,8 +1854,8 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                         let _ = parser.skip();
                     },
                     "segmentlist" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        assert!(segment_list.is_empty());
+                        segment_list = parse_segment_list(&name.to_string(), &attributes, &mut parser);
                     },
                     "complexblocklist" => {
                         // TODO: Need to check that we do not see multiple complex block tags.
@@ -1562,7 +1894,7 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
         layouts: layouts,
         device: device.unwrap(),
         switch_list: Vec::new(),
-        segment_list: Vec::new(),
+        segment_list: segment_list,
         complex_block_list: complex_block_list,
     });
 }

@@ -5,6 +5,10 @@
 use eframe::egui;
 
 mod intra_tile;
+mod block_style;
+mod grid;
+mod grid_renderer;
+mod settings;
 mod viewer;
 
 use viewer::FpgaViewer;

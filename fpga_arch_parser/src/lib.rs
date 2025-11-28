@@ -132,6 +132,9 @@ pub struct SubTile {
 pub struct Tile {
     pub name: String,
     pub sub_tiles: Vec<SubTile>,
+    pub width: i32,
+    pub height: i32,
+    pub area: Option<f32>,
 }
 
 // TODO: pb_type and priority is better served as a trait.
@@ -782,18 +785,46 @@ fn parse_sub_tile(_name: &str,
     }
 }
 
-fn parse_tile(_name: &str,
+fn parse_tile(name: &str,
               attributes: &Vec<OwnedAttribute>,
               parser: &mut EventReader<BufReader<File>>) -> Tile {
 
-    // TODO: Verify the name and attributes are expected.
+    assert!(name == "tile");
 
-    let mut tile_name = String::new();
+    let mut tile_name: Option<String> = None;
+    let mut width: Option<i32> = None;
+    let mut height: Option<i32> = None;
+    let mut area: Option<f32> = None;
     for a in attributes {
-        if a.name.to_string().as_str() == "name" {
-            tile_name = a.value.clone();
-        };
+        match a.name.to_string().as_ref() {
+            "name" => {
+                assert!(tile_name.is_none());
+                tile_name = Some(a.value.clone());
+            },
+            "width" => {
+                assert!(width.is_none());
+                width = Some(a.value.parse().expect("Tile width expected to be i32 type."));
+            },
+            "height" => {
+                assert!(height.is_none());
+                height = Some(a.value.parse().expect("Tile height expected to be i32 type."));
+            },
+            "area" => {
+                assert!(area.is_none());
+                area = Some(a.value.parse().expect("Tile area expected to be f32 type."));
+            },
+            _ => panic!("Unnexpected attribute in tile tag: {}", a),
+        }
     }
+
+    let tile_name = match tile_name {
+        Some(n) => n,
+        None => panic!("Tile name required but not given."),
+    };
+
+    // If the width or height is not provided, they are assumed to be 1.
+    let width = width.unwrap_or(1);
+    let height = height.unwrap_or(1);
 
     let mut sub_tiles: Vec<SubTile> = Vec::new();
     loop {
@@ -825,6 +856,9 @@ fn parse_tile(_name: &str,
     Tile {
         name: tile_name,
         sub_tiles,
+        width,
+        height,
+        area,
     }
 }
 

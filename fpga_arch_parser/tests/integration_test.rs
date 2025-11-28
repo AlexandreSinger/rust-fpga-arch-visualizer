@@ -109,6 +109,26 @@ fn test_vtr_flagship_parse() {
     // Check tiles
     let tiles = &res.tiles;
     assert_eq!(tiles.len(), 4);
+    let tile1 = &res.tiles[0];
+    assert_eq!(tile1.name, "io");
+    assert_eq!(tile1.width, 1);
+    assert_eq!(tile1.height, 1);
+    assert_eq!(tile1.area, Some(0.0));
+    let tile2 = &res.tiles[1];
+    assert_eq!(tile2.name, "clb");
+    assert_eq!(tile2.width, 1);
+    assert_eq!(tile2.height, 1);
+    assert_eq!(tile2.area, Some(53_894.0));
+    let tile3 = &res.tiles[2];
+    assert_eq!(tile3.name, "mult_36");
+    assert_eq!(tile3.width, 1);
+    assert_eq!(tile3.height, 4);
+    assert_eq!(tile3.area, Some(396_000.0));
+    let tile4 = &res.tiles[3];
+    assert_eq!(tile4.name, "memory");
+    assert_eq!(tile4.width, 1);
+    assert_eq!(tile4.height, 6);
+    assert_eq!(tile4.area, Some(548_000.0));
 
     let io_tile = &tiles[0];
     assert_eq!(io_tile.name, "io");

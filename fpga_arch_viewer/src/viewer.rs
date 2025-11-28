@@ -1,4 +1,9 @@
 use eframe::egui;
+use fpga_arch_parser::FPGAArch;
+use std::path::PathBuf;
+
+// Import IntraTileState from intra_tile module
+use crate::intra_tile::IntraTileState;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ViewMode {
@@ -9,6 +14,10 @@ enum ViewMode {
 pub struct FpgaViewer {
     view_mode: ViewMode,
     show_about: bool,
+    arch: Option<FPGAArch>,
+    loaded_file: Option<PathBuf>,
+    selected_tile_index: usize,
+    intra_tile_state: IntraTileState,
 }
 
 impl FpgaViewer {
@@ -16,6 +25,10 @@ impl FpgaViewer {
         Self {
             view_mode: ViewMode::InterTile,
             show_about: false,
+            arch: None,
+            loaded_file: None,
+            selected_tile_index: 0,
+            intra_tile_state: IntraTileState::default(),
         }
     }
 }
@@ -27,6 +40,21 @@ impl eframe::App for FpgaViewer {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Architecture File...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("xml", &["xml"])
+                            .pick_file()
+                        {
+                            match fpga_arch_parser::parse(&path) {
+                                Ok(arch) => {
+                                    self.arch = Some(arch);
+                                    self.loaded_file = Some(path);
+                                    self.selected_tile_index = 0;
+                                }
+                                Err(e) => {
+                                    eprintln!("Error parsing file: {}", e);
+                                }
+                            }
+                        }
                         ui.close_menu();
                     }
                     if ui.button("Exit").clicked() {
@@ -62,7 +90,14 @@ impl eframe::App for FpgaViewer {
                 ui.heading("Controls");
                 ui.separator();
 
-                ui.label("No architecture loaded");
+                if let Some(path) = &self.loaded_file {
+                    ui.label(format!(
+                        "Loaded: {}",
+                        path.file_name().unwrap().to_string_lossy()
+                    ));
+                } else {
+                    ui.label("No architecture loaded");
+                }
 
                 ui.separator();
 
@@ -72,6 +107,24 @@ impl eframe::App for FpgaViewer {
                 if self.view_mode == ViewMode::IntraTile {
                     ui.separator();
                     ui.label("Intra-Tile Controls:");
+
+                    if let Some(arch) = &self.arch {
+                        egui::ComboBox::from_label("Select Tile")
+                            .selected_text(if self.selected_tile_index < arch.tiles.len() {
+                                &arch.tiles[self.selected_tile_index].name
+                            } else {
+                                "None"
+                            })
+                            .show_ui(ui, |ui| {
+                                for (i, tile) in arch.tiles.iter().enumerate() {
+                                    ui.selectable_value(
+                                        &mut self.selected_tile_index,
+                                        i,
+                                        &tile.name,
+                                    );
+                                }
+                            });
+                    }
                 }
                 if self.view_mode == ViewMode::InterTile {
                     ui.separator();
@@ -81,15 +134,39 @@ impl eframe::App for FpgaViewer {
 
         // Main window
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.heading("FPGA Architecture Visualizer");
-                ui.add_space(20.0);
-                ui.label("No architecture file loaded.");
-                ui.add_space(10.0);
-                ui.label("Use File > Open Architecture File to load a VTR architecture file.");
-                ui.add_space(20.0);
-                ui.label(format!("Current mode: {:?}", self.view_mode));
-            });
+            if let Some(arch) = &self.arch {
+                match self.view_mode {
+                    ViewMode::InterTile => {
+                        ui.centered_and_justified(|ui| {
+                            ui.heading("Inter-Tile Visualization Placeholder");
+                        });
+                    }
+                    ViewMode::IntraTile => {
+                        if self.selected_tile_index < arch.tiles.len() {
+                            let tile = &arch.tiles[self.selected_tile_index];
+                            ui.heading(format!("Intra-Tile View: {}", tile.name));
+                            crate::intra_tile::render_intra_tile_view(
+                                ui,
+                                arch,
+                                tile,
+                                &mut self.intra_tile_state,
+                            );
+                        } else {
+                            ui.label("No tile selected.");
+                        }
+                    }
+                }
+            } else {
+                ui.centered_and_justified(|ui| {
+                    ui.heading("FPGA Architecture Visualizer");
+                    ui.add_space(20.0);
+                    ui.label("No architecture file loaded.");
+                    ui.add_space(10.0);
+                    ui.label("Use File > Open Architecture File to load a VTR architecture file.");
+                    ui.add_space(20.0);
+                    ui.label(format!("Current mode: {:?}", self.view_mode));
+                });
+            }
         });
 
         // About window

@@ -10,3 +10,4 @@ fpga_arch_parser = { path = "../fpga_arch_parser" }
 eframe = "0.27"
 egui = "0.27"
 egui_plot = "0.27"
+rfd = "0.15.4"

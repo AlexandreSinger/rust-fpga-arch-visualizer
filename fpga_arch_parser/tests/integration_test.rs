@@ -132,4 +132,27 @@ fn test_stratix_iv_parse() {
 
     // Check tiles
     assert_eq!(res.tiles.len(), 6);
+
+    // Check layouts
+    assert_eq!(res.layouts.len(), 7);
+
+    // Check segments
+    assert_eq!(res.segment_list.len(), 2);
+    let seg1 = &res.segment_list[0];
+    assert_eq!(seg1.name, "L4");
+    assert_eq!(seg1.freq, 260.0);
+    assert_eq!(seg1.length, 4);
+    assert!(matches!(seg1.segment_type, SegmentType::Unidir));
+    assert_eq!(seg1.r_metal, 201.7);
+    assert_eq!(seg1.c_metal, 18.0e-15);
+    let seg2 = &res.segment_list[1];
+    assert_eq!(seg2.name, "L16");
+    assert_eq!(seg2.freq, 40.0);
+    assert_eq!(seg2.length, 16);
+    assert!(matches!(seg2.segment_type, SegmentType::Unidir));
+    assert_eq!(seg2.r_metal, 50.42);
+    assert_eq!(seg2.c_metal, 20.7e-15);
+
+    // Check complex blocks.
+    assert_eq!(res.complex_block_list.len(), 6);
 }

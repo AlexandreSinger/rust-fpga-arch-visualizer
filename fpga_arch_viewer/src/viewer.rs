@@ -30,14 +30,14 @@ pub struct FpgaViewer {
     // Grid dimensions (for AutoLayout)
     grid_width: usize,
     grid_height: usize,
-    aspect_ratio: f32, // Stored from AutoLayout
+    aspect_ratio: f32,
+    // Currently loaded architecture file path
+    loaded_file_path: Option<std::path::PathBuf>,
 }
 
 impl FpgaViewer {
     pub fn new() -> Self {
-        // TODO: now only load one test file, Jack has code for opening arch file - replace that to here
-        let (device_grid, aspect_ratio, width, height) = Self::load_default_architecture();
-
+        // Start with no grid - user will load architecture file via File menu
         Self {
             view_mode: ViewMode::InterTile,
             show_about: false,
@@ -45,60 +45,68 @@ impl FpgaViewer {
             show_layer_list: false,
             navigation_history: Vec::new(),
             block_styles: DefaultBlockStyles::new(),
-            device_grid,
-            grid_width: width,
-            grid_height: height,
-            aspect_ratio,
+            device_grid: None,
+            grid_width: 10,
+            grid_height: 10,
+            aspect_ratio: 1.0,
+            loaded_file_path: None,
         }
     }
 
-    // TODO: only for testing, can delete this
-    fn load_default_architecture() -> (Option<DeviceGrid>, f32, usize, usize) {
-        use std::path::PathBuf;
-
-        let test_path = PathBuf::from("../fpga_arch_parser/tests/k4_N4_90nm.xml");
-
-        if let Ok(parsed) = fpga_arch_parser::parse(&test_path) {
-            if let Some(layout) = parsed.layouts.first() {
-                match layout {
-                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                        let default_size = 10;
-                        let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
-                        let width = grid.width;
-                        let height = grid.height;
-                        let aspect_ratio = auto_layout.aspect_ratio;
-                        return (Some(grid), aspect_ratio, width, height);
+    fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
+        match fpga_arch_parser::parse(&file_path) {
+            Ok(parsed) => {
+                if let Some(layout) = parsed.layouts.first() {
+                    match layout {
+                        fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                            let default_size = 10;
+                            let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                            self.grid_width = grid.width;
+                            self.grid_height = grid.height;
+                            self.aspect_ratio = auto_layout.aspect_ratio;
+                            self.device_grid = Some(grid);
+                            self.loaded_file_path = Some(file_path);
+                            println!("Successfully loaded architecture file");
+                        }
+                        fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
+                            eprintln!("FixedLayout not yet supported");
+                        }
                     }
-                    fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
-                        eprintln!("FixedLayout not yet supported");
-                        return (None, 1.0, 10, 10);
-                    }
+                } else {
+                    eprintln!("No layouts found in architecture file");
                 }
             }
-        } else {
-            eprintln!("Failed to load k4_N4_90nm.xml, using no grid");
+            Err(e) => {
+                eprintln!("Failed to parse architecture file: {:?}", e);
+            }
         }
-
-        (None, 1.0, 10, 10)
     }
 
-    /// Rebuild the grid with new dimensions based on current architecture
+    fn open_file_dialog(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("XML Architecture Files", &["xml"])
+            .set_title("Open FPGA Architecture File")
+            .pick_file()
+        {
+            self.load_architecture_file(path);
+        }
+    }
+
+    // Rebuild the grid with new dimensions based on current architecture
     fn rebuild_grid(&mut self) {
-        use std::path::PathBuf;
-
-        let test_path = PathBuf::from("../fpga_arch_parser/tests/k4_N4_90nm.xml");
-
-        if let Ok(parsed) = fpga_arch_parser::parse(&test_path) {
-            if let Some(layout) = parsed.layouts.first() {
-                match layout {
-                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                        // Calculate default_size based on which dimension user is controlling
-                        // Use the larger dimension as the default_size
-                        let default_size = self.grid_width.max(self.grid_height);
-                        let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
-                        self.device_grid = Some(grid);
+        if let Some(file_path) = &self.loaded_file_path.clone() {
+            if let Ok(parsed) = fpga_arch_parser::parse(file_path) {
+                if let Some(layout) = parsed.layouts.first() {
+                    match layout {
+                        fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                            // Calculate default_size based on which dimension user is controlling
+                            // Use the larger dimension as the default_size
+                            let default_size = self.grid_width.max(self.grid_height);
+                            let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                            self.device_grid = Some(grid);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -134,7 +142,7 @@ impl eframe::App for FpgaViewer {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Architecture File...").clicked() {
-                        // TODO: Jack's code here
+                        self.open_file_dialog();
                         ui.close_menu();
                     }
                     if ui.button("Exit").clicked() {

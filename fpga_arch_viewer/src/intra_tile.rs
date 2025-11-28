@@ -1,6 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::hierarchy_tree;
 
@@ -10,6 +10,38 @@ pub struct IntraTileState {
     highlighted_positions_this_frame: Vec<egui::Pos2>,
     highlighted_positions_next_frame: Vec<egui::Pos2>,
     hierarchy_tree_height: Option<f32>,
+    expanded_blocks: HashSet<String>,
+}
+
+pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_path: &str) {
+    state.expanded_blocks.insert(instance_path.to_string());
+
+    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let children = if !pb_type.modes.is_empty() {
+        if mode_index < pb_type.modes.len() {
+            &pb_type.modes[mode_index].pb_types
+        } else {
+            &pb_type.modes[0].pb_types
+        }
+    } else {
+        &pb_type.pb_types
+    };
+
+    for child_pb in children {
+        for i in 0..child_pb.num_pb {
+            let instance_name = if child_pb.num_pb == 1 {
+                child_pb.name.clone()
+            } else {
+                format!("{}[{}]", child_pb.name, i)
+            };
+            let child_path = format!("{}.{}", instance_path, instance_name);
+            expand_all_blocks(state, child_pb, &child_path);
+        }
+    }
+}
+
+pub fn collapse_all_blocks(state: &mut IntraTileState) {
+    state.expanded_blocks.clear();
 }
 
 pub fn render_intra_tile_view(
@@ -19,6 +51,7 @@ pub fn render_intra_tile_view(
     state: &mut IntraTileState,
     show_hierarchy_tree: bool,
     sub_tile_index: usize,
+    expand_all: bool,
 ) {
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
@@ -124,6 +157,7 @@ pub fn render_intra_tile_view(
                                     state,
                                     &root_pb.name,
                                     ui,
+                                    expand_all,
                                 );
                             } else {
                                 ui.label("Root PBType not found");
@@ -166,6 +200,7 @@ pub fn render_intra_tile_view(
                                 state,
                                 &root_pb.name,
                                 ui,
+                                expand_all,
                             );
                         } else {
                             ui.label("Root PBType not found");
@@ -203,6 +238,8 @@ fn get_layout_direction(children: &[PBType]) -> LayoutDirection {
 }
 
 fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str) -> egui::Vec2 {
+    let is_expanded = state.expanded_blocks.contains(instance_path);
+
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
 
     let children = if !pb_type.modes.is_empty() {
@@ -214,6 +251,21 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     } else {
         &pb_type.pb_types
     };
+
+    if !is_expanded && !children.is_empty() {
+        // Calculate minimum width needed for block name in header
+        let font = egui::FontId::proportional(14.0);
+        let name_char_width = font.size * 0.6;
+        let name_width = pb_type.name.len() as f32 * name_char_width;
+        let header_name_width = name_width + 25.0; // Expand indicator space
+        let header_name_width_with_selector = if !pb_type.modes.is_empty() {
+            header_name_width + 130.0 // Mode selector space
+        } else {
+            header_name_width
+        };
+        let min_width = MIN_BLOCK_SIZE.x.max(header_name_width_with_selector);
+        return egui::vec2(min_width, HEADER_HEIGHT);
+    }
 
     if children.is_empty() {
         let total_input_pins: i32 = pb_type
@@ -254,8 +306,21 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
             0.0
         };
 
+        // Calculate minimum width needed for block name in header
+        let font = egui::FontId::proportional(14.0);
+        let name_char_width = font.size * 0.6;
+        let name_width = pb_type.name.len() as f32 * name_char_width;
+        let header_name_width = name_width + 5.0; // Margin
+        let header_name_width_with_selector = if !pb_type.modes.is_empty() {
+            header_name_width + 130.0 // Mode selector space
+        } else {
+            header_name_width
+        };
+
         let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
-        let required_width = min_width_for_clock.max(MIN_BLOCK_SIZE.x);
+        let required_width = min_width_for_clock
+            .max(MIN_BLOCK_SIZE.x)
+            .max(header_name_width_with_selector);
 
         return egui::vec2(required_width, required_height);
     }
@@ -360,7 +425,25 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         0.0
     };
 
-    let w = (total_w + PADDING * 2.0 + interconnect_width).max(MIN_BLOCK_SIZE.x);
+    // Calculate minimum width needed for block name in header
+    let font = egui::FontId::proportional(14.0);
+    let name_char_width = font.size * 0.6;
+    let name_width = pb_type.name.len() as f32 * name_char_width;
+    // Add padding for expand indicator, mode selector, and margins
+    let header_name_width = if !children.is_empty() {
+        name_width + 25.0 // Expand indicator space
+    } else {
+        name_width + 5.0 // Just margin
+    };
+    let header_name_width_with_selector = if !pb_type.modes.is_empty() {
+        header_name_width + 130.0 // Mode selector space
+    } else {
+        header_name_width
+    };
+
+    let w = (total_w + PADDING * 2.0 + interconnect_width)
+        .max(MIN_BLOCK_SIZE.x)
+        .max(header_name_width_with_selector);
     let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
         .max(MIN_BLOCK_SIZE.y)
         .max(min_port_height);
@@ -406,9 +489,83 @@ fn draw_pb_type(
     state: &mut IntraTileState,
     instance_path: &str,
     ui: &mut egui::Ui,
+    expand_all: bool,
 ) -> HashMap<String, egui::Pos2> {
     let size = measure_pb_type(pb_type, state, instance_path);
     let rect = egui::Rect::from_min_size(pos, size);
+
+    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let children = if !pb_type.modes.is_empty() {
+        if mode_index < pb_type.modes.len() {
+            &pb_type.modes[mode_index].pb_types
+        } else {
+            &pb_type.modes[0].pb_types
+        }
+    } else {
+        &pb_type.pb_types
+    };
+
+    let has_children = !children.is_empty();
+    let is_expanded = state.expanded_blocks.contains(instance_path);
+
+    // Draw header with expand/collapse indicator
+    let header_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+
+    // Make header clickable if it has children
+    if has_children {
+        let header_response = ui.allocate_ui_at_rect(header_rect, |ui| {
+            ui.allocate_response(header_rect.size(), egui::Sense::click())
+        });
+
+        if header_response.inner.clicked() {
+            if is_expanded {
+                state.expanded_blocks.remove(instance_path);
+            } else {
+                state.expanded_blocks.insert(instance_path.to_string());
+            }
+        }
+    }
+
+    // If collapsed, only draw header and return empty port map
+    if !is_expanded && has_children {
+        // Draw just the header background
+        painter.rect(
+            header_rect,
+            egui::Rounding::ZERO,
+            egui::Color32::from_rgb(200, 200, 200),
+            egui::Stroke::NONE,
+        );
+
+        // Draw block name in header
+        let name_x = if has_children {
+            header_rect.min.x + 25.0
+        } else {
+            header_rect.min.x + 5.0
+        };
+        let font = egui::FontId::proportional(14.0);
+        painter.text(
+            egui::pos2(name_x, header_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            &pb_type.name,
+            font,
+            egui::Color32::BLACK,
+        );
+
+        // Draw expand/collapse indicator on top
+        if has_children {
+            let indicator_x = header_rect.min.x + 8.0;
+            let indicator_y = header_rect.center().y;
+            painter.text(
+                egui::pos2(indicator_x, indicator_y),
+                egui::Align2::LEFT_CENTER,
+                "▶",
+                egui::FontId::proportional(12.0),
+                egui::Color32::BLACK,
+            );
+        }
+
+        return HashMap::new();
+    }
 
     // Determine specific visual style based on class
     let my_ports = match pb_type.class {
@@ -417,6 +574,20 @@ fn draw_pb_type(
         PBTypeClass::Memory => draw_memory(painter, rect, pb_type, state, ui),
         PBTypeClass::None => draw_generic_block(painter, rect, pb_type, state, ui),
     };
+
+    // Draw expand/collapse indicator on top of header (after block is drawn)
+    // Only show indicator when collapsed
+    if has_children && !is_expanded {
+        let indicator_x = header_rect.min.x + 8.0;
+        let indicator_y = header_rect.center().y;
+        painter.text(
+            egui::pos2(indicator_x, indicator_y),
+            egui::Align2::LEFT_CENTER,
+            "▶",
+            egui::FontId::proportional(12.0),
+            egui::Color32::BLACK,
+        );
+    }
 
     if pb_type.modes.len() > 1 {
         let mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
@@ -460,24 +631,16 @@ fn draw_pb_type(
             state
                 .selected_modes
                 .insert(instance_path.to_string(), selected_mode);
+            // If expand_all is enabled, re-expand all blocks for this instance
+            if expand_all {
+                expand_all_blocks(state, pb_type, instance_path);
+            }
         }
     }
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
-
-    let children = if !pb_type.modes.is_empty() {
-        if mode_index < pb_type.modes.len() {
-            &pb_type.modes[mode_index].pb_types
-        } else {
-            &pb_type.modes[0].pb_types
-        }
-    } else {
-        &pb_type.pb_types
-    };
-
     let mut children_ports: HashMap<String, egui::Pos2> = HashMap::new();
 
-    if !children.is_empty() {
+    if has_children && is_expanded {
         let direction = get_layout_direction(children);
 
         let start_x = rect.min.x + PADDING;
@@ -498,7 +661,8 @@ fn draw_pb_type(
                 let child_single_size = measure_pb_type(child_pb, state, &child_path);
 
                 let pos = egui::pos2(cursor_x, cursor_y);
-                let child_map = draw_pb_type(painter, child_pb, pos, state, &child_path, ui);
+                let child_map =
+                    draw_pb_type(painter, child_pb, pos, state, &child_path, ui, expand_all);
 
                 for (port_name, p) in child_map {
                     children_ports.insert(format!("{}.{}", instance_name, port_name), p);
@@ -530,58 +694,60 @@ fn draw_pb_type(
         }
     }
 
-    let interconnects = if !pb_type.modes.is_empty() {
-        if mode_index < pb_type.modes.len() {
-            &pb_type.modes[mode_index].interconnects
-        } else {
-            &pb_type.modes[0].interconnects
-        }
-    } else {
-        &pb_type.interconnects
-    };
-
-    for inter in interconnects {
-        let (input_str, output_str, kind) = match inter {
-            fpga_arch_parser::Interconnect::Direct(d) => (&d.input, &d.output, "direct"),
-            fpga_arch_parser::Interconnect::Mux(m) => (&m.input, &m.output, "mux"),
-            fpga_arch_parser::Interconnect::Complete(c) => (&c.input, &c.output, "complete"),
-        };
-
-        let raw_sources = expand_port_list(input_str);
-        let raw_sinks = expand_port_list(output_str);
-        let sources = resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
-        let sinks = resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
-
-        if kind == "direct" {
-            for (i, src) in sources.iter().enumerate() {
-                if i < sinks.len() {
-                    let dst = &sinks[i];
-                    draw_connection(
-                        painter,
-                        src,
-                        dst,
-                        pb_type,
-                        &my_ports,
-                        &children_ports,
-                        state,
-                        ui,
-                        rect,
-                    );
-                }
+    if has_children && is_expanded {
+        let interconnects = if !pb_type.modes.is_empty() {
+            if mode_index < pb_type.modes.len() {
+                &pb_type.modes[mode_index].interconnects
+            } else {
+                &pb_type.modes[0].interconnects
             }
         } else {
-            draw_interconnect_block(
-                painter,
-                kind,
-                &sources,
-                &sinks,
-                pb_type,
-                &my_ports,
-                &children_ports,
-                state,
-                ui,
-                rect,
-            );
+            &pb_type.interconnects
+        };
+
+        for inter in interconnects {
+            let (input_str, output_str, kind) = match inter {
+                fpga_arch_parser::Interconnect::Direct(d) => (&d.input, &d.output, "direct"),
+                fpga_arch_parser::Interconnect::Mux(m) => (&m.input, &m.output, "mux"),
+                fpga_arch_parser::Interconnect::Complete(c) => (&c.input, &c.output, "complete"),
+            };
+
+            let raw_sources = expand_port_list(input_str);
+            let raw_sinks = expand_port_list(output_str);
+            let sources = resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+            let sinks = resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+            if kind == "direct" || kind == "complete" {
+                for (i, src) in sources.iter().enumerate() {
+                    if i < sinks.len() {
+                        let dst = &sinks[i];
+                        draw_connection(
+                            painter,
+                            src,
+                            dst,
+                            pb_type,
+                            &my_ports,
+                            &children_ports,
+                            state,
+                            ui,
+                            rect,
+                        );
+                    }
+                }
+            } else {
+                draw_interconnect_block(
+                    painter,
+                    kind,
+                    &sources,
+                    &sinks,
+                    pb_type,
+                    &my_ports,
+                    &children_ports,
+                    state,
+                    ui,
+                    rect,
+                );
+            }
         }
     }
 

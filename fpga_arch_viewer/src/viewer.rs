@@ -46,6 +46,8 @@ pub struct FpgaViewer {
     // Show hierarchy tree in intra-tile view
     show_hierarchy_tree: bool,
     intra_tile_state: IntraTileState,
+    // Track if all blocks are expanded
+    all_blocks_expanded: bool,
 }
 
 impl FpgaViewer {
@@ -68,6 +70,36 @@ impl FpgaViewer {
             selected_sub_tile_index: 0,
             show_hierarchy_tree: false,
             intra_tile_state: IntraTileState::default(),
+            all_blocks_expanded: false,
+        }
+    }
+
+    fn apply_expand_all_state(&mut self) {
+        if self.all_blocks_expanded {
+            if let Some(arch) = &self.architecture {
+                if let Some(tile_name) = &self.selected_tile_name {
+                    if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
+                        if self.selected_sub_tile_index < tile.sub_tiles.len() {
+                            let sub_tile = &tile.sub_tiles[self.selected_sub_tile_index];
+                            if let Some(site) = sub_tile.equivalent_sites.first() {
+                                if let Some(root_pb) = arch
+                                    .complex_block_list
+                                    .iter()
+                                    .find(|pb| pb.name == site.pb_type)
+                                {
+                                    crate::intra_tile::expand_all_blocks(
+                                        &mut self.intra_tile_state,
+                                        root_pb,
+                                        &root_pb.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            crate::intra_tile::collapse_all_blocks(&mut self.intra_tile_state);
         }
     }
 
@@ -485,6 +517,14 @@ impl eframe::App for FpgaViewer {
 
                     // Hierarchy tree toggle
                     ui.checkbox(&mut self.show_hierarchy_tree, "Show Hierarchy Tree");
+
+                    // Expand All toggle
+                    let mut expand_all = self.all_blocks_expanded;
+                    if ui.checkbox(&mut expand_all, "Expand All").changed() {
+                        self.all_blocks_expanded = expand_all;
+                        self.apply_expand_all_state();
+                    }
+
                     ui.add_space(10.0);
                     ui.separator();
                     ui.add_space(10.0);
@@ -520,6 +560,7 @@ impl eframe::App for FpgaViewer {
                             {
                                 self.selected_tile_name = Some(selected_tile_name);
                                 self.selected_sub_tile_index = 0;
+                                self.apply_expand_all_state();
                             }
                         } else {
                             ui.label("No tiles available in architecture");
@@ -540,6 +581,7 @@ impl eframe::App for FpgaViewer {
                                     self.selected_tile_name = Some(clicked_tile);
                                     self.selected_sub_tile_index = 0;
                                     self.view_mode = ViewMode::IntraTile;
+                                    self.apply_expand_all_state();
                                 }
                             } else {
                                 // No grid loaded, show welcome message
@@ -567,6 +609,7 @@ impl eframe::App for FpgaViewer {
                                         &mut self.intra_tile_state,
                                         self.show_hierarchy_tree,
                                         sub_tile_index,
+                                        self.all_blocks_expanded,
                                     );
                                 } else {
                                     self.render_centered_message(

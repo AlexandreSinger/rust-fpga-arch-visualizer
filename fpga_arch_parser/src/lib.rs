@@ -721,7 +721,7 @@ fn parse_sub_tile(_name: &str,
                   parser: &mut EventReader<BufReader<File>>) -> SubTile {
 
     let mut sub_tile_name: Option<String> = None;
-    let mut sub_tile_capacity: i32 = -1;
+    let mut sub_tile_capacity: i32 = 1;
     for a in attributes {
         match a.name.to_string().as_str() {
             "name" => {

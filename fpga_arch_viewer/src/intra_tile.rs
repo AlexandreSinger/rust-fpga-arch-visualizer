@@ -263,7 +263,25 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         } else {
             header_name_width
         };
-        let min_width = MIN_BLOCK_SIZE.x.max(header_name_width_with_selector);
+
+        // Calculate width needed for blif_model if present
+        let blif_model_width = match pb_type.class {
+            PBTypeClass::None => {
+                if let Some(blif_model) = &pb_type.blif_model {
+                    let blif_font = egui::FontId::monospace(14.0);
+                    let blif_char_width = blif_font.size * 0.6;
+                    blif_model.len() as f32 * blif_char_width + 20.0
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        };
+
+        let min_width = MIN_BLOCK_SIZE
+            .x
+            .max(header_name_width_with_selector)
+            .max(blif_model_width);
         return egui::vec2(min_width, HEADER_HEIGHT);
     }
 
@@ -317,10 +335,20 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
             header_name_width
         };
 
+        // Calculate width needed for blif_model if present
+        let blif_model_width = if let Some(blif_model) = &pb_type.blif_model {
+            let blif_font = egui::FontId::monospace(14.0);
+            let blif_char_width = blif_font.size * 0.6; // Monospace font character width
+            blif_model.len() as f32 * blif_char_width + 20.0 // Add padding
+        } else {
+            0.0
+        };
+
         let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
         let required_width = min_width_for_clock
             .max(MIN_BLOCK_SIZE.x)
-            .max(header_name_width_with_selector);
+            .max(header_name_width_with_selector)
+            .max(blif_model_width);
 
         return egui::vec2(required_width, required_height);
     }
@@ -441,9 +469,24 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         header_name_width
     };
 
+    // Calculate width needed for blif_model if present
+    let blif_model_width = match pb_type.class {
+        PBTypeClass::None => {
+            if let Some(blif_model) = &pb_type.blif_model {
+                let blif_font = egui::FontId::monospace(14.0);
+                let blif_char_width = blif_font.size * 0.6; // Monospace font character width
+                blif_model.len() as f32 * blif_char_width + 20.0 // Add padding
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    };
+
     let w = (total_w + PADDING * 2.0 + interconnect_width)
         .max(MIN_BLOCK_SIZE.x)
-        .max(header_name_width_with_selector);
+        .max(header_name_width_with_selector)
+        .max(blif_model_width);
     let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
         .max(MIN_BLOCK_SIZE.y)
         .max(min_port_height);
@@ -572,7 +615,13 @@ fn draw_pb_type(
         PBTypeClass::Lut => draw_lut(painter, rect, pb_type, state, ui),
         PBTypeClass::FlipFlop => draw_flip_flop(painter, rect, pb_type, state, ui),
         PBTypeClass::Memory => draw_memory(painter, rect, pb_type, state, ui),
-        PBTypeClass::None => draw_generic_block(painter, rect, pb_type, state, ui),
+        PBTypeClass::None => {
+            if pb_type.blif_model.is_some() {
+                draw_blif_block(painter, rect, pb_type, state, ui)
+            } else {
+                draw_generic_block(painter, rect, pb_type, state, ui)
+            }
+        }
     };
 
     // Draw expand/collapse indicator on top of header (after block is drawn)
@@ -1275,6 +1324,53 @@ fn draw_memory(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
+        egui::Color32::BLACK,
+    );
+
+    let mut port_map = HashMap::new();
+    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
+    port_map
+}
+
+fn draw_blif_block(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    pb_type: &PBType,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+) -> HashMap<String, egui::Pos2> {
+    painter.rect(
+        rect,
+        0.0,
+        egui::Color32::from_rgb(255, 220, 220), // Light Pink/Red
+        egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 0, 0)),
+    );
+
+    // Title bar
+    let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+    painter.rect(
+        title_rect,
+        egui::Rounding::ZERO,
+        egui::Color32::from_rgb(200, 200, 200),
+        egui::Stroke::NONE,
+    );
+
+    // Display blif_model name in center
+    if let Some(blif_model) = &pb_type.blif_model {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            blif_model,
+            egui::FontId::monospace(14.0),
+            egui::Color32::from_rgb(180, 0, 0),
+        );
+    }
+
+    painter.text(
+        rect.min + egui::vec2(5.0, 5.0),
+        egui::Align2::LEFT_TOP,
+        &pb_type.name,
+        egui::FontId::proportional(14.0),
         egui::Color32::BLACK,
     );
 

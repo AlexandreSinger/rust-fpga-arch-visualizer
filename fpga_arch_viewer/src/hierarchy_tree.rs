@@ -8,7 +8,7 @@ pub fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
             .show(ui, |ui| {
                 ui.label(format!("Capacity: {}", sub_tile.capacity));
                 for site in &sub_tile.equivalent_sites {
-                    ui.label(format!("Site PB Type: {}", site.pb_type));
+                    ui.label(format!("Equivalent Site PB Type: {}", site.pb_type));
                     // Find the PBType definition
                     if let Some(pb_type) = arch
                         .complex_block_list
@@ -50,7 +50,6 @@ fn render_interconnects(ui: &mut egui::Ui, interconnects: &[fpga_arch_parser::In
     }
 }
 
-/// Recursively renders a PBType and its children.
 fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
@@ -61,7 +60,7 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
             }
             match pb_type.class {
                 PBTypeClass::Lut => {
-                    ui.label(egui::RichText::new("[LUT]").color(egui::Color32::YELLOW));
+                    ui.label(egui::RichText::new("[LUT]").color(egui::Color32::GOLD));
                 }
                 PBTypeClass::FlipFlop => {
                     ui.label(egui::RichText::new("[FF]").color(egui::Color32::LIGHT_BLUE));

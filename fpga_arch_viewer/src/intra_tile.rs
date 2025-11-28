@@ -132,23 +132,23 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
                         if !mode.interconnects.is_empty() {
                             ui.collapsing("Interconnects", |ui| {
                                 for inter in &mode.interconnects {
-                                    let (kind, name, input, output, pack_pattern) = match inter {
+                                    let (kind, name, input, output, pack_patterns) = match inter {
                                         fpga_arch_parser::Interconnect::Direct(d) => (
                                             "Direct",
                                             &d.name,
                                             &d.input,
                                             &d.output,
-                                            &d.pack_pattern,
+                                            &d.pack_patterns,
                                         ),
                                         fpga_arch_parser::Interconnect::Mux(m) => {
-                                            ("Mux", &m.name, &m.input, &m.output, &m.pack_pattern)
+                                            ("Mux", &m.name, &m.input, &m.output, &m.pack_patterns)
                                         }
                                         fpga_arch_parser::Interconnect::Complete(c) => (
                                             "Complete",
                                             &c.name,
                                             &c.input,
                                             &c.output,
-                                            &c.pack_pattern,
+                                            &c.pack_patterns,
                                         ),
                                     };
                                     ui.horizontal(|ui| {
@@ -156,8 +156,10 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
                                             "{}: {} ({} -> {})",
                                             kind, name, input, output
                                         ));
-                                        if let Some(pp) = pack_pattern {
-                                            ui.label(format!("[Pack: {}]", pp.name));
+                                        if !pack_patterns.is_empty() {
+                                            for pp in pack_patterns {
+                                                ui.label(format!("[Pack: {}]", pp.name));
+                                            }
                                         }
                                     });
                                 }

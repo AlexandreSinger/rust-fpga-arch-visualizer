@@ -106,16 +106,9 @@ impl Default for DefaultBlockStyles {
     }
 }
 
-pub fn draw_block(
-    ui: &mut egui::Ui,
-    style: &BlockStyle,
-    base_size: f32,
-) -> egui::Response {
+pub fn draw_block(ui: &mut egui::Ui, style: &BlockStyle, base_size: f32) -> egui::Response {
     let size = base_size * style.size_multiplier;
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(size, size),
-        egui::Sense::hover(),
-    );
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
@@ -131,13 +124,8 @@ pub fn draw_block(
                 );
 
                 // Draw outline
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    egui::Stroke::new(2.0, outline_color),
-                );
-            }
-            // Future shapes can be added here
+                painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, outline_color));
+            } // Future shapes can be added here
         }
 
         // Draw text in center

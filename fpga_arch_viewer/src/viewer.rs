@@ -41,7 +41,10 @@ pub struct FpgaViewer {
     architecture: Option<FPGAArch>,
     // Selected tile for intra-tile view
     selected_tile_name: Option<String>,
-    // Intra-tile state
+    // Selected sub_tile for intra-tile view
+    selected_sub_tile_index: usize,
+    // Show hierarchy tree in intra-tile view
+    show_hierarchy_tree: bool,
     intra_tile_state: IntraTileState,
 }
 
@@ -62,6 +65,8 @@ impl FpgaViewer {
             loaded_file_path: None,
             architecture: None,
             selected_tile_name: None,
+            selected_sub_tile_index: 0,
+            show_hierarchy_tree: false,
             intra_tile_state: IntraTileState::default(),
         }
     }
@@ -158,6 +163,24 @@ impl FpgaViewer {
     fn open_settings(&mut self) {
         self.current_page = Page::Settings;
     }
+
+    fn render_welcome_message(&self, ui: &mut egui::Ui) {
+        let available_rect = ui.available_rect_before_wrap();
+        ui.allocate_ui_at_rect(
+            egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0)),
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading("FPGA Architecture Visualizer");
+                    ui.add_space(20.0);
+                    ui.label("No architecture file loaded.");
+                    ui.add_space(10.0);
+                    ui.label("Use File > Open Architecture File to load a VTR architecture file.");
+                    ui.add_space(20.0);
+                    ui.label(format!("Current mode: {:?}", self.view_mode));
+                });
+            },
+        );
+    }
 }
 
 impl eframe::App for FpgaViewer {
@@ -246,9 +269,10 @@ impl eframe::App for FpgaViewer {
                     ui.add_space(10.0);
 
                     // Back button (◀ icon)
-                    // Returns to previous layer or exits settings page
-                    let back_enabled =
-                        self.current_page == Page::Settings || !self.navigation_history.is_empty();
+                    // Returns to previous layer, exits settings page, or goes back from intra-tile view
+                    let back_enabled = self.current_page == Page::Settings
+                        || self.view_mode == ViewMode::IntraTile
+                        || !self.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
                             [BUTTON_SIZE, BUTTON_SIZE],
@@ -264,6 +288,8 @@ impl eframe::App for FpgaViewer {
                         egui::show_tooltip_at_pointer(ctx, egui::Id::new("back_tooltip"), |ui| {
                             if self.current_page == Page::Settings {
                                 ui.label("Back to main");
+                            } else if self.view_mode == ViewMode::IntraTile {
+                                ui.label("Back to grid view");
                             } else {
                                 ui.label("Go back");
                             }
@@ -294,8 +320,10 @@ impl eframe::App for FpgaViewer {
                 });
         }
 
-        // Side panel for grid size controls
-        if self.current_page == Page::Main && self.device_grid.is_some() {
+        if self.current_page == Page::Main
+            && self.view_mode == ViewMode::InterTile
+            && self.device_grid.is_some()
+        {
             egui::SidePanel::right("grid_controls")
                 .default_width(250.0)
                 .show(ctx, |ui| {
@@ -417,6 +445,61 @@ impl eframe::App for FpgaViewer {
                 });
         }
 
+        // Side panel for intra-tile view controls
+        if self.current_page == Page::Main
+            && self.view_mode == ViewMode::IntraTile
+            && self.architecture.is_some()
+        {
+            egui::SidePanel::right("intra_tile_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    ui.heading("Intra-Tile View");
+                    ui.add_space(10.0);
+
+                    // Hierarchy tree toggle
+                    ui.checkbox(&mut self.show_hierarchy_tree, "Show Hierarchy Tree");
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    // Tile selector - shows all available tiles from architecture
+                    if let Some(arch) = &self.architecture {
+                        if !arch.tiles.is_empty() {
+                            ui.label("Select Tile:");
+                            ui.add_space(5.0);
+
+                            let current_tile_name =
+                                self.selected_tile_name.as_deref().unwrap_or("");
+                            let mut selected_tile_name = current_tile_name.to_string();
+
+                            egui::ComboBox::from_id_source("tile_selector")
+                                .selected_text(if !current_tile_name.is_empty() {
+                                    current_tile_name
+                                } else {
+                                    "Select a tile"
+                                })
+                                .show_ui(ui, |ui| {
+                                    for tile in &arch.tiles {
+                                        ui.selectable_value(
+                                            &mut selected_tile_name,
+                                            tile.name.clone(),
+                                            &tile.name,
+                                        );
+                                    }
+                                });
+
+                            // If tile selection changed, update state
+                            if selected_tile_name != current_tile_name {
+                                self.selected_tile_name = Some(selected_tile_name);
+                                self.selected_sub_tile_index = 0;
+                            }
+                        } else {
+                            ui.label("No tiles available in architecture");
+                        }
+                    }
+                });
+        }
+
         // Main window
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.current_page {
@@ -427,36 +510,37 @@ impl eframe::App for FpgaViewer {
                                 // Check if a tile was clicked
                                 if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles) {
                                     self.selected_tile_name = Some(clicked_tile);
+                                    self.selected_sub_tile_index = 0;
                                     self.view_mode = ViewMode::IntraTile;
                                 }
                             } else {
                                 // No grid loaded, show welcome message
-                                let available_rect = ui.available_rect_before_wrap();
-                                ui.allocate_ui_at_rect(
-                                    egui::Rect::from_center_size(
-                                        available_rect.center(),
-                                        egui::vec2(500.0, 200.0),
-                                    ), |ui| {
-                                        ui.vertical_centered(|ui| {
-                                            ui.heading("FPGA Architecture Visualizer");
-                                            ui.add_space(20.0);
-                                            ui.label("No architecture file loaded.");
-                                            ui.add_space(10.0);
-                                            ui.label("Use File > Open Architecture File to load a VTR architecture file.");
-                                            ui.add_space(20.0);
-                                            ui.label(format!("Current mode: {:?}", self.view_mode));
-                                        });
-                                    },
-                                );
+                                self.render_welcome_message(ui);
                             }
                         }
                         ViewMode::IntraTile => {
                             // Show intra-tile view
-                            if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.selected_tile_name) {
+                            if self.architecture.is_none() {
+                                // No architecture loaded - show welcome message
+                                self.render_welcome_message(ui);
+                            } else if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.selected_tile_name) {
                                 let tile_name_clone = tile_name.clone();
                                 // Find the tile that matches the selected tile name
                                 if let Some(tile) = arch.tiles.iter().find(|t| t.name == tile_name_clone) {
-                                    crate::intra_tile::render_intra_tile_view(ui, arch, tile, &mut self.intra_tile_state);
+                                    // Ensure selected_sub_tile_index is valid
+                                    let sub_tile_index = if self.selected_sub_tile_index < tile.sub_tiles.len() {
+                                        self.selected_sub_tile_index
+                                    } else {
+                                        0
+                                    };
+                                    crate::intra_tile::render_intra_tile_view(
+                                        ui,
+                                        arch,
+                                        tile,
+                                        &mut self.intra_tile_state,
+                                        self.show_hierarchy_tree,
+                                        sub_tile_index,
+                                    );
                                 } else {
                                     let tile_name_clone2 = tile_name.clone();
                                     // Center content vertically and horizontally
@@ -465,7 +549,8 @@ impl eframe::App for FpgaViewer {
                                         egui::Rect::from_center_size(
                                             available_rect.center(),
                                             egui::vec2(400.0, 150.0),
-                                        ), |ui| {
+                                        ),
+                                        |ui| {
                                             ui.vertical_centered(|ui| {
                                                 ui.heading("Tile not found");
                                                 ui.add_space(10.0);
@@ -490,7 +575,7 @@ impl eframe::App for FpgaViewer {
                                         ui.vertical_centered(|ui| {
                                             ui.heading("No tile selected");
                                             ui.add_space(10.0);
-                                            ui.label("Please click on a tile in the grid view.");
+                                            ui.label("Please select a tile from the dropdown or click on a tile in the grid view.");
                                             ui.add_space(20.0);
                                             if ui.button("Back to Grid View").clicked() {
                                                 self.view_mode = ViewMode::InterTile;

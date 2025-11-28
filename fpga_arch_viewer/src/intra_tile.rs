@@ -14,28 +14,32 @@ pub fn render_intra_tile_view(
     arch: &FPGAArch,
     tile: &Tile,
     state: &mut IntraTileState,
+    show_hierarchy_tree: bool,
+    sub_tile_index: usize,
 ) {
     // Cycle frame highlights
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
-    // Split view: Top/Left is tree, Bottom/Right is visual canvas
-    // We'll use a collapsing header for the tree view to save space
     ui.heading(format!("Tile: {}", tile.name));
     ui.separator();
 
-    egui::CollapsingHeader::new("Hierarchy Tree").show(ui, |ui| {
-        render_hierarchy_tree(ui, arch, tile);
-    });
+    // Show hierarchy tree if enabled
+    if show_hierarchy_tree {
+        egui::CollapsingHeader::new("Hierarchy Tree").show(ui, |ui| {
+            render_hierarchy_tree(ui, arch, tile);
+        });
+        ui.separator();
+    }
 
-    ui.separator();
     ui.heading("Visual Layout");
 
     egui::ScrollArea::both()
         .id_source("intra_tile_canvas")
         .show(ui, |ui| {
             // Determine the root PBType to visualize
-            // For now, visualize the first sub-tile's first equivalent site
-            if let Some(sub_tile) = tile.sub_tiles.first() {
+            // Use the selected sub_tile_index
+            if sub_tile_index < tile.sub_tiles.len() {
+                let sub_tile = &tile.sub_tiles[sub_tile_index];
                 if let Some(site) = sub_tile.equivalent_sites.first() {
                     if let Some(root_pb) = arch
                         .complex_block_list
@@ -60,7 +64,11 @@ pub fn render_intra_tile_view(
                     } else {
                         ui.label("Root PBType not found");
                     }
+                } else {
+                    ui.label("No equivalent site found");
                 }
+            } else {
+                ui.label("Invalid sub_tile index");
             }
         });
 }

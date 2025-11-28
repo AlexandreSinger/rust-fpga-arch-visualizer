@@ -131,6 +131,9 @@ pub struct SubTile {
 
 pub struct Tile {
     pub name: String,
+    // FIXME: Documentation. It is not clear from the documentation if tiles should
+    //        have ports or not. The ZA archs do have ports, but most do not.
+    pub ports: Vec<Port>,
     pub sub_tiles: Vec<SubTile>,
     pub width: i32,
     pub height: i32,
@@ -826,6 +829,7 @@ fn parse_tile(name: &str,
     let width = width.unwrap_or(1);
     let height = height.unwrap_or(1);
 
+    let mut ports: Vec<Port> = Vec::new();
     let mut sub_tiles: Vec<SubTile> = Vec::new();
     loop {
         match parser.next() {
@@ -834,8 +838,11 @@ fn parse_tile(name: &str,
                     "sub_tile" => {
                         sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser));
                     },
+                    "input" | "output" | "clock" => {
+                        ports.push(parse_port(&name.to_string(), &attributes));
+                    },
                     _ => {
-                        panic!("Unnexpected tag in tile.");
+                        panic!("Unnexpected tag in tile: {}.", name);
                     },
                 };
             },
@@ -855,6 +862,7 @@ fn parse_tile(name: &str,
 
     Tile {
         name: tile_name,
+        ports,
         sub_tiles,
         width,
         height,
@@ -894,7 +902,8 @@ fn parse_tiles(_name: &str,
 }
 
 fn parse_grid_location(name: &str,
-                       attributes: &Vec<OwnedAttribute>) -> GridLocation {
+                       attributes: &Vec<OwnedAttribute>,
+                       parser: &mut EventReader<BufReader<File>>) -> GridLocation {
 
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
@@ -956,6 +965,10 @@ fn parse_grid_location(name: &str,
     if pb_type.is_none() || priority.is_none() {
         panic!("Grid location {name} missing type and/or priority");
     }
+
+    // Skip the contents of the grid location tag.
+    // TODO: Should parse metadata tag.
+    let _ = parser.skip();
 
     match name.to_string().as_ref() {
         "perimeter" => {
@@ -1030,7 +1043,7 @@ fn parse_grid_location_list(layout_type_name: &str,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                grid_locations.push(parse_grid_location(&name.to_string(), &attributes));
+                grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser));
             },
             Ok(XmlEvent::EndElement { name }) => {
                 if name.to_string() == layout_type_name {

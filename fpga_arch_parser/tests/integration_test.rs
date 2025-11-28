@@ -176,3 +176,45 @@ fn test_stratix_iv_parse() {
     // Check complex blocks.
     assert_eq!(res.complex_block_list.len(), 6);
 }
+
+#[test]
+fn test_z1000() {
+    let input_xml_relative = PathBuf::from("tests/z1000.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+
+    // Check tiles.
+    assert_eq!(res.tiles.len(), 6);
+}
+
+#[test]
+fn test_z1010() {
+    let input_xml_relative = PathBuf::from("tests/z1010.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+
+    // Check tiles.
+    assert_eq!(res.tiles.len(), 8);
+}
+
+#[test]
+fn test_z1060() {
+    let input_xml_relative = PathBuf::from("tests/z1060.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml);
+    assert!(res.is_ok());
+
+    let res = res.unwrap();
+
+    // Check tiles.
+    assert_eq!(res.tiles.len(), 8);
+}

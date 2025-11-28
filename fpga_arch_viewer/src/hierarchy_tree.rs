@@ -1,7 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 
-/// Renders the hierarchy tree for a tile, showing all sub-tiles and their PBType structures.
 pub fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
     for sub_tile in &tile.sub_tiles {
         egui::CollapsingHeader::new(format!("SubTile: {}", sub_tile.name))
@@ -27,7 +26,6 @@ pub fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
     }
 }
 
-/// Renders a list of interconnects (Direct, Mux, or Complete).
 fn render_interconnects(ui: &mut egui::Ui, interconnects: &[fpga_arch_parser::Interconnect]) {
     for inter in interconnects {
         let (kind, name, input, output, pack_patterns) = match inter {
@@ -52,7 +50,7 @@ fn render_interconnects(ui: &mut egui::Ui, interconnects: &[fpga_arch_parser::In
     }
 }
 
-/// Recursively renders a PBType node and its children in the hierarchy tree.
+/// Recursively renders a PBType and its children.
 fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
@@ -77,7 +75,6 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
 
         ui.indent("ports", |ui| {
             for port in &pb_type.ports {
-                // Display ports
                 let (direction, name, num_pins) = match port {
                     Port::Input(p) => ("In", &p.name, p.num_pins),
                     Port::Output(p) => ("Out", &p.name, p.num_pins),
@@ -87,7 +84,7 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
             }
         });
 
-        // Display direct children (not in modes) if they exist
+        // Display direct children
         if !pb_type.modes.is_empty() {
             // If there are modes, children are inside modes
             ui.indent("modes", |ui| {
@@ -115,7 +112,7 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
             });
         }
 
-        // Display top-level interconnects (not in modes) if they exist
+        // Display top-level interconnects
         if !pb_type.interconnects.is_empty() {
             ui.indent("interconnects", |ui| {
                 egui::CollapsingHeader::new("Interconnects")

@@ -9,7 +9,7 @@ pub struct IntraTileState {
     selected_modes: HashMap<String, usize>,
     highlighted_positions_this_frame: Vec<egui::Pos2>,
     highlighted_positions_next_frame: Vec<egui::Pos2>,
-    hierarchy_tree_height: Option<f32>, // Height of hierarchy tree area (None = auto)
+    hierarchy_tree_height: Option<f32>,
 }
 
 pub fn render_intra_tile_view(
@@ -20,7 +20,6 @@ pub fn render_intra_tile_view(
     show_hierarchy_tree: bool,
     sub_tile_index: usize,
 ) {
-    // Cycle frame highlights
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
     ui.heading(format!("Tile: {}", tile.name));
@@ -34,9 +33,8 @@ pub fn render_intra_tile_view(
         let default_tree_height = (available_height * 0.3).min(400.0).max(100.0);
         let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
 
-        // Clamp tree height to reasonable bounds
         let min_tree_height = 50.0;
-        let max_tree_height = available_height - 100.0; // Leave some space for visual layout
+        let max_tree_height = available_height - 100.0;
         let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
 
         // Allocate space for hierarchy tree
@@ -45,12 +43,15 @@ pub fn render_intra_tile_view(
             egui::vec2(available_rect.width(), tree_height),
         );
         ui.allocate_ui_at_rect(tree_rect, |ui| {
+            ui.set_width(available_rect.width());
             egui::CollapsingHeader::new("Hierarchy Tree")
                 .default_open(true)
                 .show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
-                    });
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
+                        });
                 });
         });
 
@@ -94,13 +95,13 @@ pub fn render_intra_tile_view(
             available_rect.max,
         );
         ui.allocate_ui_at_rect(layout_rect, |ui| {
+            ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
 
             egui::ScrollArea::both()
                 .id_source("intra_tile_canvas")
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    // Determine the root PBType to visualize
-                    // Use the selected sub_tile_index
                     if sub_tile_index < tile.sub_tiles.len() {
                         let sub_tile = &tile.sub_tiles[sub_tile_index];
                         if let Some(site) = sub_tile.equivalent_sites.first() {
@@ -109,17 +110,11 @@ pub fn render_intra_tile_view(
                                 .iter()
                                 .find(|pb| pb.name == site.pb_type)
                             {
-                                // Calculate total size to set min_size for ScrollArea
                                 let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-
-                                // Allocate a large canvas with the size we calculated
-                                // Using total_size for allocation ensures the scroll area knows how big the content is
                                 let (response, painter) = ui.allocate_painter(
                                     total_size + egui::vec2(40.0, 40.0),
                                     egui::Sense::drag(),
                                 );
-
-                                // Determine layout
                                 let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
 
                                 let _ = draw_pb_type(
@@ -142,14 +137,13 @@ pub fn render_intra_tile_view(
                 });
         });
     } else {
-        // No hierarchy tree, use full space for visual layout
+        ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
 
         egui::ScrollArea::both()
             .id_source("intra_tile_canvas")
+            .auto_shrink([false, false])
             .show(ui, |ui| {
-                // Determine the root PBType to visualize
-                // Use the selected sub_tile_index
                 if sub_tile_index < tile.sub_tiles.len() {
                     let sub_tile = &tile.sub_tiles[sub_tile_index];
                     if let Some(site) = sub_tile.equivalent_sites.first() {
@@ -158,17 +152,11 @@ pub fn render_intra_tile_view(
                             .iter()
                             .find(|pb| pb.name == site.pb_type)
                         {
-                            // Calculate total size to set min_size for ScrollArea
                             let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-
-                            // Allocate a large canvas with the size we calculated
-                            // Using total_size for allocation ensures the scroll area knows how big the content is
                             let (response, painter) = ui.allocate_painter(
                                 total_size + egui::vec2(40.0, 40.0),
                                 egui::Sense::drag(),
                             );
-
-                            // Determine layout
                             let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
 
                             let _ = draw_pb_type(
@@ -191,8 +179,6 @@ pub fn render_intra_tile_view(
             });
     }
 }
-
-// --- Visualization Logic ---
 
 const PADDING: f32 = 50.0;
 const HEADER_HEIGHT: f32 = 35.0;
@@ -230,8 +216,48 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     };
 
     if children.is_empty() {
-        // Leaf node
-        return MIN_BLOCK_SIZE;
+        let total_input_pins: i32 = pb_type
+            .ports
+            .iter()
+            .filter_map(|p| match p {
+                Port::Input(ip) => Some(ip.num_pins),
+                _ => None,
+            })
+            .sum();
+        let total_output_pins: i32 = pb_type
+            .ports
+            .iter()
+            .filter_map(|p| match p {
+                Port::Output(op) => Some(op.num_pins),
+                _ => None,
+            })
+            .sum();
+        let total_clock_pins: i32 = pb_type
+            .ports
+            .iter()
+            .filter_map(|p| match p {
+                Port::Clock(cp) => Some(cp.num_pins),
+                _ => None,
+            })
+            .sum();
+
+        let max_side_pins = total_input_pins.max(total_output_pins) as f32;
+        let min_height_for_pins = if max_side_pins > 0.0 {
+            (max_side_pins + 1.0) * MIN_PIN_SPACING
+        } else {
+            0.0
+        };
+
+        let min_width_for_clock = if total_clock_pins > 0 {
+            (total_clock_pins as f32 + 1.0) * MIN_PIN_SPACING
+        } else {
+            0.0
+        };
+
+        let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
+        let required_width = min_width_for_clock.max(MIN_BLOCK_SIZE.x);
+
+        return egui::vec2(required_width, required_height);
     }
 
     let direction = get_layout_direction(children);
@@ -266,7 +292,6 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
                 max_child_w = max_child_w.max(max_instance_size.x);
                 current_h += total_instances_h + PADDING;
             }
-            // Remove last padding if added
             if !children.is_empty() {
                 current_h -= PADDING;
             }
@@ -310,7 +335,6 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         }
     }
 
-    // Ensure minimum size
     let total_input_pins: i32 = pb_type
         .ports
         .iter()
@@ -330,15 +354,13 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     let max_pins = total_input_pins.max(total_output_pins) as f32;
     let min_port_height = (max_pins + 1.0) * MIN_PIN_SPACING;
 
-    // Reserve space for interconnects (Muxes) on the right if they exist
     let interconnect_width = if !pb_type.modes.is_empty() || !pb_type.interconnects.is_empty() {
-        80.0 // Extra space for Mux/Crossbar column
+        80.0
     } else {
         0.0
     };
 
     let w = (total_w + PADDING * 2.0 + interconnect_width).max(MIN_BLOCK_SIZE.x);
-    // Height: Header + Top Padding + Children Height + Bottom Padding
     let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
         .max(MIN_BLOCK_SIZE.y)
         .max(min_port_height);
@@ -353,16 +375,13 @@ fn resolve_bus_list(
 ) -> Vec<String> {
     let mut resolved = Vec::new();
     for port_ref in port_list {
-        // 1. Try resolving exact match first
         if resolve_port_pos(port_ref, current_pb_name, my_ports, children_ports).is_some() {
             resolved.push(port_ref.clone());
             continue;
         }
 
-        // 2. If exact match fails, try expanding as bus [0]..[N]
         let mut idx = 0;
         loop {
-            // We need to insert [idx] at the end of the port name part
             let candidate = if let Some((prefix, suffix)) = port_ref.rsplit_once('.') {
                 format!("{}.{}[{}]", prefix, suffix, idx)
             } else {
@@ -399,34 +418,39 @@ fn draw_pb_type(
         PBTypeClass::None => draw_generic_block(painter, rect, pb_type, state, ui),
     };
 
-    // Draw Mode Selector if multiple modes exist
     if pb_type.modes.len() > 1 {
-        // Position selector in title bar right side
         let mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
         let mode_name = &pb_type.modes[mode_idx].name;
 
-        // We need to place a UI widget on top of the canvas.
-        // We can use ui.put() with a specific rect.
-        let selector_rect = egui::Rect::from_min_size(
-            rect.min + egui::vec2(rect.width() - 100.0, 2.0),
-            egui::vec2(90.0, 18.0),
-        );
+        let selector_width = (120.0_f32).min(rect.width() * 0.4);
+        let display_name = if mode_name.len() > 15 {
+            format!("{}...", &mode_name[..12])
+        } else {
+            mode_name.clone()
+        };
 
-        // Create a child ui for the combo box to clip it or position it
-        // Actually, purely using `ui.put` with a ComboBox might be tricky if the painter is separate.
-        // But we are inside a `ui` scope (ScrollArea).
-        // We just need to ensure coordinates align.
-        // Note: `rect` is in painter coordinates (screen space).
+        let selector_height = 18.0;
+        let margin = 5.0;
+        let selector_rect = egui::Rect::from_min_size(
+            rect.min + egui::vec2(rect.width() - selector_width - margin, 2.0),
+            egui::vec2(selector_width, selector_height),
+        );
 
         let mut selected_mode = mode_idx;
 
         ui.put(selector_rect, |ui: &mut egui::Ui| {
             ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 0.0);
             egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
-                .selected_text(mode_name)
+                .width(selector_width)
+                .selected_text(&display_name)
                 .show_ui(ui, |ui| {
                     for (i, mode) in pb_type.modes.iter().enumerate() {
-                        ui.selectable_value(&mut selected_mode, i, &mode.name);
+                        let item_text = if mode.name.len() > 40 {
+                            format!("{}...", &mode.name[..37])
+                        } else {
+                            mode.name.clone()
+                        };
+                        ui.selectable_value(&mut selected_mode, i, &item_text);
                     }
                 })
                 .response
@@ -441,7 +465,6 @@ fn draw_pb_type(
 
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
 
-    // Draw children if any (recurse)
     let children = if !pb_type.modes.is_empty() {
         if mode_index < pb_type.modes.len() {
             &pb_type.modes[mode_index].pb_types
@@ -464,11 +487,7 @@ fn draw_pb_type(
         let mut cursor_y = start_y;
 
         for child_pb in children {
-            // Pre-calculate max dimensions for this child type row/column to align
-            // (Simplified alignment logic)
-
             for i in 0..child_pb.num_pb {
-                // Register child ports with prefix
                 let instance_name = if child_pb.num_pb == 1 {
                     child_pb.name.clone()
                 } else {
@@ -489,7 +508,6 @@ fn draw_pb_type(
             }
 
             let mut max_col_width: f32 = 0.0;
-            let mut max_col_height: f32 = 0.0; // For Horizontal layout vertical sizing
 
             for i in 0..child_pb.num_pb {
                 let instance_name = if child_pb.num_pb == 1 {
@@ -500,22 +518,11 @@ fn draw_pb_type(
                 let child_path = format!("{}.{}", instance_path, instance_name);
                 let s = measure_pb_type(child_pb, state, &child_path);
                 max_col_width = max_col_width.max(s.x);
-                max_col_height = max_col_height.max(s.y); // Not really used for Vertical stack height accumulation
             }
 
             match direction {
-                LayoutDirection::Vertical => {
-                    // Vertical Layout implies children are stacked.
-                    // Wait, my `get_layout_direction` logic:
-                    // Single child type -> Vertical stack.
-                    // We just iterated `for child_pb in children` (which has len 1).
-                    // And inside `for i in 0..num_pb` we stacked them.
-                    // So we are done.
-                }
+                LayoutDirection::Vertical => {}
                 LayoutDirection::Horizontal => {
-                    // Heterogeneous children.
-                    // We placed `child_pb` instances vertically (if num_pb > 1).
-                    // Now we move cursor X for the NEXT `child_pb` type.
                     cursor_x += max_col_width + PADDING;
                     cursor_y = start_y;
                 }
@@ -523,9 +530,7 @@ fn draw_pb_type(
         }
     }
 
-    // Draw Interconnects
     let interconnects = if !pb_type.modes.is_empty() {
-        // Use selected mode!
         if mode_index < pb_type.modes.len() {
             &pb_type.modes[mode_index].interconnects
         } else {
@@ -542,16 +547,12 @@ fn draw_pb_type(
             fpga_arch_parser::Interconnect::Complete(c) => (&c.input, &c.output, "complete"),
         };
 
-        // Simple parsing: split by space, but we need to handle ranges like fle[3:0].out
         let raw_sources = expand_port_list(input_str);
         let raw_sinks = expand_port_list(output_str);
-
-        // Resolve implicit buses to individual pins
         let sources = resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
         let sinks = resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
 
         if kind == "direct" {
-            // Direct: 1-to-1 connection
             for (i, src) in sources.iter().enumerate() {
                 if i < sinks.len() {
                     let dst = &sinks[i];
@@ -569,7 +570,6 @@ fn draw_pb_type(
                 }
             }
         } else {
-            // Complete or Mux: Draw an explicit block
             draw_interconnect_block(
                 painter,
                 kind,
@@ -600,7 +600,6 @@ fn draw_interconnect_block(
     ui: &mut egui::Ui,
     parent_rect: egui::Rect,
 ) {
-    // 1. Resolve positions
     let mut valid_sinks = Vec::new();
     for dst in sinks {
         if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
@@ -612,19 +611,14 @@ fn draw_interconnect_block(
         return;
     }
 
-    // 2. Calculate Block Position
-    // Place it to the left of the average sink position
     let avg_y: f32 = valid_sinks.iter().map(|(_, p)| p.y).sum::<f32>() / valid_sinks.len() as f32;
     let min_x: f32 = valid_sinks
         .iter()
         .map(|(_, p)| p.x)
         .fold(f32::INFINITY, |a, b| a.min(b));
 
-    // Mux dimensions
     let width = 35.0;
 
-    // Calculate height based on BOTH sinks spread and number of sources (inputs)
-    // because we want to separate inputs vertically.
     let max_sink_y = valid_sinks
         .iter()
         .map(|(_, p)| p.y)
@@ -636,19 +630,15 @@ fn draw_interconnect_block(
 
     let sink_spread = max_sink_y - min_sink_y;
 
-    // Height needed for inputs
     let input_spacing = 15.0;
     let input_spread = (sources.len() as f32 + 1.0) * input_spacing;
 
     let spread = sink_spread.max(input_spread);
-    let height = (spread + 20.0).max(40.0).min(150.0); // Clamp height
+    let height = (spread + 20.0).max(40.0).min(150.0);
 
-    let block_center = egui::pos2(min_x - 50.0, avg_y); // Shift left more for wider block
+    let block_center = egui::pos2(min_x - 50.0, avg_y);
     let rect = egui::Rect::from_center_size(block_center, egui::vec2(width, height));
 
-    // ... highlight logic ...
-    // 3. Highlight Check
-    // If mouse is over the block, highlight everything
     let mut block_hovered = false;
     if ui.rect_contains_pointer(rect) {
         block_hovered = true;
@@ -668,24 +658,19 @@ fn draw_interconnect_block(
     let stroke = egui::Stroke::new(1.5, stroke_color);
     let fill_color = egui::Color32::from_rgb(230, 230, 230);
 
-    // 4. Draw Block Shape
     if kind == "mux" {
-        // Trapezoid
-        // Wider on left (input), narrower on right (output)
         let w = rect.width();
         let h = rect.height();
         let c = rect.center();
         let trap_points = vec![
-            c + egui::vec2(-w / 2.0, -h / 2.0), // Top-Left
-            c + egui::vec2(w / 2.0, -h / 4.0),  // Top-Right (narrower)
-            c + egui::vec2(w / 2.0, h / 4.0),   // Bottom-Right
-            c + egui::vec2(-w / 2.0, h / 2.0),  // Bottom-Left
+            c + egui::vec2(-w / 2.0, -h / 2.0),
+            c + egui::vec2(w / 2.0, -h / 4.0),
+            c + egui::vec2(w / 2.0, h / 4.0),
+            c + egui::vec2(-w / 2.0, h / 2.0),
         ];
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
-        // Complete (Rectangle)
         painter.rect(rect, 2.0, fill_color, stroke);
-        // Add a "X" or crossbar visual?
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
             [
@@ -696,12 +681,7 @@ fn draw_interconnect_block(
         );
     }
 
-    // 5. Route Connections
-    // Sources -> Block (Left Edge)
-    // Distribute inputs vertically along the left edge
     let left_edge_x = rect.min.x;
-
-    // Resolve all sources first to sort them
     let mut resolved_sources = Vec::new();
     for src in sources {
         if let Some(src_pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
@@ -709,9 +689,6 @@ fn draw_interconnect_block(
         }
     }
 
-    // Sort sources by X position (ascending)
-    // This puts left-most sources (LUTs) at the top (index 0)
-    // and right-most sources (FFs) at the bottom (higher index)
     resolved_sources.sort_by(|a, b| {
         a.1.x
             .partial_cmp(&b.1.x)
@@ -721,7 +698,6 @@ fn draw_interconnect_block(
     let input_step = rect.height() / (resolved_sources.len() as f32 + 1.0);
 
     for (i, (_src_name, src_pos)) in resolved_sources.iter().enumerate() {
-        // Highlight check
         let wire_highlighted = is_block_highlighted
             || state
                 .highlighted_positions_this_frame
@@ -734,11 +710,9 @@ fn draw_interconnect_block(
         };
         let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
-        // Calculate specific input position on the block
         let input_y = rect.min.y + input_step * (i as f32 + 1.0);
         let target = egui::pos2(left_edge_x, input_y);
 
-        // Draw H-V-H to target
         draw_wire_segment(
             painter,
             *src_pos,
@@ -749,13 +723,11 @@ fn draw_interconnect_block(
             ui,
         );
 
-        // Hover logic: if src is hovered, highlight this
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(*src_pos);
         }
     }
 
-    // Block (Right Edge) -> Sinks
     let right_edge_x = rect.max.x;
     for (_, dst_pos) in valid_sinks {
         let wire_highlighted = is_block_highlighted
@@ -793,22 +765,11 @@ fn draw_wire_segment(
 
     if start.x < end.x {
         let dist = end.x - start.x;
-
-        // Check if destination is the Parent Output (Right Edge)
-        // If so, we are routing through the reserved interconnect channel, which is empty.
-        // So we can use simple midpoint routing instead of going up.
         let is_parent_output = end.x >= parent_rect.max.x - 20.0;
 
-        // If distance is large (likely crossing a block), route "over" it
-        // UNLESS we are targeting the parent output
         if dist > 100.0 && !is_parent_output {
-            // Go Right -> Up -> Right -> Down -> Right
             let channel_x_start = start.x + 10.0;
             let channel_x_end = end.x - 10.0;
-
-            // Route above the blocks using the parent container's top area
-            // Use top padding area: rect.min.y + HEADER_HEIGHT + small_gap
-            // HEADER_HEIGHT is 35.0. Let's use +40.0 to be safe below header line.
             let route_y = parent_rect.min.y + 40.0;
 
             points.push(egui::pos2(channel_x_start, start.y));
@@ -816,13 +777,11 @@ fn draw_wire_segment(
             points.push(egui::pos2(channel_x_end, route_y));
             points.push(egui::pos2(channel_x_end, end.y));
         } else {
-            // Adjacent blocks: Route via midpoint
             let mid_x = start.x + dist / 2.0;
             points.push(egui::pos2(mid_x, start.y));
             points.push(egui::pos2(mid_x, end.y));
         }
     } else {
-        // Feedback (Right to Left)
         let channel_out = start.x + 10.0;
         let channel_in = end.x - 10.0;
         let mid_y = start.y + (end.y - start.y) / 2.0;
@@ -834,7 +793,6 @@ fn draw_wire_segment(
     }
     points.push(end);
 
-    // Check hover on segments
     if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
         let mut hovered = false;
         for i in 0..points.len() - 1 {
@@ -856,7 +814,6 @@ fn draw_wire_segment(
         }
 
         if hovered {
-            // Highlight the entire connection (start and end ports)
             state.highlighted_positions_next_frame.push(start);
             state.highlighted_positions_next_frame.push(end);
         }
@@ -880,8 +837,6 @@ fn draw_connection(
     let dst_pos = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports);
 
     if let (Some(start), Some(end)) = (src_pos, dst_pos) {
-        // Check if src or dst is highlighted
-        // Distance tolerance for float equality is handled by `distance < 1.0` check
         let is_highlighted = state
             .highlighted_positions_this_frame
             .iter()
@@ -922,7 +877,6 @@ fn expand_port_list(port_list_str: &str) -> Vec<String> {
                 let content = &part[abs_open + 1..abs_close];
 
                 if content.contains(':') {
-                    // Found a range to expand
                     let prefix = &part[..abs_open];
                     let suffix = &part[abs_close + 1..];
 
@@ -942,14 +896,12 @@ fn expand_port_list(port_list_str: &str) -> Vec<String> {
 
                             parts.splice(i..i + 1, new_items);
                             expanded = true;
-                            break; // Restart processing on the expanded items
+                            break;
                         }
                     }
                 }
-                // If not a range or failed to parse, continue searching this string
                 start_search = abs_close + 1;
             } else {
-                // No closing bracket
                 break;
             }
         }
@@ -967,37 +919,20 @@ fn resolve_port_pos(
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
 ) -> Option<egui::Pos2> {
-    // Case 1: "current_block_name.port" -> look in my_ports with "port"
     if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name)) {
-        // Remove potential index if current block is indexed in string (which shouldn't happen inside definition, but just in case)
-        // Actually, inside definition, "clb.I" means port I of clb.
-        // But we stored it as "I".
         if let Some(pos) = my_ports.get(stripped) {
             return Some(*pos);
         }
-        // VTR XML sometimes uses index for single instance? e.g. "clb[0].I"
-        // Not standard within the block definition, usually.
     }
 
-    // Case 2: Direct port name (e.g. "I") -> look in my_ports
     if let Some(pos) = my_ports.get(port_ref) {
         return Some(*pos);
     }
 
-    // Case 3: Child port (e.g. "ble4[0].in") -> look in children_ports
-    // We need to handle ranges or simple lookups.
-    // For now, exact match.
-    // TODO: Expand "ble4.in" to "ble4[0].in" if num_pb=1?
-    // Our children_ports keys are canonical "name.port" or "name[i].port".
-
-    // Try direct lookup
     if let Some(pos) = children_ports.get(port_ref) {
         return Some(*pos);
     }
 
-    // Try adding [0] if missing index?
-    // Parsing logic is complex without robust VTR name parser.
-    // Let's try simple "name.port" -> "name[0].port" heuristic
     if let Some((instance, port)) = port_ref.split_once('.') {
         if !instance.contains('[') {
             let alt_key = format!("{}[0].{}", instance, port);
@@ -1005,8 +940,6 @@ fn resolve_port_pos(
                 return Some(*pos);
             }
         } else if let Some(base_instance) = instance.strip_suffix("[0]") {
-            // Try removing [0] if present (e.g. lut4[0].in -> lut4.in)
-            // This handles cases where user specifies index 0 but visualizer uses unindexed name for single instances
             let alt_key = format!("{}.{}", base_instance, port);
             if let Some(pos) = children_ports.get(&alt_key) {
                 return Some(*pos);
@@ -1027,7 +960,7 @@ fn draw_generic_block(
     painter.rect(
         rect,
         0.0,
-        egui::Color32::from_rgb(240, 240, 240), // Light Gray background
+        egui::Color32::from_rgb(240, 240, 240),
         egui::Stroke::new(1.5, egui::Color32::from_rgb(100, 100, 100)),
     );
 
@@ -1060,12 +993,10 @@ fn draw_lut(
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
 ) -> HashMap<String, egui::Pos2> {
-    // LUT Shape: Trapezoid-ish or just distinct color
-    // Let's do a rectangle with a diagonal line to suggest internal logic table
     painter.rect(
         rect,
         0.0,
-        egui::Color32::from_rgb(255, 250, 205), // Lemon Chiffon (Light Yellow)
+        egui::Color32::from_rgb(255, 250, 205),
         egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 180, 0)),
     );
 
@@ -1104,16 +1035,14 @@ fn draw_flip_flop(
         egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 0, 180)),
     );
 
-    // Draw clock triangle on bottom or side
     let triangle_size = 8.0;
     let bottom_center = rect.center_bottom();
 
-    // Check for clock port to be accurate? simplified for now
     painter.add(egui::Shape::convex_polygon(
         vec![
             bottom_center + egui::vec2(-triangle_size, 0.0),
             bottom_center + egui::vec2(triangle_size, 0.0),
-            bottom_center + egui::vec2(0.0, -triangle_size), // Pointing up into the block
+            bottom_center + egui::vec2(0.0, -triangle_size),
         ],
         egui::Color32::TRANSPARENT,
         egui::Stroke::new(1.5, egui::Color32::BLACK),
@@ -1154,7 +1083,6 @@ fn draw_memory(
         egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 100, 0)),
     );
 
-    // Draw grid lines to suggest memory array
     let grid_spacing = 10.0;
     let mut y = rect.min.y + 20.0;
     while y < rect.max.y - 10.0 {
@@ -1197,13 +1125,11 @@ fn draw_ports(
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
 ) {
-    // Structure to represent individual pins (expanded from ports)
     struct PinInfo<'a> {
         name: &'a str,
         index: i32,
     }
 
-    // Expand all ports into individual pins
     let mut input_pins: Vec<PinInfo> = Vec::new();
     let mut output_pins: Vec<PinInfo> = Vec::new();
     let mut clock_pins: Vec<PinInfo> = Vec::new();
@@ -1237,10 +1163,8 @@ fn draw_ports(
         }
     }
 
-    // Draw input pins on the left side
     if !input_pins.is_empty() {
         let total_pins = input_pins.len() as f32;
-        // Use minimum spacing, but allow more if block is tall enough
         let min_required_height = (total_pins + 1.0) * MIN_PIN_SPACING;
         let spacing = if rect.height() >= min_required_height {
             rect.height() / (total_pins + 1.0)
@@ -1258,7 +1182,6 @@ fn draw_ports(
             let end = egui::pos2(x_pos - PORT_LENGTH, y_pos);
             let port_pos = end;
 
-            // Check if this pin is highlighted
             let is_highlighted = state
                 .highlighted_positions_this_frame
                 .iter()
@@ -1272,21 +1195,17 @@ fn draw_ports(
             let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
             let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
-            // Draw the line
             painter.line_segment([start, end], stroke);
 
-            // Register pin in port_map with indexed name (e.g., "in[0]", "in[1]")
             let pin_name = format!("{}[{}]", pin.name, pin.index);
             port_map.insert(pin_name.clone(), port_pos);
 
-            // Draw small solid square at the border (where wire meets block)
             let square_size = PIN_SQUARE_SIZE;
             let square_rect =
                 egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
             painter.rect_filled(square_rect, 0.0, stroke_color);
 
-            // Hover detection and tooltip
-            let hit_rect = square_rect.expand(3.0); // Slightly larger for easier clicking
+            let hit_rect = square_rect.expand(3.0);
             let response = ui.put(hit_rect, egui::Label::new(""));
             if response.hovered() {
                 state.highlighted_positions_next_frame.push(port_pos);
@@ -1297,17 +1216,14 @@ fn draw_ports(
         }
     }
 
-    // Draw output pins on the right side
     if !output_pins.is_empty() {
         let total_pins = output_pins.len() as f32;
-        // Use minimum spacing, but allow more if block is tall enough
         let min_required_height = (total_pins + 1.0) * MIN_PIN_SPACING;
         let spacing = if rect.height() >= min_required_height {
             rect.height() / (total_pins + 1.0)
         } else {
             MIN_PIN_SPACING
         };
-        // Center the pins vertically
         let total_pin_height = spacing * (total_pins - 1.0);
         let start_y = rect.min.y + (rect.height() - total_pin_height) / 2.0;
         let x_pos = rect.max.x;
@@ -1318,7 +1234,6 @@ fn draw_ports(
             let end = egui::pos2(x_pos + PORT_LENGTH, y_pos);
             let port_pos = end;
 
-            // Check if this pin is highlighted
             let is_highlighted = state
                 .highlighted_positions_this_frame
                 .iter()
@@ -1357,17 +1272,14 @@ fn draw_ports(
         }
     }
 
-    // Draw clock pins on the top
     if !clock_pins.is_empty() {
         let total_pins = clock_pins.len() as f32;
-        // Use minimum spacing, but allow more if block is wide enough
         let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
         let spacing = if rect.width() >= min_required_width {
             rect.width() / (total_pins + 1.0)
         } else {
             MIN_PIN_SPACING
         };
-        // Center the pins horizontally
         let total_pin_width = spacing * (total_pins - 1.0);
         let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
 
@@ -1377,35 +1289,26 @@ fn draw_ports(
             let end = egui::pos2(x_pos, rect.min.y - PORT_LENGTH);
             let port_pos = end;
 
-            // Check if this pin is highlighted
             let is_highlighted = state
                 .highlighted_positions_this_frame
                 .iter()
                 .any(|p| p.distance(port_pos) < 1.0);
 
-            let stroke_color = if is_highlighted {
-                egui::Color32::RED
-            } else {
-                egui::Color32::RED // Clock ports are typically red
-            };
+            let stroke_color = egui::Color32::RED;
             let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
             let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
-            // Draw the line
             painter.line_segment([start, end], stroke);
 
-            // Register pin in port_map with indexed name
             let pin_name = format!("{}[{}]", pin.name, pin.index);
             port_map.insert(pin_name.clone(), port_pos);
 
-            // Draw small solid square at the border (where wire meets block)
             let square_size = PIN_SQUARE_SIZE;
             let square_rect =
                 egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
             painter.rect_filled(square_rect, 0.0, stroke_color);
 
-            // Hover detection and tooltip
-            let hit_rect = square_rect.expand(3.0); // Slightly larger for easier clicking
+            let hit_rect = square_rect.expand(3.0);
             let response = ui.put(hit_rect, egui::Label::new(""));
             if response.hovered() {
                 state.highlighted_positions_next_frame.push(port_pos);

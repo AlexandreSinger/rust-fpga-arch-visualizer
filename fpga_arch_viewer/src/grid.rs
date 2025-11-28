@@ -33,12 +33,12 @@ impl DeviceGrid {
         let (width, height) = if aspect_ratio >= 1.0 {
             // Width >= height (landscape or square)
             let width = default_size;
-            let height = (default_size as f64 / aspect_ratio).round() as usize;
+            let height = (default_size as f32 / aspect_ratio).round() as usize;
             (width, height.max(1)) // Ensure height is at least 1
         } else {
             // Height > width (portrait)
             let height = default_size;
-            let width = (default_size as f64 * aspect_ratio).round() as usize;
+            let width = (default_size as f32 * aspect_ratio).round() as usize;
             (width.max(1), height) // Ensure width is at least 1
         };
 
@@ -53,6 +53,10 @@ impl DeviceGrid {
                     GridLocation::Fill(f) => f.priority,
                     GridLocation::Perimeter(p) => p.priority,
                     GridLocation::Corners(c) => c.priority,
+                    GridLocation::Single(s) => s.priority,
+                    GridLocation::Col(c) => c.priority,
+                    GridLocation::Row(r) => r.priority,
+                    GridLocation::Region(r) => r.priority,
                 };
                 (priority, i)
             })
@@ -124,6 +128,10 @@ impl DeviceGrid {
                         self.cells[row][col] = GridCell::Block(corners.pb_type.clone());
                     }
                 }
+            }
+            // TODO: Handle Single, Col, Row, and Region grid locations
+            _ => {
+                eprintln!("Unsupported grid location type (Single, Col, Row, or Region)");
             }
         }
     }

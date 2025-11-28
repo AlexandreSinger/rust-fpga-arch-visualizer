@@ -27,12 +27,16 @@ pub struct FpgaViewer {
     block_styles: DefaultBlockStyles,
     // Device grid
     device_grid: Option<DeviceGrid>,
+    // Grid dimensions (for AutoLayout)
+    grid_width: usize,
+    grid_height: usize,
+    aspect_ratio: f32, // Stored from AutoLayout
 }
 
 impl FpgaViewer {
     pub fn new() -> Self {
         // TODO: now only load one test file, Jack has code for opening arch file - replace that to here
-        let device_grid = Self::load_default_architecture();
+        let (device_grid, aspect_ratio, width, height) = Self::load_default_architecture();
 
         Self {
             view_mode: ViewMode::InterTile,
@@ -42,11 +46,14 @@ impl FpgaViewer {
             navigation_history: Vec::new(),
             block_styles: DefaultBlockStyles::new(),
             device_grid,
+            grid_width: width,
+            grid_height: height,
+            aspect_ratio,
         }
     }
 
     // TODO: only for testing, can delete this
-    fn load_default_architecture() -> Option<DeviceGrid> {
+    fn load_default_architecture() -> (Option<DeviceGrid>, f32, usize, usize) {
         use std::path::PathBuf;
 
         let test_path = PathBuf::from("../fpga_arch_parser/tests/k4_N4_90nm.xml");
@@ -55,12 +62,16 @@ impl FpgaViewer {
             if let Some(layout) = parsed.layouts.first() {
                 match layout {
                     fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                        let grid = DeviceGrid::from_auto_layout(auto_layout, 10); // default size for auto layout - 10 for now
-                        return Some(grid);
+                        let default_size = 10;
+                        let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                        let width = grid.width;
+                        let height = grid.height;
+                        let aspect_ratio = auto_layout.aspect_ratio;
+                        return (Some(grid), aspect_ratio, width, height);
                     }
                     fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
                         eprintln!("FixedLayout not yet supported");
-                        return None;
+                        return (None, 1.0, 10, 10);
                     }
                 }
             }
@@ -68,7 +79,29 @@ impl FpgaViewer {
             eprintln!("Failed to load k4_N4_90nm.xml, using no grid");
         }
 
-        None
+        (None, 1.0, 10, 10)
+    }
+
+    /// Rebuild the grid with new dimensions based on current architecture
+    fn rebuild_grid(&mut self) {
+        use std::path::PathBuf;
+
+        let test_path = PathBuf::from("../fpga_arch_parser/tests/k4_N4_90nm.xml");
+
+        if let Ok(parsed) = fpga_arch_parser::parse(&test_path) {
+            if let Some(layout) = parsed.layouts.first() {
+                match layout {
+                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                        // Calculate default_size based on which dimension user is controlling
+                        // Use the larger dimension as the default_size
+                        let default_size = self.grid_width.max(self.grid_height);
+                        let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                        self.device_grid = Some(grid);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn navigate_back(&mut self) {
@@ -86,6 +119,7 @@ impl FpgaViewer {
 
     fn toggle_layer_list(&mut self) {
         self.show_layer_list = !self.show_layer_list;
+        self.current_page = Page::Main;
     }
 
     fn open_settings(&mut self) {
@@ -228,6 +262,102 @@ impl eframe::App for FpgaViewer {
                     ui.label("No architecture loaded");
                     ui.add_space(10.0);
                     ui.label("Layer list will appear here once an architecture file is loaded.");
+                });
+        }
+
+        // Side panel for grid size controls
+        if self.current_page == Page::Main && self.device_grid.is_some() {
+            egui::SidePanel::right("grid_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    ui.heading("Grid Settings");
+                    ui.add_space(10.0);
+
+                    ui.label("Adjust dimensions while maintaining aspect ratio:");
+                    ui.add_space(10.0);
+
+                    let mut grid_changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label("Width:");
+                        let mut temp_width = self.grid_width as f64;
+                        if ui.add(
+                            egui::Slider::new(&mut temp_width, 1.0..=100.0)
+                                .step_by(1.0)
+                                .show_value(false)
+                        ).changed() {
+                            let new_width = temp_width.round() as usize;
+                            if new_width != self.grid_width && new_width >= 1 {
+                                self.grid_width = new_width;
+                                self.grid_height = (self.grid_width as f32 / self.aspect_ratio).round().max(1.0) as usize;
+                                grid_changed = true;
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("       ");
+                        let mut width_text = self.grid_width.to_string();
+                        if ui.add(
+                            egui::TextEdit::singleline(&mut width_text)
+                                .desired_width(60.0)
+                        ).changed() {
+                            if let Ok(new_width) = width_text.parse::<usize>() {
+                                if new_width >= 1 && new_width <= 100 && new_width != self.grid_width {
+                                    self.grid_width = new_width;
+                                    self.grid_height = (self.grid_width as f32 / self.aspect_ratio).round().max(1.0) as usize;
+                                    grid_changed = true;
+                                }
+                            }
+                        }
+                    });
+
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Height:");
+                        let mut temp_height = self.grid_height as f64;
+                        if ui.add(
+                            egui::Slider::new(&mut temp_height, 1.0..=100.0)
+                                .step_by(1.0)
+                                .show_value(false)
+                        ).changed() {
+                            let new_height = temp_height.round() as usize;
+                            if new_height != self.grid_height && new_height >= 1 {
+                                self.grid_height = new_height;
+                                self.grid_width = (self.grid_height as f32 * self.aspect_ratio).round().max(1.0) as usize;
+                                grid_changed = true;
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("       ");
+                        let mut height_text = self.grid_height.to_string();
+                        if ui.add(
+                            egui::TextEdit::singleline(&mut height_text)
+                                .desired_width(60.0)
+                        ).changed() {
+                            if let Ok(new_height) = height_text.parse::<usize>() {
+                                if new_height >= 1 && new_height <= 100 && new_height != self.grid_height {
+                                    self.grid_height = new_height;
+                                    self.grid_width = (self.grid_height as f32 * self.aspect_ratio).round().max(1.0) as usize;
+                                    grid_changed = true;
+                                }
+                            }
+                        }
+                    });
+
+                    ui.add_space(15.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    ui.label(format!("Aspect Ratio: {:.2}", self.aspect_ratio));
+                    ui.label(format!("Grid Size: {}x{}", self.grid_width, self.grid_height));
+
+                    if grid_changed {
+                        self.rebuild_grid();
+                    }
                 });
         }
 

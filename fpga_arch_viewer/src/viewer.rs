@@ -1,5 +1,7 @@
 use eframe::egui;
 use crate::block_style::DefaultBlockStyles;
+use crate::grid::DeviceGrid;
+use crate::grid_renderer;
 use crate::settings;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,10 +25,15 @@ pub struct FpgaViewer {
     navigation_history: Vec<String>, // Will store layer/element navigation history
     // Block styles
     block_styles: DefaultBlockStyles,
+    // Device grid
+    device_grid: Option<DeviceGrid>,
 }
 
 impl FpgaViewer {
     pub fn new() -> Self {
+        // TODO: now only load one test file, Jack has code for opening arch file - replace that to here
+        let device_grid = Self::load_default_architecture();
+
         Self {
             view_mode: ViewMode::InterTile,
             show_about: false,
@@ -34,30 +41,53 @@ impl FpgaViewer {
             show_layer_list: false,
             navigation_history: Vec::new(),
             block_styles: DefaultBlockStyles::new(),
+            device_grid,
         }
     }
 
-    /// Handle navigation back action
+    // TODO: only for testing, can delete this
+    fn load_default_architecture() -> Option<DeviceGrid> {
+        use std::path::PathBuf;
+
+        let test_path = PathBuf::from("../fpga_arch_parser/tests/k4_N4_90nm.xml");
+
+        if let Ok(parsed) = fpga_arch_parser::parse(&test_path) {
+            if let Some(layout) = parsed.layouts.first() {
+                match layout {
+                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                        let grid = DeviceGrid::from_auto_layout(auto_layout, 10); // default size for auto layout - 10 for now
+                        return Some(grid);
+                    }
+                    fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
+                        eprintln!("FixedLayout not yet supported");
+                        return None;
+                    }
+                }
+            }
+        } else {
+            eprintln!("Failed to load k4_N4_90nm.xml, using no grid");
+        }
+
+        None
+    }
+
     fn navigate_back(&mut self) {
-        // First check if we're in settings page, go back to main
+        // setting page back to main
         if self.current_page == Page::Settings {
             self.current_page = Page::Main;
             return;
         }
 
-        // Otherwise, handle layer navigation history
         if !self.navigation_history.is_empty() {
             self.navigation_history.pop();
             // TODO: Update current layer based on history
         }
     }
 
-    /// Toggle layer list panel visibility
     fn toggle_layer_list(&mut self) {
         self.show_layer_list = !self.show_layer_list;
     }
 
-    /// Navigate to settings page
     fn open_settings(&mut self) {
         self.current_page = Page::Settings;
     }
@@ -70,6 +100,7 @@ impl eframe::App for FpgaViewer {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Architecture File...").clicked() {
+                        // TODO: Jack's code here
                         ui.close_menu();
                     }
                     if ui.button("Exit").clicked() {
@@ -204,15 +235,20 @@ impl eframe::App for FpgaViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.current_page {
                 Page::Main => {
-                    ui.centered_and_justified(|ui| {
-                        ui.heading("FPGA Architecture Visualizer");
-                        ui.add_space(20.0);
-                        ui.label("No architecture file loaded.");
-                        ui.add_space(10.0);
-                        ui.label("Use File > Open Architecture File to load a VTR architecture file.");
-                        ui.add_space(20.0);
-                        ui.label(format!("Current mode: {:?}", self.view_mode));
-                    });
+                    if let Some(grid) = &self.device_grid {
+                        grid_renderer::render_grid(ui, grid, &self.block_styles);
+                    } else {
+                        // No grid loaded, show welcome message
+                        ui.centered_and_justified(|ui| {
+                            ui.heading("FPGA Architecture Visualizer");
+                            ui.add_space(20.0);
+                            ui.label("No architecture file loaded.");
+                            ui.add_space(10.0);
+                            ui.label("Use File > Open Architecture File to load a VTR architecture file.");
+                            ui.add_space(20.0);
+                            ui.label(format!("Current mode: {:?}", self.view_mode));
+                        });
+                    }
                 }
                 Page::Settings => {
                     settings::render_settings_page(ui, &self.block_styles);

@@ -5,6 +5,8 @@
 use eframe::egui;
 
 mod block_style;
+mod grid;
+mod grid_renderer;
 mod settings;
 mod viewer;
 

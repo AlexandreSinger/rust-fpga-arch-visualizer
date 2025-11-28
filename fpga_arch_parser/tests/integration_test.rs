@@ -37,7 +37,7 @@ fn test_k4_n4_90nm_parse() {
     assert!(res.tiles[1].sub_tiles[0].equivalent_sites.len() == 1);
     assert!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pb_type == "clb");
     assert!(matches!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pin_mapping, TileSitePinMapping::Direct));
-    assert!(matches!(res.tiles[1].sub_tiles[0].pin_locations, SubTilePinLocations::Spread { .. }));
+    assert!(matches!(res.tiles[1].sub_tiles[0].pin_locations, SubTilePinLocations::Spread));
 
     // Check layouts.
     assert!(res.layouts.len() == 1);
@@ -55,11 +55,11 @@ fn test_k4_n4_90nm_parse() {
     }
 
     // Check device.
-    assert!(res.device.r_min_w_nmos == 4220.930176);
-    assert!(res.device.r_min_w_pmos == 11207.599609);
+    assert!(res.device.r_min_w_nmos == 4_220.93);
+    assert!(res.device.r_min_w_pmos == 11_207.6);
     assert!(matches!(res.device.x_distr, ChanWDist::Uniform { .. }));
     assert!(matches!(res.device.y_distr, ChanWDist::Uniform { .. }));
-    assert!(matches!(res.device.sb_type, SBType::Wilton { .. }));
+    assert!(matches!(res.device.sb_type, SBType::Wilton));
     assert!(res.device.sb_fs == Some(3));
     assert!(res.device.input_switch_name == "ipin_cblock");
 
@@ -67,7 +67,7 @@ fn test_k4_n4_90nm_parse() {
     assert!(res.segment_list.len() == 1);
     assert!(res.segment_list[0].freq == 1.0);
     assert!(res.segment_list[0].length == 1);
-    assert!(matches!(res.segment_list[0].segment_type, SegmentType::Unidir { .. }));
+    assert!(matches!(res.segment_list[0].segment_type, SegmentType::Unidir));
     assert!(res.segment_list[0].r_metal == 0.0);
     assert!(res.segment_list[0].c_metal == 0.0);
 
@@ -81,7 +81,7 @@ fn test_k4_n4_90nm_parse() {
     assert!(matches!(res.complex_block_list[0].ports[1], Port::Output { .. }));
     assert!(matches!(res.complex_block_list[0].ports[2], Port::Clock { .. }));
     // TODO: Add stronger tests for pb_type ports.
-    assert!(res.complex_block_list[0].pb_types.len() == 0);
+    assert!(res.complex_block_list[0].pb_types.is_empty());
     assert!(res.complex_block_list[0].modes.len() == 2);
     assert!(res.complex_block_list[0].modes[0].name == "inpad");
     assert!(res.complex_block_list[0].modes[0].pb_types.len() == 1);

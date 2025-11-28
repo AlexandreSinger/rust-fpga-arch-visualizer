@@ -181,6 +181,45 @@ impl FpgaViewer {
             },
         );
     }
+
+    fn render_centered_message(
+        &mut self,
+        ui: &mut egui::Ui,
+        heading: &str,
+        message: &str,
+        button_text: Option<&str>,
+    ) {
+        let available_rect = ui.available_rect_before_wrap();
+        ui.allocate_ui_at_rect(
+            egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0)),
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading(heading);
+                    ui.add_space(10.0);
+                    ui.label(message);
+                    if let Some(btn_text) = button_text {
+                        ui.add_space(20.0);
+                        if ui.button(btn_text).clicked() {
+                            self.view_mode = ViewMode::InterTile;
+                            self.selected_tile_name = None;
+                        }
+                    }
+                });
+            },
+        );
+    }
+
+    fn update_grid_height_from_width(&mut self) {
+        self.grid_height = (self.grid_width as f32 / self.aspect_ratio)
+            .round()
+            .max(1.0) as usize;
+    }
+
+    fn update_grid_width_from_height(&mut self) {
+        self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
+            .round()
+            .max(1.0) as usize;
+    }
 }
 
 impl eframe::App for FpgaViewer {
@@ -349,10 +388,7 @@ impl eframe::App for FpgaViewer {
                             let new_width = temp_width.round() as usize;
                             if new_width != self.grid_width && new_width >= 1 {
                                 self.grid_width = new_width;
-                                self.grid_height = (self.grid_width as f32 / self.aspect_ratio)
-                                    .round()
-                                    .max(1.0)
-                                    as usize;
+                                self.update_grid_height_from_width();
                                 grid_changed = true;
                             }
                         }
@@ -371,10 +407,7 @@ impl eframe::App for FpgaViewer {
                                     && new_width != self.grid_width
                                 {
                                     self.grid_width = new_width;
-                                    self.grid_height = (self.grid_width as f32 / self.aspect_ratio)
-                                        .round()
-                                        .max(1.0)
-                                        as usize;
+                                    self.update_grid_height_from_width();
                                     grid_changed = true;
                                 }
                             }
@@ -397,10 +430,7 @@ impl eframe::App for FpgaViewer {
                             let new_height = temp_height.round() as usize;
                             if new_height != self.grid_height && new_height >= 1 {
                                 self.grid_height = new_height;
-                                self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
-                                    .round()
-                                    .max(1.0)
-                                    as usize;
+                                self.update_grid_width_from_height();
                                 grid_changed = true;
                             }
                         }
@@ -419,10 +449,7 @@ impl eframe::App for FpgaViewer {
                                     && new_height != self.grid_height
                                 {
                                     self.grid_height = new_height;
-                                    self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
-                                        .round()
-                                        .max(1.0)
-                                        as usize;
+                                    self.update_grid_width_from_height();
                                     grid_changed = true;
                                 }
                             }
@@ -468,13 +495,12 @@ impl eframe::App for FpgaViewer {
                             ui.label("Select Tile:");
                             ui.add_space(5.0);
 
-                            let current_tile_name =
-                                self.selected_tile_name.as_deref().unwrap_or("");
-                            let mut selected_tile_name = current_tile_name.to_string();
+                            let mut selected_tile_name =
+                                self.selected_tile_name.as_deref().unwrap_or("").to_string();
 
                             egui::ComboBox::from_id_source("tile_selector")
-                                .selected_text(if !current_tile_name.is_empty() {
-                                    current_tile_name
+                                .selected_text(if !selected_tile_name.is_empty() {
+                                    selected_tile_name.as_str()
                                 } else {
                                     "Select a tile"
                                 })
@@ -489,7 +515,9 @@ impl eframe::App for FpgaViewer {
                                 });
 
                             // If tile selection changed, update state
-                            if selected_tile_name != current_tile_name {
+                            if selected_tile_name
+                                != self.selected_tile_name.as_deref().unwrap_or("")
+                            {
                                 self.selected_tile_name = Some(selected_tile_name);
                                 self.selected_sub_tile_index = 0;
                             }
@@ -524,9 +552,8 @@ impl eframe::App for FpgaViewer {
                                 // No architecture loaded - show welcome message
                                 self.render_welcome_message(ui);
                             } else if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.selected_tile_name) {
-                                let tile_name_clone = tile_name.clone();
                                 // Find the tile that matches the selected tile name
-                                if let Some(tile) = arch.tiles.iter().find(|t| t.name == tile_name_clone) {
+                                if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
                                     // Ensure selected_sub_tile_index is valid
                                     let sub_tile_index = if self.selected_sub_tile_index < tile.sub_tiles.len() {
                                         self.selected_sub_tile_index
@@ -542,47 +569,19 @@ impl eframe::App for FpgaViewer {
                                         sub_tile_index,
                                     );
                                 } else {
-                                    let tile_name_clone2 = tile_name.clone();
-                                    // Center content vertically and horizontally
-                                    let available_rect = ui.available_rect_before_wrap();
-                                    ui.allocate_ui_at_rect(
-                                        egui::Rect::from_center_size(
-                                            available_rect.center(),
-                                            egui::vec2(400.0, 150.0),
-                                        ),
-                                        |ui| {
-                                            ui.vertical_centered(|ui| {
-                                                ui.heading("Tile not found");
-                                                ui.add_space(10.0);
-                                                ui.label(format!("Could not find tile: {}", tile_name_clone2));
-                                                ui.add_space(20.0);
-                                                if ui.button("Back to Grid View").clicked() {
-                                                    self.view_mode = ViewMode::InterTile;
-                                                    self.selected_tile_name = None;
-                                                }
-                                            });
-                                        },
+                                    self.render_centered_message(
+                                        ui,
+                                        "Tile not found",
+                                        &format!("Could not find tile: {}", tile_name),
+                                        Some("Back to Grid View"),
                                     );
                                 }
                             } else {
-                                // Center content vertically and horizontally
-                                let available_rect = ui.available_rect_before_wrap();
-                                ui.allocate_ui_at_rect(
-                                    egui::Rect::from_center_size(
-                                        available_rect.center(),
-                                        egui::vec2(400.0, 150.0),
-                                    ), |ui| {
-                                        ui.vertical_centered(|ui| {
-                                            ui.heading("No tile selected");
-                                            ui.add_space(10.0);
-                                            ui.label("Please select a tile from the dropdown or click on a tile in the grid view.");
-                                            ui.add_space(20.0);
-                                            if ui.button("Back to Grid View").clicked() {
-                                                self.view_mode = ViewMode::InterTile;
-                                                self.selected_tile_name = None;
-                                            }
-                                        });
-                                    },
+                                self.render_centered_message(
+                                    ui,
+                                    "No tile selected",
+                                    "Please select a tile from the dropdown or click on a tile in the grid view.",
+                                    Some("Back to Grid View"),
                                 );
                             }
                         }

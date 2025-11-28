@@ -2,11 +2,14 @@ use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::HashMap;
 
+use crate::hierarchy_tree;
+
 #[derive(Default)]
 pub struct IntraTileState {
     selected_modes: HashMap<String, usize>,
     highlighted_positions_this_frame: Vec<egui::Pos2>,
     highlighted_positions_next_frame: Vec<egui::Pos2>,
+    hierarchy_tree_height: Option<f32>, // Height of hierarchy tree area (None = auto)
 }
 
 pub fn render_intra_tile_view(
@@ -23,161 +26,170 @@ pub fn render_intra_tile_view(
     ui.heading(format!("Tile: {}", tile.name));
     ui.separator();
 
-    // Show hierarchy tree if enabled
+    let available_rect = ui.available_rect_before_wrap();
+    let available_height = available_rect.height();
+
     if show_hierarchy_tree {
-        egui::CollapsingHeader::new("Hierarchy Tree").show(ui, |ui| {
-            render_hierarchy_tree(ui, arch, tile);
+        // Initialize hierarchy tree height if not set
+        let default_tree_height = (available_height * 0.3).min(400.0).max(100.0);
+        let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
+
+        // Clamp tree height to reasonable bounds
+        let min_tree_height = 50.0;
+        let max_tree_height = available_height - 100.0; // Leave some space for visual layout
+        let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
+
+        // Allocate space for hierarchy tree
+        let tree_rect = egui::Rect::from_min_size(
+            available_rect.min,
+            egui::vec2(available_rect.width(), tree_height),
+        );
+        ui.allocate_ui_at_rect(tree_rect, |ui| {
+            egui::CollapsingHeader::new("Hierarchy Tree")
+                .default_open(true)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
+                    });
+                });
         });
-        ui.separator();
-    }
 
-    ui.heading("Visual Layout");
+        // Draw resizable separator
+        let separator_y = tree_rect.max.y;
+        let separator_rect = egui::Rect::from_min_size(
+            egui::pos2(available_rect.min.x, separator_y - 2.0),
+            egui::vec2(available_rect.width(), 4.0),
+        );
 
-    egui::ScrollArea::both()
-        .id_source("intra_tile_canvas")
-        .show(ui, |ui| {
-            // Determine the root PBType to visualize
-            // Use the selected sub_tile_index
-            if sub_tile_index < tile.sub_tiles.len() {
-                let sub_tile = &tile.sub_tiles[sub_tile_index];
-                if let Some(site) = sub_tile.equivalent_sites.first() {
-                    if let Some(root_pb) = arch
-                        .complex_block_list
-                        .iter()
-                        .find(|pb| pb.name == site.pb_type)
-                    {
-                        // Calculate total size to set min_size for ScrollArea
-                        let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+        let separator_response = ui.allocate_ui_at_rect(separator_rect, |ui| {
+            ui.allocate_response(separator_rect.size(), egui::Sense::drag())
+        });
 
-                        // Allocate a large canvas with the size we calculated
-                        // Using total_size for allocation ensures the scroll area knows how big the content is
-                        let (response, painter) = ui.allocate_painter(
-                            total_size + egui::vec2(40.0, 40.0),
-                            egui::Sense::drag(),
-                        );
+        // Visual separator line
+        ui.painter().rect_filled(
+            separator_rect,
+            0.0,
+            ui.style().visuals.widgets.inactive.bg_fill,
+        );
+        ui.painter().line_segment(
+            [separator_rect.left_top(), separator_rect.right_top()],
+            ui.style().visuals.widgets.inactive.bg_stroke,
+        );
 
-                        // Determine layout
-                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+        // Handle dragging
+        if separator_response.inner.dragged() {
+            let delta_y = separator_response.inner.drag_delta().y;
+            let new_height = (tree_height + delta_y).clamp(min_tree_height, max_tree_height);
+            state.hierarchy_tree_height = Some(new_height);
+        }
 
-                        let _ =
-                            draw_pb_type(&painter, root_pb, start_pos, state, &root_pb.name, ui);
+        // Update stored height if it's not set or if window was resized
+        if state.hierarchy_tree_height.is_none() || separator_response.inner.drag_stopped() {
+            state.hierarchy_tree_height = Some(tree_height);
+        }
+
+        // Allocate remaining space for visual layout
+        let layout_rect = egui::Rect::from_min_max(
+            egui::pos2(available_rect.min.x, separator_rect.max.y),
+            available_rect.max,
+        );
+        ui.allocate_ui_at_rect(layout_rect, |ui| {
+            ui.heading("Visual Layout");
+
+            egui::ScrollArea::both()
+                .id_source("intra_tile_canvas")
+                .show(ui, |ui| {
+                    // Determine the root PBType to visualize
+                    // Use the selected sub_tile_index
+                    if sub_tile_index < tile.sub_tiles.len() {
+                        let sub_tile = &tile.sub_tiles[sub_tile_index];
+                        if let Some(site) = sub_tile.equivalent_sites.first() {
+                            if let Some(root_pb) = arch
+                                .complex_block_list
+                                .iter()
+                                .find(|pb| pb.name == site.pb_type)
+                            {
+                                // Calculate total size to set min_size for ScrollArea
+                                let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+
+                                // Allocate a large canvas with the size we calculated
+                                // Using total_size for allocation ensures the scroll area knows how big the content is
+                                let (response, painter) = ui.allocate_painter(
+                                    total_size + egui::vec2(40.0, 40.0),
+                                    egui::Sense::drag(),
+                                );
+
+                                // Determine layout
+                                let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+
+                                let _ = draw_pb_type(
+                                    &painter,
+                                    root_pb,
+                                    start_pos,
+                                    state,
+                                    &root_pb.name,
+                                    ui,
+                                );
+                            } else {
+                                ui.label("Root PBType not found");
+                            }
+                        } else {
+                            ui.label("No equivalent site found");
+                        }
                     } else {
-                        ui.label("Root PBType not found");
+                        ui.label("Invalid sub_tile index");
+                    }
+                });
+        });
+    } else {
+        // No hierarchy tree, use full space for visual layout
+        ui.heading("Visual Layout");
+
+        egui::ScrollArea::both()
+            .id_source("intra_tile_canvas")
+            .show(ui, |ui| {
+                // Determine the root PBType to visualize
+                // Use the selected sub_tile_index
+                if sub_tile_index < tile.sub_tiles.len() {
+                    let sub_tile = &tile.sub_tiles[sub_tile_index];
+                    if let Some(site) = sub_tile.equivalent_sites.first() {
+                        if let Some(root_pb) = arch
+                            .complex_block_list
+                            .iter()
+                            .find(|pb| pb.name == site.pb_type)
+                        {
+                            // Calculate total size to set min_size for ScrollArea
+                            let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+
+                            // Allocate a large canvas with the size we calculated
+                            // Using total_size for allocation ensures the scroll area knows how big the content is
+                            let (response, painter) = ui.allocate_painter(
+                                total_size + egui::vec2(40.0, 40.0),
+                                egui::Sense::drag(),
+                            );
+
+                            // Determine layout
+                            let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+
+                            let _ = draw_pb_type(
+                                &painter,
+                                root_pb,
+                                start_pos,
+                                state,
+                                &root_pb.name,
+                                ui,
+                            );
+                        } else {
+                            ui.label("Root PBType not found");
+                        }
+                    } else {
+                        ui.label("No equivalent site found");
                     }
                 } else {
-                    ui.label("No equivalent site found");
-                }
-            } else {
-                ui.label("Invalid sub_tile index");
-            }
-        });
-}
-
-fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
-    for sub_tile in &tile.sub_tiles {
-        ui.collapsing(format!("SubTile: {}", sub_tile.name), |ui| {
-            ui.label(format!("Capacity: {}", sub_tile.capacity));
-            for site in &sub_tile.equivalent_sites {
-                ui.label(format!("Site PB Type: {}", site.pb_type));
-                // Find the PBType definition
-                if let Some(pb_type) = arch
-                    .complex_block_list
-                    .iter()
-                    .find(|pb| pb.name == site.pb_type)
-                {
-                    ui.push_id(format!("pb_{}", pb_type.name), |ui| {
-                        render_pb_type_tree_node(ui, pb_type);
-                    });
-                } else {
-                    ui.colored_label(egui::Color32::RED, "PBType not found!");
-                }
-            }
-        });
-    }
-}
-
-fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(format!("PB Type: {}", pb_type.name)).strong());
-            ui.label(format!("(Num: {})", pb_type.num_pb));
-            if let Some(class) = &pb_type.blif_model {
-                ui.label(format!("Model: {}", class));
-            }
-            match pb_type.class {
-                PBTypeClass::Lut => {
-                    ui.label(egui::RichText::new("[LUT]").color(egui::Color32::YELLOW));
-                }
-                PBTypeClass::FlipFlop => {
-                    ui.label(egui::RichText::new("[FF]").color(egui::Color32::LIGHT_BLUE));
-                }
-                PBTypeClass::Memory => {
-                    ui.label(egui::RichText::new("[MEM]").color(egui::Color32::GREEN));
-                }
-                PBTypeClass::None => {}
-            }
-        });
-
-        ui.indent("ports", |ui| {
-            for port in &pb_type.ports {
-                // Display ports
-                let (direction, name, num_pins) = match port {
-                    Port::Input(p) => ("In", &p.name, p.num_pins),
-                    Port::Output(p) => ("Out", &p.name, p.num_pins),
-                    Port::Clock(p) => ("Clock", &p.name, p.num_pins),
-                };
-                ui.label(format!("{} Port: {} [{}]", direction, name, num_pins));
-            }
-        });
-
-        if !pb_type.modes.is_empty() {
-            ui.indent("modes", |ui| {
-                for mode in &pb_type.modes {
-                    ui.collapsing(format!("Mode: {}", mode.name), |ui| {
-                        for child_pb in &mode.pb_types {
-                            render_pb_type_tree_node(ui, child_pb);
-                        }
-                        if !mode.interconnects.is_empty() {
-                            ui.collapsing("Interconnects", |ui| {
-                                for inter in &mode.interconnects {
-                                    let (kind, name, input, output, pack_patterns) = match inter {
-                                        fpga_arch_parser::Interconnect::Direct(d) => (
-                                            "Direct",
-                                            &d.name,
-                                            &d.input,
-                                            &d.output,
-                                            &d.pack_patterns,
-                                        ),
-                                        fpga_arch_parser::Interconnect::Mux(m) => {
-                                            ("Mux", &m.name, &m.input, &m.output, &m.pack_patterns)
-                                        }
-                                        fpga_arch_parser::Interconnect::Complete(c) => (
-                                            "Complete",
-                                            &c.name,
-                                            &c.input,
-                                            &c.output,
-                                            &c.pack_patterns,
-                                        ),
-                                    };
-                                    ui.horizontal(|ui| {
-                                        ui.label(format!(
-                                            "{}: {} ({} -> {})",
-                                            kind, name, input, output
-                                        ));
-                                        if !pack_patterns.is_empty() {
-                                            for pp in pack_patterns {
-                                                ui.label(format!("[Pack: {}]", pp.name));
-                                            }
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                    });
+                    ui.label("Invalid sub_tile index");
                 }
             });
-        }
-    });
+    }
 }
 
 // --- Visualization Logic ---

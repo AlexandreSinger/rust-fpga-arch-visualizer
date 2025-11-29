@@ -38,7 +38,7 @@ pub fn render_settings_page(
                 // IO Block
                 ui.vertical(|ui| {
                     ui.add_space(10.0);
-                    draw_block(ui, &block_styles.io, block_size);
+                    draw_block(ui, &block_styles.io, block_size, *dark_mode);
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(block_styles.io.full_name).size(12.0));
                 });
@@ -48,7 +48,7 @@ pub fn render_settings_page(
                 // LB Block
                 ui.vertical(|ui| {
                     ui.add_space(10.0);
-                    draw_block(ui, &block_styles.lb, block_size);
+                    draw_block(ui, &block_styles.lb, block_size, *dark_mode);
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(block_styles.lb.full_name).size(12.0));
                 });
@@ -60,7 +60,7 @@ pub fn render_settings_page(
                 // SB Block
                 ui.vertical(|ui| {
                     ui.add_space(10.0);
-                    draw_block(ui, &block_styles.sb, block_size);
+                    draw_block(ui, &block_styles.sb, block_size, *dark_mode);
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(block_styles.sb.full_name).size(12.0));
                 });
@@ -70,7 +70,7 @@ pub fn render_settings_page(
                 // CB Block
                 ui.vertical(|ui| {
                     ui.add_space(10.0);
-                    draw_block(ui, &block_styles.cb, block_size);
+                    draw_block(ui, &block_styles.cb, block_size, *dark_mode);
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(block_styles.cb.full_name).size(12.0));
                 });

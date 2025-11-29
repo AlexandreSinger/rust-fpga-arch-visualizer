@@ -4,9 +4,9 @@
 
 use eframe::egui;
 
-// ============================================================================
-// Theme-Aware Base Colors
-// ============================================================================
+// ----------------------------------------------------------------------------
+// Intra Tile Colors
+// ----------------------------------------------------------------------------
 
 /// Text color that adapts to theme
 pub fn theme_text_color(dark_mode: bool) -> egui::Color32 {
@@ -53,11 +53,10 @@ pub fn theme_interconnect_bg(dark_mode: bool) -> egui::Color32 {
     }
 }
 
-// ============================================================================
+// =======================
 // Block-Specific Colors
-// ============================================================================
-
-/// LUT (Look-Up Table) block colors
+// =======================
+/// LUT colors
 pub struct LutColors {
     pub bg: egui::Color32,
     pub border: egui::Color32,
@@ -111,7 +110,7 @@ pub fn flip_flop_colors(dark_mode: bool) -> FlipFlopColors {
     }
 }
 
-/// Memory/RAM block colors
+/// Memory block colors
 pub struct MemoryColors {
     pub bg: egui::Color32,
     pub border: egui::Color32,
@@ -164,18 +163,55 @@ pub fn blif_colors(dark_mode: bool) -> BlifColors {
     }
 }
 
-// ============================================================================
+// =======================
 // Special Colors
-// ============================================================================
+// =======================
 
 /// Highlight color for hovered/selected elements
 pub const HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::RED;
 
 /// Input pin color
-pub const INPUT_PIN_COLOR: egui::Color32 = egui::Color32::BLACK;
-
-/// Output pin color
-pub const OUTPUT_PIN_COLOR: egui::Color32 = egui::Color32::BLACK;
+pub const PIN_COLOR: egui::Color32 = egui::Color32::BLACK;
 
 /// Clock pin color
 pub const CLOCK_PIN_COLOR: egui::Color32 = egui::Color32::RED;
+
+// ----------------------------------------------------------------------------
+// Grid Tile Colors (Inter-Tile View)
+// ----------------------------------------------------------------------------
+
+/// IO block
+pub fn grid_io_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(80, 80, 80) // Dark gray
+    } else {
+        egui::Color32::from_rgb(0xF5, 0xF5, 0xF5) // #F5F5F5 - Light gray
+    }
+}
+
+/// Logic Block
+pub fn grid_lb_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(60, 70, 120) // Dark blue
+    } else {
+        egui::Color32::from_rgb(0xD8, 0xE7, 0xFD) // #D8E7FD - Light blue
+    }
+}
+
+/// Switch Block
+pub fn grid_sb_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(120, 90, 60) // Dark orange/brown
+    } else {
+        egui::Color32::from_rgb(0xFF, 0xE6, 0xCE) // #FFE6CE - Light orange
+    }
+}
+
+/// Connection Block
+pub fn grid_cb_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(120, 110, 70) // Dark yellow/brown
+    } else {
+        egui::Color32::from_rgb(0xFF, 0xF3, 0xCC) // #FFF3CC - Light yellow
+    }
+}

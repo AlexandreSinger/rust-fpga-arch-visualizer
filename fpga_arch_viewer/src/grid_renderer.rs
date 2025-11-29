@@ -6,6 +6,7 @@ pub fn render_grid(
     ui: &mut egui::Ui,
     grid: &DeviceGrid,
     block_styles: &DefaultBlockStyles,
+    dark_mode: bool,
 ) -> Option<String> {
     // Cell size is based on the available space
     // TODO: may need to change later for routing
@@ -44,7 +45,8 @@ pub fn render_grid(
                                             _ => &block_styles.lb,
                                         };
 
-                                        let response = draw_block(ui, block_style, cell_size);
+                                        let response =
+                                            draw_block(ui, block_style, cell_size, dark_mode);
 
                                         if response.hovered() {
                                             egui::show_tooltip_at_pointer(

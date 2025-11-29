@@ -1,3 +1,4 @@
+use crate::intra_color_scheme;
 use eframe::egui::{self, Color32};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,13 +57,17 @@ pub struct DefaultBlockStyles {
 
 impl DefaultBlockStyles {
     pub fn new() -> Self {
+        Self::new_with_theme(false)
+    }
+
+    pub fn new_with_theme(dark_mode: bool) -> Self {
         Self {
             // IO - Input/Output Block
             io: BlockStyle::new(
                 "IO",
                 "Input/Output Block",
                 BlockShape::Square,
-                Color32::from_rgb(0xF5, 0xF5, 0xF5), // #F5F5F5
+                intra_color_scheme::grid_io_color(dark_mode),
                 1.0,
             ),
 
@@ -71,7 +76,7 @@ impl DefaultBlockStyles {
                 "LB",
                 "Logic Block",
                 BlockShape::Square,
-                Color32::from_rgb(0xD8, 0xE7, 0xFD), // #D8E7FD
+                intra_color_scheme::grid_lb_color(dark_mode),
                 1.0,
             ),
 
@@ -80,7 +85,7 @@ impl DefaultBlockStyles {
                 "SB",
                 "Switch Block",
                 BlockShape::Square,
-                Color32::from_rgb(0xFF, 0xE6, 0xCE), // #FFE6CE
+                intra_color_scheme::grid_sb_color(dark_mode),
                 0.5,
             ),
 
@@ -89,10 +94,17 @@ impl DefaultBlockStyles {
                 "CB",
                 "Connection Block",
                 BlockShape::Square,
-                Color32::from_rgb(0xFF, 0xF3, 0xCC), // #FFF3CC
+                intra_color_scheme::grid_cb_color(dark_mode),
                 0.5,
             ),
         }
+    }
+
+    pub fn update_colors(&mut self, dark_mode: bool) {
+        self.io.color = intra_color_scheme::grid_io_color(dark_mode);
+        self.lb.color = intra_color_scheme::grid_lb_color(dark_mode);
+        self.sb.color = intra_color_scheme::grid_sb_color(dark_mode);
+        self.cb.color = intra_color_scheme::grid_cb_color(dark_mode);
     }
 
     pub fn all_styles(&self) -> Vec<&BlockStyle> {
@@ -106,7 +118,12 @@ impl Default for DefaultBlockStyles {
     }
 }
 
-pub fn draw_block(ui: &mut egui::Ui, style: &BlockStyle, base_size: f32) -> egui::Response {
+pub fn draw_block(
+    ui: &mut egui::Ui,
+    style: &BlockStyle,
+    base_size: f32,
+    dark_mode: bool,
+) -> egui::Response {
     let size = base_size * style.size_multiplier;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
 
@@ -134,7 +151,7 @@ pub fn draw_block(ui: &mut egui::Ui, style: &BlockStyle, base_size: f32) -> egui
             egui::Align2::CENTER_CENTER,
             style.short_name,
             egui::FontId::proportional(size * 0.3),
-            egui::Color32::BLACK,
+            intra_color_scheme::theme_text_color(dark_mode),
         );
     }
 

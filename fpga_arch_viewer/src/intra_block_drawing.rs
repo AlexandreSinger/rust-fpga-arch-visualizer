@@ -90,7 +90,7 @@ fn draw_pins_on_side(
                 PinSide::Right => rect.max.x,
                 _ => unreachable!(),
             };
-            (spacing, (x_pos, start_y), intra_color_scheme::INPUT_PIN_COLOR)
+            (spacing, (x_pos, start_y), intra_color_scheme::PIN_COLOR)
         }
         PinSide::Top => {
             let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;

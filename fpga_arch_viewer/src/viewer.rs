@@ -266,6 +266,8 @@ impl eframe::App for FpgaViewer {
             ctx.set_visuals(egui::Visuals::light());
         }
 
+        self.block_styles.update_colors(self.dark_mode);
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             // Top menu
             egui::menu::bar(ui, |ui| {
@@ -587,7 +589,7 @@ impl eframe::App for FpgaViewer {
                         ViewMode::InterTile => {
                             if let Some(grid) = &self.device_grid {
                                 // Check if a tile was clicked
-                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles) {
+                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles, self.dark_mode) {
                                     self.selected_tile_name = Some(clicked_tile);
                                     self.selected_sub_tile_index = 0;
                                     self.view_mode = ViewMode::IntraTile;

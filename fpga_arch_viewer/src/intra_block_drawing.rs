@@ -51,10 +51,12 @@ fn draw_pin(
     });
 }
 
+#[allow(dead_code)]
 enum PinSide {
     Left,
     Right,
     Top,
+    Bottom,
 }
 
 /// Draws pins along a side of the rectangle.
@@ -100,6 +102,17 @@ fn draw_pins_on_side(
             let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
             (spacing, (start_x, rect.min.y), egui::Color32::RED)
         }
+        PinSide::Bottom => {
+            let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
+            let spacing = if rect.width() >= min_required_width {
+                rect.width() / (total_pins + 1.0)
+            } else {
+                MIN_PIN_SPACING
+            };
+            let total_pin_width = spacing * (total_pins - 1.0);
+            let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
+            (spacing, (start_x, rect.max.y), egui::Color32::RED)
+        }
     };
 
     for (i, pin) in pins.iter().enumerate() {
@@ -123,6 +136,13 @@ fn draw_pins_on_side(
                 let x_pos = start_x + spacing * i as f32;
                 let start = egui::pos2(x_pos, rect.min.y);
                 let end = egui::pos2(x_pos, rect.min.y - PORT_LENGTH);
+                (start, end, end)
+            }
+            PinSide::Bottom => {
+                let (start_x, _) = start_pos;
+                let x_pos = start_x + spacing * i as f32;
+                let start = egui::pos2(x_pos, rect.max.y);
+                let end = egui::pos2(x_pos, rect.max.y + PORT_LENGTH);
                 (start, end, end)
             }
         };
@@ -224,7 +244,7 @@ pub fn draw_ports(
     draw_pins_on_side(
         &clock_pins,
         rect,
-        PinSide::Top,
+        PinSide::Bottom,
         painter,
         port_map,
         state,

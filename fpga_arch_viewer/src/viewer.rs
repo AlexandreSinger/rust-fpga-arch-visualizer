@@ -657,9 +657,13 @@ impl eframe::App for FpgaViewer {
                 .default_size([300.0, 150.0])
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("Nothing Implemented Yet");
+                        ui.heading("FPGA Architecture Visualizer");
                         ui.add_space(10.0);
-                        ui.label("Version 0.0.0");
+                        ui.label("Version 1.0.0");
+                        ui.add_space(10.0);
+                        ui.label("A Rust-based visualizer for VTR FPGA architecture description files.");
+                        ui.add_space(10.0);
+                        ui.label("All rights reserved?");
                         ui.add_space(20.0);
                         if ui.button("Close").clicked() {
                             self.show_about = false;

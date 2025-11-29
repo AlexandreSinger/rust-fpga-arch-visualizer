@@ -26,7 +26,6 @@ fn main() -> Result<(), eframe::Error> {
         "FPGA Architecture Visualizer",
         options,
         Box::new(|_cc| {
-            // Theme is now controlled by the FpgaViewer state
             Box::new(FpgaViewer::new())
         }),
     )

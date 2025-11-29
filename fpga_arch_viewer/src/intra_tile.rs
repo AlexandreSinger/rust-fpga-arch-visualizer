@@ -7,8 +7,8 @@ use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::{HashMap, HashSet};
 
 use crate::intra_block_drawing;
-use crate::intra_hierarchy_tree;
 use crate::intra_color_scheme;
+use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
 // Constants
@@ -881,11 +881,45 @@ fn draw_wire_segment(
     parent_rect: egui::Rect,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    is_clock: bool,
 ) {
     let mut points = Vec::new();
     points.push(start);
 
-    if start.x < end.x {
+    // Clock routing: simple patterns for clock connections
+    if is_clock {
+        if start.y == end.y {
+            // Same Y level - direct horizontal routing
+            points.push(end);
+        } else if start.y < end.y {
+            // Vertical routing for clock: A is above B
+            if start.x > end.x {
+                // A is on the right of B: down → left → down
+                let mid_y = start.y + (end.y - start.y) / 2.0;
+                points.push(egui::pos2(start.x, mid_y));
+                points.push(egui::pos2(end.x, mid_y));
+            } else {
+                // A is on the left of B: down → right → down
+                let mid_y = start.y + (end.y - start.y) / 2.0;
+                points.push(egui::pos2(start.x, mid_y));
+                points.push(egui::pos2(end.x, mid_y));
+            }
+            points.push(end);
+        } else {
+            if start.x > end.x {
+                // A is on the right of B: up → left → up
+                let mid_y = start.y + (end.y - start.y) / 2.0;
+                points.push(egui::pos2(start.x, mid_y));
+                points.push(egui::pos2(end.x, mid_y));
+            } else {
+                // A is on the left of B: up → right → up
+                let mid_y = start.y + (end.y - start.y) / 2.0;
+                points.push(egui::pos2(start.x, mid_y));
+                points.push(egui::pos2(end.x, mid_y));
+            }
+            points.push(end);
+        }
+    } else if start.x < end.x {
         let dist = end.x - start.x;
         let is_parent_output = end.x >= parent_rect.max.x - 20.0;
 
@@ -978,7 +1012,21 @@ fn draw_direct_connection(
         let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
         let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
-        draw_wire_segment(painter, start, end, stroke, parent_rect, state, ui);
+        // Check if this is a clock connection by examining port names
+        let is_clock = src.to_lowercase().contains("clk")
+            || src.to_lowercase().contains("clock")
+            || dst.to_lowercase().contains("clk")
+            || dst.to_lowercase().contains("clock");
+        draw_wire_segment(
+            painter,
+            start,
+            end,
+            stroke,
+            parent_rect,
+            state,
+            ui,
+            is_clock,
+        );
     }
 }
 
@@ -1094,7 +1142,7 @@ fn draw_interconnect_block(
 
     let input_step = rect.height() / (resolved_sources.len() as f32 + 1.0);
 
-    for (i, (_src_name, src_pos)) in resolved_sources.iter().enumerate() {
+    for (i, (src_name, src_pos)) in resolved_sources.iter().enumerate() {
         let wire_highlighted = is_block_highlighted
             || state
                 .highlighted_positions_this_frame
@@ -1110,6 +1158,9 @@ fn draw_interconnect_block(
         let input_y = rect.min.y + input_step * (i as f32 + 1.0);
         let target = egui::pos2(left_edge_x, input_y);
 
+        // Check if this is a clock connection by examining source port name
+        let is_clock =
+            src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
         draw_wire_segment(
             painter,
             *src_pos,
@@ -1118,6 +1169,7 @@ fn draw_interconnect_block(
             parent_rect,
             state,
             ui,
+            is_clock,
         );
 
         if ui.rect_contains_pointer(rect) {
@@ -1126,7 +1178,7 @@ fn draw_interconnect_block(
     }
 
     let right_edge_x = rect.max.x;
-    for (_, dst_pos) in valid_sinks {
+    for (dst_name, dst_pos) in valid_sinks {
         let wire_highlighted = is_block_highlighted
             || state
                 .highlighted_positions_this_frame
@@ -1140,7 +1192,19 @@ fn draw_interconnect_block(
         let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
         let start = egui::pos2(right_edge_x, block_center.y);
-        draw_wire_segment(painter, start, dst_pos, wire_stroke, parent_rect, state, ui);
+        // Check if this is a clock connection by examining sink port name
+        let is_clock =
+            dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
+        draw_wire_segment(
+            painter,
+            start,
+            dst_pos,
+            wire_stroke,
+            parent_rect,
+            state,
+            ui,
+            is_clock,
+        );
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(dst_pos);

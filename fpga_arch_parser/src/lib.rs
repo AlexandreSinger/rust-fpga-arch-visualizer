@@ -131,7 +131,13 @@ pub struct SubTile {
 
 pub struct Tile {
     pub name: String,
+    // FIXME: Documentation. It is not clear from the documentation if tiles should
+    //        have ports or not. The ZA archs do have ports, but most do not.
+    pub ports: Vec<Port>,
     pub sub_tiles: Vec<SubTile>,
+    pub width: i32,
+    pub height: i32,
+    pub area: Option<f32>,
 }
 
 // TODO: pb_type and priority is better served as a trait.
@@ -391,7 +397,7 @@ fn parse_port(name: &str,
                 assert!(port_class.is_none());
                 port_class = Some(a.value.clone());
             },
-            _ => panic!("Unnexpected attribute in port: {}", a.name.to_string()),
+            _ => panic!("Unnexpected attribute in port: {}", a.name),
         };
     }
 
@@ -438,20 +444,20 @@ fn parse_port(name: &str,
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
-            is_non_clock_global: is_non_clock_global,
-            port_class: port_class,
+            is_non_clock_global,
+            port_class,
         }),
         "output" => Port::Output(OutputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
-            port_class: port_class,
+            port_class,
         }),
         "clock" => Port::Clock(ClockPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
-            port_class: port_class,
+            port_class,
         }),
         _ => panic!("Unknown port tag: {}", name),
     }
@@ -482,10 +488,10 @@ fn parse_tile_site(_name: &str,
         _ => panic!("Unknown site pin mapping: {}", site_pin_mapping),
     };
 
-    return TileSite {
+    TileSite {
         pb_type: site_pb_type.unwrap(),
         pin_mapping: site_pin_mapping,
-    };
+    }
 }
 
 fn parse_equivalent_sites(_name: &str,
@@ -519,11 +525,11 @@ fn parse_equivalent_sites(_name: &str,
         }
     };
 
-    return equivalent_sites;
+    equivalent_sites
 }
 
 fn create_sub_tile_io_fc(ty: &str, val: &str) -> SubTileIOFC {
-    return match ty {
+    match ty {
         "frac" => {
             SubTileIOFC::Frac(SubTileFracFC {
                 val: val.parse().expect("fc_val should be frac"),
@@ -562,7 +568,7 @@ fn parse_sub_tile_fc(_name: &str,
                 assert!(out_val.is_none());
                 out_val = Some(a.value.clone());
             },
-            _ => panic!("Unknown fc attribute: {}", a.name.to_string()),
+            _ => panic!("Unknown fc attribute: {}", a.name),
         };
     }
 
@@ -574,9 +580,9 @@ fn parse_sub_tile_fc(_name: &str,
     let in_fc = create_sub_tile_io_fc(&in_type.unwrap(), &in_val.unwrap());
     let out_fc = create_sub_tile_io_fc(&out_type.unwrap(), &out_val.unwrap());
 
-    return SubTileFC {
-        in_fc: in_fc,
-        out_fc: out_fc,
+    SubTileFC {
+        in_fc,
+        out_fc,
     }
 }
 
@@ -600,18 +606,12 @@ fn parse_pin_loc(_name: &str,
                 assert!(yoffset.is_none());
                 yoffset = Some(a.value.parse().expect("yoffset expected to be an i32."));
             },
-            _ => panic!("Unnexpected attribute in loc: {}", a.name.to_string()),
+            _ => panic!("Unnexpected attribute in loc: {}", a.name),
         };
     }
 
-    let xoffset = match xoffset {
-        Some(offset) => offset,
-        None => 0,
-    };
-    let yoffset = match yoffset {
-        Some(offset) => offset,
-        None => 0,
-    };
+    let xoffset = xoffset.unwrap_or_default();
+    let yoffset = yoffset.unwrap_or_default();
 
     let side = match side {
         Some(side) => match side.as_str() {
@@ -650,11 +650,11 @@ fn parse_pin_loc(_name: &str,
         _ => panic!("Unexpected XML element found in loc tag"),
     };
 
-    return PinLoc {
-        side: side,
-        xoffset: xoffset,
-        yoffset: yoffset,
-        pin_strings: pin_strings,
+    PinLoc {
+        side,
+        xoffset,
+        yoffset,
+        pin_strings,
     }
 }
 
@@ -668,7 +668,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
                 assert!(pattern.is_none());
                 pattern = Some(a.value.clone());
             },
-            _ => panic!("Unknown pin locations attribute: {}", a.name.to_string()),
+            _ => panic!("Unknown pin locations attribute: {}", a.name),
         };
     }
 
@@ -680,7 +680,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
                     "loc" => {
                         pin_locs.push(parse_pin_loc(&name.to_string(), &attributes, parser));
                     },
-                    _ => panic!("Unnexpected tag in pinlocations: {}", name.to_string()),
+                    _ => panic!("Unnexpected tag in pinlocations: {}", name),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -700,7 +700,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
     // TODO: If pin locs is defined for any pattern other than custom, something
     //       is wrong.
 
-    return match pattern {
+    match pattern {
         Some(pattern) => match pattern.as_str() {
             "spread" => SubTilePinLocations::Spread,
             "perimeter" => SubTilePinLocations::Perimeter,
@@ -713,7 +713,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
             _ => panic!("Unknown spreadpattern for pinlocations: {}", pattern),
         },
         None => panic!("pinlocations tag has no pattern attribute."),
-    };
+    }
 }
 
 fn parse_sub_tile(_name: &str,
@@ -778,32 +778,58 @@ fn parse_sub_tile(_name: &str,
     assert!(sub_tile_fc.is_some());
     assert!(pin_locations.is_some());
 
-    return SubTile {
+    SubTile {
         name: sub_tile_name.unwrap(),
         capacity: sub_tile_capacity,
         equivalent_sites: equivalent_sites.unwrap(),
-        ports: ports,
+        ports,
         fc: sub_tile_fc.unwrap(),
         pin_locations: pin_locations.unwrap(),
-    };
+    }
 }
 
-fn parse_tile(_name: &str,
+fn parse_tile(name: &str,
               attributes: &Vec<OwnedAttribute>,
               parser: &mut EventReader<BufReader<File>>) -> Tile {
 
-    // TODO: Verify the name and attributes are expected.
+    assert!(name == "tile");
 
-    let mut tile_name = String::new();
+    let mut tile_name: Option<String> = None;
+    let mut width: Option<i32> = None;
+    let mut height: Option<i32> = None;
+    let mut area: Option<f32> = None;
     for a in attributes {
-        match a.name.to_string().as_str() {
+        match a.name.to_string().as_ref() {
             "name" => {
-                tile_name = a.value.clone();
+                assert!(tile_name.is_none());
+                tile_name = Some(a.value.clone());
             },
-            _ => {},
-        };
+            "width" => {
+                assert!(width.is_none());
+                width = Some(a.value.parse().expect("Tile width expected to be i32 type."));
+            },
+            "height" => {
+                assert!(height.is_none());
+                height = Some(a.value.parse().expect("Tile height expected to be i32 type."));
+            },
+            "area" => {
+                assert!(area.is_none());
+                area = Some(a.value.parse().expect("Tile area expected to be f32 type."));
+            },
+            _ => panic!("Unnexpected attribute in tile tag: {}", a),
+        }
     }
 
+    let tile_name = match tile_name {
+        Some(n) => n,
+        None => panic!("Tile name required but not given."),
+    };
+
+    // If the width or height is not provided, they are assumed to be 1.
+    let width = width.unwrap_or(1);
+    let height = height.unwrap_or(1);
+
+    let mut ports: Vec<Port> = Vec::new();
     let mut sub_tiles: Vec<SubTile> = Vec::new();
     loop {
         match parser.next() {
@@ -812,8 +838,11 @@ fn parse_tile(_name: &str,
                     "sub_tile" => {
                         sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser));
                     },
+                    "input" | "output" | "clock" => {
+                        ports.push(parse_port(&name.to_string(), &attributes));
+                    },
                     _ => {
-                        panic!("Unnexpected tag in tile.");
+                        panic!("Unnexpected tag in tile: {}.", name);
                     },
                 };
             },
@@ -831,10 +860,14 @@ fn parse_tile(_name: &str,
         }
     };
 
-    return Tile {
+    Tile {
         name: tile_name,
-        sub_tiles: sub_tiles,
-    };
+        ports,
+        sub_tiles,
+        width,
+        height,
+        area,
+    }
 }
 
 fn parse_tiles(_name: &str,
@@ -847,11 +880,8 @@ fn parse_tiles(_name: &str,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                match name.to_string().as_str() {
-                    "tile" => {
-                        tiles.push(parse_tile(&name.to_string(), &attributes, parser));
-                    },
-                    _ => {},
+                if name.to_string().as_str() == "tile" {
+                    tiles.push(parse_tile(&name.to_string(), &attributes, parser));
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -868,11 +898,12 @@ fn parse_tiles(_name: &str,
         }
     };
 
-    return tiles;
+    tiles
 }
 
 fn parse_grid_location(name: &str,
-                       attributes: &Vec<OwnedAttribute>) -> GridLocation {
+                       attributes: &Vec<OwnedAttribute>,
+                       parser: &mut EventReader<BufReader<File>>) -> GridLocation {
 
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
@@ -927,13 +958,17 @@ fn parse_grid_location(name: &str,
             "incry" => {
                 incr_y_expr = a.value.clone();
             },
-            _ => panic!("Unnexpected attribute in grid location: {}", a.to_string()),
+            _ => panic!("Unnexpected attribute in grid location: {}", a),
         };
     }
 
     if pb_type.is_none() || priority.is_none() {
         panic!("Grid location {name} missing type and/or priority");
     }
+
+    // Skip the contents of the grid location tag.
+    // TODO: Should parse metadata tag.
+    let _ = parser.skip();
 
     match name.to_string().as_ref() {
         "perimeter" => {
@@ -966,38 +1001,38 @@ fn parse_grid_location(name: &str,
             GridLocation::Col(ColGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-                start_x_expr: start_x_expr,
-                repeat_x_expr: repeat_x_expr,
-                start_y_expr: start_y_expr,
-                incr_y_expr: incr_y_expr,
+                start_x_expr,
+                repeat_x_expr,
+                start_y_expr,
+                incr_y_expr,
             })
         },
         "row" => {
             GridLocation::Row(RowGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-                start_x_expr: start_x_expr,
-                incr_x_expr: incr_x_expr,
-                start_y_expr: start_y_expr,
-                repeat_y_expr: repeat_y_expr,
+                start_x_expr,
+                incr_x_expr,
+                start_y_expr,
+                repeat_y_expr,
             })
         },
         "region" => {
             GridLocation::Region(RegionGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-                start_x_expr: start_x_expr,
-                end_x_expr: end_x_expr,
-                repeat_x_expr: repeat_x_expr,
-                incr_x_expr: incr_x_expr,
-                start_y_expr: start_y_expr,
-                end_y_expr: end_y_expr,
-                repeat_y_expr: repeat_y_expr,
-                incr_y_expr: incr_y_expr,
+                start_x_expr,
+                end_x_expr,
+                repeat_x_expr,
+                incr_x_expr,
+                start_y_expr,
+                end_y_expr,
+                repeat_y_expr,
+                incr_y_expr,
             })
         },
         _ => {
-            panic!("Unknown grid location: {}", name.to_string());
+            panic!("Unknown grid location: {}", name);
         },
     }
 }
@@ -1008,7 +1043,7 @@ fn parse_grid_location_list(layout_type_name: &str,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                grid_locations.push(parse_grid_location(&name.to_string(), &attributes));
+                grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser));
             },
             Ok(XmlEvent::EndElement { name }) => {
                 if name.to_string() == layout_type_name {
@@ -1024,7 +1059,7 @@ fn parse_grid_location_list(layout_type_name: &str,
         }
     };
 
-    return grid_locations;
+    grid_locations
 }
 
 fn parse_auto_layout(name: &str,
@@ -1039,17 +1074,17 @@ fn parse_auto_layout(name: &str,
                 aspect_ratio = a.value.parse().expect("Invalid aspect ratio");
             },
             _ => {
-                panic!("Unknown attribute for auto layout: {}", a.name.to_string());
+                panic!("Unknown attribute for auto layout: {}", a.name);
             },
         }
     }
 
     let grid_locations = parse_grid_location_list(name, parser);
 
-    return AutoLayout {
-        aspect_ratio: aspect_ratio,
-        grid_locations: grid_locations,
-    };
+    AutoLayout {
+        aspect_ratio,
+        grid_locations,
+    }
 }
 
 fn parse_fixed_layout(name: &str,
@@ -1074,18 +1109,18 @@ fn parse_fixed_layout(name: &str,
                 height = Some(a.value.parse().expect("Height for fixed layout expected to be i32."));
             },
             _ => {
-                panic!("Unknown attribute for fixed layout: {}", a.name.to_string());
+                panic!("Unknown attribute for fixed layout: {}", a.name);
             },
         }
     }
 
     let grid_locations = parse_grid_location_list(name, parser);
 
-    return FixedLayout {
+    FixedLayout {
         name: layout_name.unwrap(),
         width: width.unwrap(),
         height: height.unwrap(),
-        grid_locations: grid_locations,
+        grid_locations,
     }
 }
 
@@ -1123,7 +1158,7 @@ fn parse_layouts(_name: &str,
         }
     };
 
-    return layouts;
+    layouts
 }
 
 fn parse_chan_w_dist(name: &str,
@@ -1157,7 +1192,7 @@ fn parse_chan_w_dist(name: &str,
                 assert!(dc.is_none());
                 dc = Some(a.value.parse().expect("chan_w_dist dc expected to be f32"));
             },
-            _ => panic!("Unexpected attribute in chan_w_distr: {}", a.to_string()),
+            _ => panic!("Unexpected attribute in chan_w_distr: {}", a),
         };
     }
 
@@ -1168,7 +1203,7 @@ fn parse_chan_w_dist(name: &str,
         _ => panic!("Unnexpected tag in chan_w_distr x/y tag"),
     };
 
-    return match distr {
+    match distr {
         Some(distr_str) => {
             match distr_str.as_str() {
                 "gaussian" => ChanWDist::Gaussian(GaussianChanWDist {
@@ -1195,14 +1230,14 @@ fn parse_chan_w_dist(name: &str,
             }
         },
         None => panic!("No distr provided for chan_w_distr"),
-    };
+    }
 }
 
 fn parse_device(name: &str,
-                attributes: &Vec<OwnedAttribute>,
+                attributes: &[OwnedAttribute],
                 parser: &mut EventReader<BufReader<File>>) -> DeviceInfo {
     assert!(name == "device");
-    assert!(attributes.len() == 0);
+    assert!(attributes.is_empty());
 
     let mut r_min_w_nmos: Option<f32> = None;
     let mut r_min_w_pmos: Option<f32> = None;
@@ -1228,7 +1263,7 @@ fn parse_device(name: &str,
                                     assert!(r_min_w_pmos.is_none());
                                     r_min_w_pmos = Some(a.value.parse().expect("R_minW_pmos expected to be f32 type"));
                                 },
-                                _ => panic!("Unknown attribute for sizing tag: {}", a.to_string()),
+                                _ => panic!("Unknown attribute for sizing tag: {}", a),
                             };
                         }
                         match parser.next() {
@@ -1245,7 +1280,7 @@ fn parse_device(name: &str,
                                     assert!(grid_logic_tile_area.is_none());
                                     grid_logic_tile_area = Some(a.value.parse().expect("grid_logic_tile_area expected to be f32 type"));
                                 },
-                                _ => panic!("Unknown attribute for area tag: {}", a.to_string()),
+                                _ => panic!("Unknown attribute for area tag: {}", a),
                             };
                         }
                         match parser.next() {
@@ -1268,13 +1303,13 @@ fn parse_device(name: &str,
                                             assert!(y_distr.is_none());
                                             y_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser));
                                         },
-                                        _ => panic!("Unexpected tag in chan_width_distr: {}", name.to_string()),
+                                        _ => panic!("Unexpected tag in chan_width_distr: {}", name),
                                     };
                                 },
                                 Ok(XmlEvent::EndElement { name }) => {
                                     match name.to_string().as_str() {
                                         "chan_width_distr" => break,
-                                        _ => panic!("Unexpected end tag in chan_width_distr: {}", name.to_string()),
+                                        _ => panic!("Unexpected end tag in chan_width_distr: {}", name),
                                     }
                                 },
                                 Err(e) => {
@@ -1304,7 +1339,7 @@ fn parse_device(name: &str,
                                     assert!(sb_fs.is_none());
                                     sb_fs = Some(a.value.parse().expect("switch_block fs expected to be i32 type, got"));
                                 },
-                                _ => panic!("Unknown attribute for area tag: {}", a.to_string()),
+                                _ => panic!("Unknown attribute for area tag: {}", a),
                             };
                         }
                         match parser.next() {
@@ -1321,7 +1356,7 @@ fn parse_device(name: &str,
                                     assert!(input_switch_name.is_none());
                                     input_switch_name = Some(a.value.clone());
                                 },
-                                _ => panic!("Unknown attribute for connection_block tag: {}", a.to_string()),
+                                _ => panic!("Unknown attribute for connection_block tag: {}", a),
                             };
                         }
                         match parser.next() {
@@ -1349,16 +1384,16 @@ fn parse_device(name: &str,
         }
     };
 
-    return DeviceInfo {
+    DeviceInfo {
         r_min_w_nmos: r_min_w_nmos.unwrap(),
         r_min_w_pmos: r_min_w_pmos.unwrap(),
         input_switch_name: input_switch_name.unwrap(),
         grid_logic_tile_area: grid_logic_tile_area.unwrap(),
         sb_type: sb_type.unwrap(),
-        sb_fs: sb_fs,
+        sb_fs,
         x_distr: x_distr.unwrap(),
         y_distr: y_distr.unwrap(),
-    };
+    }
 }
 
 fn parse_segment(name: &str,
@@ -1420,7 +1455,7 @@ fn parse_segment(name: &str,
                 assert!(c_metal.is_none());
                 c_metal = Some(a.value.parse().expect("Segment Cmetal expected to be f32 type"));
             },
-            _ => panic!("Unknown attribute in segment tag: {}", a.to_string()),
+            _ => panic!("Unknown attribute in segment tag: {}", a),
         };
     }
 
@@ -1434,12 +1469,12 @@ fn parse_segment(name: &str,
         None => String::from("UnnamedSegment"),
     };
 
-    return Segment {
-        name: name,
-        axis: axis,
+    Segment {
+        name,
+        axis,
         length: length.unwrap(),
         segment_type: segment_type.unwrap(),
-        res_type: res_type,
+        res_type,
         freq: freq.unwrap(),
         r_metal: r_metal.unwrap(),
         c_metal: c_metal.unwrap(),
@@ -1447,10 +1482,10 @@ fn parse_segment(name: &str,
 }
 
 fn parse_segment_list(name: &str,
-                      attributes: &Vec<OwnedAttribute>,
+                      attributes: &[OwnedAttribute],
                       parser: &mut EventReader<BufReader<File>>) -> Vec<Segment> {
     assert!(name == "segmentlist");
-    assert!(attributes.len() == 0);
+    assert!(attributes.is_empty());
 
     let mut segments: Vec<Segment> = Vec::new();
     loop {
@@ -1460,13 +1495,13 @@ fn parse_segment_list(name: &str,
                     "segment" => {
                         segments.push(parse_segment(&name.to_string(), &attributes, parser));
                     },
-                    _ => panic!("Unnexpected tag in segmentlist: {}", name.to_string()),
+                    _ => panic!("Unnexpected tag in segmentlist: {}", name),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
                 match name.to_string().as_str() {
                     "segmentlist" => break,
-                    _ => panic!("Unnexpected end element in segmentlist: {}", name.to_string()),
+                    _ => panic!("Unnexpected end element in segmentlist: {}", name),
                 }
             },
             Err(e) => {
@@ -1478,7 +1513,7 @@ fn parse_segment_list(name: &str,
         }
     };
 
-    return segments;
+    segments
 }
 
 fn parse_pack_pattern(name: &str,
@@ -1503,7 +1538,7 @@ fn parse_pack_pattern(name: &str,
                 assert!(out_port.is_none());
                 out_port = Some(a.value.clone());
             },
-            _ => panic!("Unknown attribute for pack_pattern: {}", a.to_string()),
+            _ => panic!("Unknown attribute for pack_pattern: {}", a),
         };
     }
 
@@ -1518,11 +1553,11 @@ fn parse_pack_pattern(name: &str,
         _ => panic!("Unnexpected end tag."),
     };
 
-    return PackPattern {
+    PackPattern {
         name: pattern_name.unwrap(),
         in_port: in_port.unwrap(),
         out_port: out_port.unwrap(),
-    };
+    }
 }
 
 fn parse_interconnect(name: &str,
@@ -1546,7 +1581,7 @@ fn parse_interconnect(name: &str,
                 assert!(output.is_none());
                 output = Some(a.value.clone());
             },
-            _ => panic!("Unknown attribute for {} tag: {}", name, a.to_string()),
+            _ => panic!("Unknown attribute for {} tag: {}", name, a),
         };
     }
 
@@ -1558,11 +1593,8 @@ fn parse_interconnect(name: &str,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                match name.to_string().as_str() {
-                    "pack_pattern" => {
-                        pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser));
-                    },
-                    _ => {},
+                if name.to_string().as_str() == "pack_pattern" {
+                    pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser));
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -1580,34 +1612,34 @@ fn parse_interconnect(name: &str,
         }
     };
 
-    return match name {
+    match name {
         "direct" => Interconnect::Direct(DirectInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_patterns: pack_patterns,
+            pack_patterns,
         }),
         "mux" => Interconnect::Mux(MuxInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_patterns: pack_patterns,
+            pack_patterns,
         }),
         "complete" => Interconnect::Complete(CompleteInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
-            pack_patterns: pack_patterns,
+            pack_patterns,
         }),
         _ => panic!("Unknown interconnect tag: {}", name),
-    };
+    }
 }
 
 fn parse_interconnects(name: &str,
-                       attributes: &Vec<OwnedAttribute>,
+                       attributes: &[OwnedAttribute],
                        parser: &mut EventReader<BufReader<File>>) -> Vec<Interconnect> {
     assert!(name == "interconnect");
-    assert!(attributes.len() == 0);
+    assert!(attributes.is_empty());
 
     let mut interconnects: Vec<Interconnect> = Vec::new();
     loop {
@@ -1634,7 +1666,7 @@ fn parse_interconnects(name: &str,
         }
     };
 
-    return interconnects;
+    interconnects
 }
 
 fn parse_pb_mode(_name: &str,
@@ -1683,11 +1715,11 @@ fn parse_pb_mode(_name: &str,
         }
     };
 
-    return PBMode {
+    PBMode {
         name: mode_name.unwrap(),
-        pb_types: pb_types,
-        interconnects: interconnects,
-    };
+        pb_types,
+        interconnects,
+    }
 }
 
 fn parse_pb_type(_name: &str,
@@ -1713,7 +1745,7 @@ fn parse_pb_type(_name: &str,
             "class" => {
                 class = Some(a.value.clone());
             },
-            _ => panic!("Unknown attribute in pb_type: {}", a.name.to_string()),
+            _ => panic!("Unknown attribute in pb_type: {}", a.name),
         };
     }
     assert!(pb_type_name.is_some());
@@ -1766,15 +1798,15 @@ fn parse_pb_type(_name: &str,
         },
     };
 
-    return PBType {
+    PBType {
         name: pb_type_name.unwrap(),
-        num_pb: num_pb,
-        blif_model: blif_model,
+        num_pb,
+        blif_model,
         class: pb_class,
         ports: pb_ports,
         modes: pb_modes,
-        pb_types: pb_types,
-        interconnects: interconnects,
+        pb_types,
+        interconnects,
     }
 }
 
@@ -1809,7 +1841,7 @@ fn parse_complex_block_list(_name: &str,
         }
     };
 
-    return complex_block_list;
+    complex_block_list
 }
 
 // TODO: This result type should be changed to something better than std::io
@@ -1888,13 +1920,13 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
 
     assert!(device.is_some());
 
-    return Ok(FPGAArch {
+    Ok(FPGAArch {
         models: Vec::new(),
-        tiles: tiles,
-        layouts: layouts,
+        tiles,
+        layouts,
         device: device.unwrap(),
         switch_list: Vec::new(),
-        segment_list: segment_list,
-        complex_block_list: complex_block_list,
-    });
+        segment_list,
+        complex_block_list,
+    })
 }

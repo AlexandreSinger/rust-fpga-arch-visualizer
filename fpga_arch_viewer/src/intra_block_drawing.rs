@@ -9,6 +9,39 @@ use std::collections::HashMap;
 
 use super::intra_tile::IntraTileState;
 
+/// Theme-aware color helpers
+fn theme_text_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::BLACK
+    }
+}
+
+fn theme_header_bg(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(60, 60, 60)
+    } else {
+        egui::Color32::from_rgb(200, 200, 200)
+    }
+}
+
+fn theme_block_bg(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(40, 40, 40)
+    } else {
+        egui::Color32::from_rgb(240, 240, 240)
+    }
+}
+
+fn theme_border_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(120, 120, 120)
+    } else {
+        egui::Color32::from_rgb(100, 100, 100)
+    }
+}
+
 // Constants
 const HEADER_HEIGHT: f32 = 35.0;
 const PORT_LENGTH: f32 = 15.0;
@@ -261,12 +294,13 @@ pub fn draw_generic_block(
     pb_type: &PBType,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
     painter.rect(
         rect,
         0.0,
-        egui::Color32::from_rgb(240, 240, 240),
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(100, 100, 100)),
+        theme_block_bg(dark_mode),
+        egui::Stroke::new(1.5, theme_border_color(dark_mode)),
     );
 
     // Title bar
@@ -274,7 +308,7 @@ pub fn draw_generic_block(
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
-        egui::Color32::from_rgb(200, 200, 200),
+        theme_header_bg(dark_mode),
         egui::Stroke::NONE,
     );
 
@@ -283,7 +317,7 @@ pub fn draw_generic_block(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(14.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -300,20 +334,27 @@ pub fn draw_lut(
     pb_type: &PBType,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(255, 250, 205),
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 180, 0)),
-    );
+    // LUT: Yellow in light mode, darker yellow in dark mode
+    let bg_color = if dark_mode {
+        egui::Color32::from_rgb(100, 100, 50)
+    } else {
+        egui::Color32::from_rgb(255, 250, 205)
+    };
+    let border_color = if dark_mode {
+        egui::Color32::from_rgb(150, 150, 0)
+    } else {
+        egui::Color32::from_rgb(180, 180, 0)
+    };
+    painter.rect(rect, 0.0, bg_color, egui::Stroke::new(1.5, border_color));
 
     painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         "LUT",
         egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(180, 180, 0),
+        border_color,
     );
 
     painter.text(
@@ -321,7 +362,7 @@ pub fn draw_lut(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -338,13 +379,20 @@ pub fn draw_flip_flop(
     pb_type: &PBType,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(220, 230, 255), // Light Blue
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 0, 180)),
-    );
+    // FlipFlop: Light blue in light mode, darker blue in dark mode
+    let bg_color = if dark_mode {
+        egui::Color32::from_rgb(50, 60, 100)
+    } else {
+        egui::Color32::from_rgb(220, 230, 255)
+    };
+    let border_color = if dark_mode {
+        egui::Color32::from_rgb(100, 100, 255)
+    } else {
+        egui::Color32::from_rgb(0, 0, 180)
+    };
+    painter.rect(rect, 0.0, bg_color, egui::Stroke::new(1.5, border_color));
 
     let triangle_size = 8.0;
     let bottom_center = rect.center_bottom();
@@ -356,7 +404,7 @@ pub fn draw_flip_flop(
             bottom_center + egui::vec2(0.0, -triangle_size),
         ],
         egui::Color32::TRANSPARENT,
-        egui::Stroke::new(1.5, egui::Color32::BLACK),
+        egui::Stroke::new(1.5, theme_text_color(dark_mode)),
     ));
 
     painter.text(
@@ -364,7 +412,7 @@ pub fn draw_flip_flop(
         egui::Align2::CENTER_CENTER,
         "FF",
         egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(0, 0, 180),
+        border_color,
     );
 
     painter.text(
@@ -372,7 +420,7 @@ pub fn draw_flip_flop(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -389,13 +437,20 @@ pub fn draw_memory(
     pb_type: &PBType,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(200, 240, 200), // Light Green
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 100, 0)),
-    );
+    // Memory: Light green in light mode, darker green in dark mode
+    let bg_color = if dark_mode {
+        egui::Color32::from_rgb(50, 100, 50)
+    } else {
+        egui::Color32::from_rgb(200, 240, 200)
+    };
+    let border_color = if dark_mode {
+        egui::Color32::from_rgb(0, 150, 0)
+    } else {
+        egui::Color32::from_rgb(0, 100, 0)
+    };
+    painter.rect(rect, 0.0, bg_color, egui::Stroke::new(1.5, border_color));
 
     let grid_spacing = 10.0;
     let mut y = rect.min.y + 20.0;
@@ -405,7 +460,7 @@ pub fn draw_memory(
                 egui::pos2(rect.min.x + 10.0, y),
                 egui::pos2(rect.max.x - 10.0, y),
             ],
-            egui::Stroke::new(0.5, egui::Color32::from_rgb(0, 100, 0)),
+            egui::Stroke::new(0.5, border_color),
         );
         y += grid_spacing;
     }
@@ -415,7 +470,7 @@ pub fn draw_memory(
         egui::Align2::CENTER_CENTER,
         "RAM",
         egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(0, 100, 0),
+        border_color,
     );
 
     painter.text(
@@ -423,7 +478,7 @@ pub fn draw_memory(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -440,20 +495,27 @@ pub fn draw_blif_block(
     pb_type: &PBType,
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(255, 220, 220), // Light Pink/Red
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 0, 0)),
-    );
+    // BLIF: Light pink/red in light mode, darker red in dark mode
+    let bg_color = if dark_mode {
+        egui::Color32::from_rgb(100, 50, 50)
+    } else {
+        egui::Color32::from_rgb(255, 220, 220)
+    };
+    let border_color = if dark_mode {
+        egui::Color32::from_rgb(200, 0, 0)
+    } else {
+        egui::Color32::from_rgb(180, 0, 0)
+    };
+    painter.rect(rect, 0.0, bg_color, egui::Stroke::new(1.5, border_color));
 
     // Title bar
     let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
-        egui::Color32::from_rgb(200, 200, 200),
+        theme_header_bg(dark_mode),
         egui::Stroke::NONE,
     );
 
@@ -464,7 +526,7 @@ pub fn draw_blif_block(
             egui::Align2::CENTER_CENTER,
             blif_model,
             egui::FontId::monospace(14.0),
-            egui::Color32::from_rgb(180, 0, 0),
+            border_color,
         );
     }
 
@@ -473,7 +535,7 @@ pub fn draw_blif_block(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(14.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();

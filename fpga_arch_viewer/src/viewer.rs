@@ -48,6 +48,8 @@ pub struct FpgaViewer {
     intra_tile_state: IntraTileState,
     // Track if all blocks are expanded
     all_blocks_expanded: bool,
+    // Theme setting
+    dark_mode: bool,
 }
 
 impl FpgaViewer {
@@ -71,6 +73,7 @@ impl FpgaViewer {
             show_hierarchy_tree: false,
             intra_tile_state: IntraTileState::default(),
             all_blocks_expanded: false,
+            dark_mode: false,
         }
     }
 
@@ -256,6 +259,13 @@ impl FpgaViewer {
 
 impl eframe::App for FpgaViewer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme based on dark_mode setting
+        if self.dark_mode {
+            ctx.set_visuals(egui::Visuals::dark());
+        } else {
+            ctx.set_visuals(egui::Visuals::light());
+        }
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             // Top menu
             egui::menu::bar(ui, |ui| {
@@ -610,6 +620,7 @@ impl eframe::App for FpgaViewer {
                                         self.show_hierarchy_tree,
                                         sub_tile_index,
                                         self.all_blocks_expanded,
+                                        self.dark_mode,
                                     );
                                 } else {
                                     self.render_centered_message(
@@ -631,7 +642,7 @@ impl eframe::App for FpgaViewer {
                     }
                 }
                 Page::Settings => {
-                    settings::render_settings_page(ui, &self.block_styles);
+                    settings::render_settings_page(ui, &self.block_styles, &mut self.dark_mode);
                 }
             }
         });

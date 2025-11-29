@@ -1,10 +1,28 @@
-use eframe::egui;
 use crate::block_style::{DefaultBlockStyles, draw_block};
+use eframe::egui;
 
-pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles) {
+pub fn render_settings_page(
+    ui: &mut egui::Ui,
+    block_styles: &DefaultBlockStyles,
+    dark_mode: &mut bool,
+) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Settings");
         ui.add_space(20.0);
+
+        // Theme toggle
+        ui.group(|ui| {
+            ui.heading("Appearance");
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.label("Theme:");
+                ui.add_space(10.0);
+                ui.selectable_value(dark_mode, false, "☀ Light");
+                ui.selectable_value(dark_mode, true, "🌙 Dark");
+            });
+        });
+
+        ui.add_space(30.0);
 
         // show default block styles
         ui.group(|ui| {
@@ -22,10 +40,7 @@ pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles
                     ui.add_space(10.0);
                     draw_block(ui, &block_styles.io, block_size);
                     ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(block_styles.io.full_name)
-                            .size(12.0)
-                    );
+                    ui.label(egui::RichText::new(block_styles.io.full_name).size(12.0));
                 });
 
                 ui.add_space(spacing - block_size);
@@ -35,10 +50,7 @@ pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles
                     ui.add_space(10.0);
                     draw_block(ui, &block_styles.lb, block_size);
                     ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(block_styles.lb.full_name)
-                            .size(12.0)
-                    );
+                    ui.label(egui::RichText::new(block_styles.lb.full_name).size(12.0));
                 });
             });
 
@@ -50,10 +62,7 @@ pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles
                     ui.add_space(10.0);
                     draw_block(ui, &block_styles.sb, block_size);
                     ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(block_styles.sb.full_name)
-                            .size(12.0)
-                    );
+                    ui.label(egui::RichText::new(block_styles.sb.full_name).size(12.0));
                 });
 
                 ui.add_space(spacing - block_size);
@@ -63,10 +72,7 @@ pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles
                     ui.add_space(10.0);
                     draw_block(ui, &block_styles.cb, block_size);
                     ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(block_styles.cb.full_name)
-                            .size(12.0)
-                    );
+                    ui.label(egui::RichText::new(block_styles.cb.full_name).size(12.0));
                 });
             });
 
@@ -78,7 +84,7 @@ pub fn render_settings_page(ui: &mut egui::Ui, block_styles: &DefaultBlockStyles
                 egui::RichText::new("Note: SB and CB blocks are half the size of IO and LB blocks")
                     .italics()
                     .size(11.0)
-                    .color(egui::Color32::GRAY)
+                    .color(egui::Color32::GRAY),
             );
         });
 

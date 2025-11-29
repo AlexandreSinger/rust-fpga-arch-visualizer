@@ -104,6 +104,7 @@ fn render_visual_layout_canvas(
     state: &mut IntraTileState,
     sub_tile_index: usize,
     expand_all: bool,
+    dark_mode: bool,
 ) {
     egui::ScrollArea::both()
         .id_source("intra_tile_canvas")
@@ -133,6 +134,7 @@ fn render_visual_layout_canvas(
                             &root_pb.name,
                             ui,
                             expand_all,
+                            dark_mode,
                         );
                     } else {
                         ui.label("Root PBType not found");
@@ -154,6 +156,7 @@ pub fn render_intra_tile_view(
     show_hierarchy_tree: bool,
     sub_tile_index: usize,
     expand_all: bool,
+    dark_mode: bool,
 ) {
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
@@ -178,12 +181,20 @@ pub fn render_intra_tile_view(
         ui.allocate_ui_at_rect(layout_rect, |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
-            render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all);
+            render_visual_layout_canvas(
+                ui,
+                arch,
+                tile,
+                state,
+                sub_tile_index,
+                expand_all,
+                dark_mode,
+            );
         });
     } else {
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
-        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all);
+        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, dark_mode);
     }
 }
 
@@ -463,8 +474,48 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
 // ------------------------------------------------------------
 // Drawing System
 // ------------------------------------------------------------
+fn theme_text_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::BLACK
+    }
+}
+
+fn theme_header_bg(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(60, 60, 60)
+    } else {
+        egui::Color32::from_rgb(200, 200, 200)
+    }
+}
+
+fn theme_block_bg(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(40, 40, 40)
+    } else {
+        egui::Color32::from_rgb(240, 240, 240)
+    }
+}
+
+fn theme_border_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgb(120, 120, 120)
+    } else {
+        egui::Color32::from_rgb(100, 100, 100)
+    }
+}
+
+fn theme_interconnect_bg(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::from_rgba_unmultiplied(80, 80, 80, 150)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(100, 100, 100, 150)
+    }
+}
+
 /// Draws the expand indicator (▶) in the header.
-fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect) {
+fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect, dark_mode: bool) {
     let indicator_x = header_rect.min.x + 8.0;
     let indicator_y = header_rect.center().y;
     painter.text(
@@ -472,7 +523,7 @@ fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect) {
         egui::Align2::LEFT_CENTER,
         "▶",
         egui::FontId::proportional(12.0),
-        egui::Color32::BLACK,
+        theme_text_color(dark_mode),
     );
 }
 
@@ -615,6 +666,7 @@ fn draw_pb_type(
     instance_path: &str,
     ui: &mut egui::Ui,
     expand_all: bool,
+    dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
     let size = measure_pb_type(pb_type, state, instance_path);
     let rect = egui::Rect::from_min_size(pos, size);
@@ -649,7 +701,7 @@ fn draw_pb_type(
         painter.rect(
             header_rect,
             egui::Rounding::ZERO,
-            egui::Color32::from_rgb(200, 200, 200),
+            theme_header_bg(dark_mode),
             egui::Stroke::NONE,
         );
 
@@ -665,12 +717,12 @@ fn draw_pb_type(
             egui::Align2::LEFT_CENTER,
             &pb_type.name,
             font,
-            egui::Color32::BLACK,
+            theme_text_color(dark_mode),
         );
 
         // Draw expand/collapse indicator on top
         if has_children {
-            draw_expand_indicator(painter, header_rect);
+            draw_expand_indicator(painter, header_rect, dark_mode);
         }
 
         return HashMap::new();
@@ -678,21 +730,29 @@ fn draw_pb_type(
 
     // Determine specific visual style based on class
     let my_ports = match pb_type.class {
-        PBTypeClass::Lut => intra_block_drawing::draw_lut(painter, rect, pb_type, state, ui),
-        PBTypeClass::FlipFlop => intra_block_drawing::draw_flip_flop(painter, rect, pb_type, state, ui),
-        PBTypeClass::Memory => intra_block_drawing::draw_memory(painter, rect, pb_type, state, ui),
+        PBTypeClass::Lut => {
+            intra_block_drawing::draw_lut(painter, rect, pb_type, state, ui, dark_mode)
+        }
+        PBTypeClass::FlipFlop => {
+            intra_block_drawing::draw_flip_flop(painter, rect, pb_type, state, ui, dark_mode)
+        }
+        PBTypeClass::Memory => {
+            intra_block_drawing::draw_memory(painter, rect, pb_type, state, ui, dark_mode)
+        }
         PBTypeClass::None => {
             if pb_type.blif_model.is_some() {
-                intra_block_drawing::draw_blif_block(painter, rect, pb_type, state, ui)
+                intra_block_drawing::draw_blif_block(painter, rect, pb_type, state, ui, dark_mode)
             } else {
-                intra_block_drawing::draw_generic_block(painter, rect, pb_type, state, ui)
+                intra_block_drawing::draw_generic_block(
+                    painter, rect, pb_type, state, ui, dark_mode,
+                )
             }
         }
     };
 
     // Draw collapse indicator
     if has_children && !is_expanded {
-        draw_expand_indicator(painter, header_rect);
+        draw_expand_indicator(painter, header_rect, dark_mode);
     }
 
     if pb_type.modes.len() > 1 {
@@ -766,8 +826,16 @@ fn draw_pb_type(
                 max_col_width = max_col_width.max(child_single_size.x);
 
                 let pos = egui::pos2(cursor_x, cursor_y);
-                let child_map =
-                    draw_pb_type(painter, child_pb, pos, state, &child_path, ui, expand_all);
+                let child_map = draw_pb_type(
+                    painter,
+                    child_pb,
+                    pos,
+                    state,
+                    &child_path,
+                    ui,
+                    expand_all,
+                    dark_mode,
+                );
 
                 for (port_name, p) in child_map {
                     children_ports.insert(format!("{}.{}", instance_name, port_name), p);
@@ -815,6 +883,7 @@ fn draw_pb_type(
                             state,
                             ui,
                             rect,
+                            dark_mode,
                         );
                     }
                 }
@@ -830,6 +899,7 @@ fn draw_pb_type(
                     state,
                     ui,
                     rect,
+                    dark_mode,
                 );
             }
         }
@@ -922,6 +992,7 @@ fn draw_direct_connection(
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
     parent_rect: egui::Rect,
+    dark_mode: bool,
 ) {
     let src_pos = resolve_port_pos(src, &current_pb.name, my_ports, children_ports);
     let dst_pos = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports);
@@ -939,7 +1010,7 @@ fn draw_direct_connection(
         let stroke_color = if is_highlighted {
             egui::Color32::RED
         } else {
-            egui::Color32::from_rgba_unmultiplied(100, 100, 100, 150)
+            theme_interconnect_bg(dark_mode)
         };
 
         let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
@@ -960,6 +1031,7 @@ fn draw_interconnect_block(
     state: &mut IntraTileState,
     ui: &mut egui::Ui,
     parent_rect: egui::Rect,
+    dark_mode: bool,
 ) {
     let mut valid_sinks = Vec::new();
     for dst in sinks {
@@ -1014,10 +1086,10 @@ fn draw_interconnect_block(
     let stroke_color = if is_block_highlighted {
         egui::Color32::RED
     } else {
-        egui::Color32::from_rgb(100, 100, 100)
+        theme_border_color(dark_mode)
     };
     let stroke = egui::Stroke::new(1.5, stroke_color);
-    let fill_color = egui::Color32::from_rgb(230, 230, 230);
+    let fill_color = theme_block_bg(dark_mode);
 
     if kind == "mux" {
         // trapezoid

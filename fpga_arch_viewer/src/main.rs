@@ -4,10 +4,10 @@
 
 use eframe::egui;
 
-mod intra_block_drawing;
 mod block_style;
 mod grid;
 mod grid_renderer;
+mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
 mod settings;
@@ -24,10 +24,8 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|cc| {
-            // Force light mode
-            // TODO: Support dark mode later, add option to select or auto
-            cc.egui_ctx.set_visuals(egui::Visuals::light());
+        Box::new(|_cc| {
+            // Theme is now controlled by the FpgaViewer state
             Box::new(FpgaViewer::new())
         }),
     )

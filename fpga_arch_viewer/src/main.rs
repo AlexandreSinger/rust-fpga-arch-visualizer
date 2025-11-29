@@ -10,6 +10,7 @@ mod grid_renderer;
 mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
+mod intra_color_scheme;
 mod settings;
 mod viewer;
 

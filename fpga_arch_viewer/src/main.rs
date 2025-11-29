@@ -4,10 +4,11 @@
 
 use eframe::egui;
 
+mod intra_block_drawing;
 mod block_style;
 mod grid;
 mod grid_renderer;
-mod hierarchy_tree;
+mod intra_hierarchy_tree;
 mod intra_tile;
 mod settings;
 mod viewer;

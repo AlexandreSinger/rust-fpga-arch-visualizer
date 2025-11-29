@@ -1,6 +1,13 @@
+//! Hierarchy Tree Visualization
+//!
+//! Part of the Intra Tile Visualization, this module renders the textualhierarchy tree of an FPGA tile.
+
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 
+// ------------------------------------------------------------
+// Hierarchy Tree Rendering
+// ------------------------------------------------------------
 pub fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
     for sub_tile in &tile.sub_tiles {
         egui::CollapsingHeader::new(format!("SubTile: {}", sub_tile.name))

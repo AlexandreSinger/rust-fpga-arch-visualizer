@@ -1,47 +1,149 @@
+//! Intra Tile Visualization
+//!
+//! Part of the FPGA Visualizer, this module renders the intra-tile view of an FPGA tile.
+
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::{HashMap, HashSet};
 
-use crate::hierarchy_tree;
+use crate::intra_block_drawing;
+use crate::intra_hierarchy_tree;
 
+// ------------------------------------------------------------
+// Constants
+// ------------------------------------------------------------
+const PADDING: f32 = 50.0;
+const HEADER_HEIGHT: f32 = 35.0;
+const MIN_BLOCK_SIZE: egui::Vec2 = egui::vec2(80.0, 120.0);
+const MIN_PIN_SPACING: f32 = 25.0;
+
+// ------------------------------------------------------------
+// Intra Tile Drawing Entry Point
+// ------------------------------------------------------------
 #[derive(Default)]
 pub struct IntraTileState {
-    selected_modes: HashMap<String, usize>,
-    highlighted_positions_this_frame: Vec<egui::Pos2>,
-    highlighted_positions_next_frame: Vec<egui::Pos2>,
-    hierarchy_tree_height: Option<f32>,
-    expanded_blocks: HashSet<String>,
+    pub selected_modes: HashMap<String, usize>,
+    pub highlighted_positions_this_frame: Vec<egui::Pos2>,
+    pub highlighted_positions_next_frame: Vec<egui::Pos2>,
+    pub hierarchy_tree_height: Option<f32>,
+    pub expanded_blocks: HashSet<String>,
 }
 
-pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_path: &str) {
-    state.expanded_blocks.insert(instance_path.to_string());
+fn render_hierarchy_tree_panel(
+    ui: &mut egui::Ui,
+    arch: &FPGAArch,
+    tile: &Tile,
+    state: &mut IntraTileState,
+    available_rect: egui::Rect,
+    available_height: f32,
+) -> Option<f32> {
+    // Initialize hierarchy tree height
+    let default_tree_height = (available_height * 0.3).min(400.0).max(100.0);
+    let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
-    let children = if !pb_type.modes.is_empty() {
-        if mode_index < pb_type.modes.len() {
-            &pb_type.modes[mode_index].pb_types
-        } else {
-            &pb_type.modes[0].pb_types
-        }
-    } else {
-        &pb_type.pb_types
-    };
+    let min_tree_height = 50.0;
+    let max_tree_height = available_height - 100.0;
+    let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
 
-    for child_pb in children {
-        for i in 0..child_pb.num_pb {
-            let instance_name = if child_pb.num_pb == 1 {
-                child_pb.name.clone()
-            } else {
-                format!("{}[{}]", child_pb.name, i)
-            };
-            let child_path = format!("{}.{}", instance_path, instance_name);
-            expand_all_blocks(state, child_pb, &child_path);
-        }
+    // Allocate space for hierarchy tree
+    let tree_rect = egui::Rect::from_min_size(
+        available_rect.min,
+        egui::vec2(available_rect.width(), tree_height),
+    );
+    ui.allocate_ui_at_rect(tree_rect, |ui| {
+        ui.set_width(available_rect.width());
+        egui::CollapsingHeader::new("Hierarchy Tree")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
+                    });
+            });
+    });
+
+    // Draw resizable separator between hierarchy tree and visual layout
+    let separator_y = tree_rect.max.y;
+    let separator_rect = egui::Rect::from_min_size(
+        egui::pos2(available_rect.min.x, separator_y - 2.0),
+        egui::vec2(available_rect.width(), 4.0),
+    );
+    let separator_response = ui.allocate_ui_at_rect(separator_rect, |ui| {
+        ui.allocate_response(separator_rect.size(), egui::Sense::drag())
+    });
+
+    ui.painter().rect_filled(
+        separator_rect,
+        0.0,
+        ui.style().visuals.widgets.inactive.bg_fill,
+    );
+    ui.painter().line_segment(
+        [separator_rect.left_top(), separator_rect.right_top()],
+        ui.style().visuals.widgets.inactive.bg_stroke,
+    );
+
+    if separator_response.inner.dragged() {
+        let delta_y = separator_response.inner.drag_delta().y;
+        let new_height = (tree_height + delta_y).clamp(min_tree_height, max_tree_height);
+        state.hierarchy_tree_height = Some(new_height);
     }
+
+    // Update stored height if it's not set or if window was resized
+    if state.hierarchy_tree_height.is_none() || separator_response.inner.drag_stopped() {
+        state.hierarchy_tree_height = Some(tree_height);
+    }
+
+    Some(separator_rect.max.y)
 }
 
-pub fn collapse_all_blocks(state: &mut IntraTileState) {
-    state.expanded_blocks.clear();
+fn render_visual_layout_canvas(
+    ui: &mut egui::Ui,
+    arch: &FPGAArch,
+    tile: &Tile,
+    state: &mut IntraTileState,
+    sub_tile_index: usize,
+    expand_all: bool,
+) {
+    egui::ScrollArea::both()
+        .id_source("intra_tile_canvas")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            if sub_tile_index < tile.sub_tiles.len() {
+                let sub_tile = &tile.sub_tiles[sub_tile_index];
+                if let Some(site) = sub_tile.equivalent_sites.first() {
+                    if let Some(root_pb) = arch
+                        .complex_block_list
+                        .iter()
+                        .find(|pb| pb.name == site.pb_type)
+                    {
+                        // Draw pbtype here
+                        let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+                        let (response, painter) = ui.allocate_painter(
+                            total_size + egui::vec2(40.0, 40.0),
+                            egui::Sense::drag(),
+                        );
+                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+
+                        let _ = draw_pb_type(
+                            &painter,
+                            root_pb,
+                            start_pos,
+                            state,
+                            &root_pb.name,
+                            ui,
+                            expand_all,
+                        );
+                    } else {
+                        ui.label("Root PBType not found");
+                    }
+                } else {
+                    ui.label("No equivalent site found");
+                }
+            } else {
+                ui.label("Invalid sub_tile index");
+            }
+        });
 }
 
 pub fn render_intra_tile_view(
@@ -61,188 +163,139 @@ pub fn render_intra_tile_view(
     let available_rect = ui.available_rect_before_wrap();
     let available_height = available_rect.height();
 
-    if show_hierarchy_tree {
-        // Initialize hierarchy tree height if not set
-        let default_tree_height = (available_height * 0.3).min(400.0).max(100.0);
-        let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
+    let separator_bottom = if show_hierarchy_tree {
+        render_hierarchy_tree_panel(ui, arch, tile, state, available_rect, available_height)
+    } else {
+        None
+    };
 
-        let min_tree_height = 50.0;
-        let max_tree_height = available_height - 100.0;
-        let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
-
-        // Allocate space for hierarchy tree
-        let tree_rect = egui::Rect::from_min_size(
-            available_rect.min,
-            egui::vec2(available_rect.width(), tree_height),
-        );
-        ui.allocate_ui_at_rect(tree_rect, |ui| {
-            ui.set_width(available_rect.width());
-            egui::CollapsingHeader::new("Hierarchy Tree")
-                .default_open(true)
-                .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
-                        });
-                });
-        });
-
-        // Draw resizable separator
-        let separator_y = tree_rect.max.y;
-        let separator_rect = egui::Rect::from_min_size(
-            egui::pos2(available_rect.min.x, separator_y - 2.0),
-            egui::vec2(available_rect.width(), 4.0),
-        );
-
-        let separator_response = ui.allocate_ui_at_rect(separator_rect, |ui| {
-            ui.allocate_response(separator_rect.size(), egui::Sense::drag())
-        });
-
-        // Visual separator line
-        ui.painter().rect_filled(
-            separator_rect,
-            0.0,
-            ui.style().visuals.widgets.inactive.bg_fill,
-        );
-        ui.painter().line_segment(
-            [separator_rect.left_top(), separator_rect.right_top()],
-            ui.style().visuals.widgets.inactive.bg_stroke,
-        );
-
-        // Handle dragging
-        if separator_response.inner.dragged() {
-            let delta_y = separator_response.inner.drag_delta().y;
-            let new_height = (tree_height + delta_y).clamp(min_tree_height, max_tree_height);
-            state.hierarchy_tree_height = Some(new_height);
-        }
-
-        // Update stored height if it's not set or if window was resized
-        if state.hierarchy_tree_height.is_none() || separator_response.inner.drag_stopped() {
-            state.hierarchy_tree_height = Some(tree_height);
-        }
-
-        // Allocate remaining space for visual layout
+    // Allocate space for visual layout
+    if let Some(separator_y) = separator_bottom {
         let layout_rect = egui::Rect::from_min_max(
-            egui::pos2(available_rect.min.x, separator_rect.max.y),
+            egui::pos2(available_rect.min.x, separator_y),
             available_rect.max,
         );
         ui.allocate_ui_at_rect(layout_rect, |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
-
-            egui::ScrollArea::both()
-                .id_source("intra_tile_canvas")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    if sub_tile_index < tile.sub_tiles.len() {
-                        let sub_tile = &tile.sub_tiles[sub_tile_index];
-                        if let Some(site) = sub_tile.equivalent_sites.first() {
-                            if let Some(root_pb) = arch
-                                .complex_block_list
-                                .iter()
-                                .find(|pb| pb.name == site.pb_type)
-                            {
-                                let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-                                let (response, painter) = ui.allocate_painter(
-                                    total_size + egui::vec2(40.0, 40.0),
-                                    egui::Sense::drag(),
-                                );
-                                let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
-
-                                let _ = draw_pb_type(
-                                    &painter,
-                                    root_pb,
-                                    start_pos,
-                                    state,
-                                    &root_pb.name,
-                                    ui,
-                                    expand_all,
-                                );
-                            } else {
-                                ui.label("Root PBType not found");
-                            }
-                        } else {
-                            ui.label("No equivalent site found");
-                        }
-                    } else {
-                        ui.label("Invalid sub_tile index");
-                    }
-                });
+            render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all);
         });
     } else {
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
-
-        egui::ScrollArea::both()
-            .id_source("intra_tile_canvas")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                if sub_tile_index < tile.sub_tiles.len() {
-                    let sub_tile = &tile.sub_tiles[sub_tile_index];
-                    if let Some(site) = sub_tile.equivalent_sites.first() {
-                        if let Some(root_pb) = arch
-                            .complex_block_list
-                            .iter()
-                            .find(|pb| pb.name == site.pb_type)
-                        {
-                            let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-                            let (response, painter) = ui.allocate_painter(
-                                total_size + egui::vec2(40.0, 40.0),
-                                egui::Sense::drag(),
-                            );
-                            let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
-
-                            let _ = draw_pb_type(
-                                &painter,
-                                root_pb,
-                                start_pos,
-                                state,
-                                &root_pb.name,
-                                ui,
-                                expand_all,
-                            );
-                        } else {
-                            ui.label("Root PBType not found");
-                        }
-                    } else {
-                        ui.label("No equivalent site found");
-                    }
-                } else {
-                    ui.label("Invalid sub_tile index");
-                }
-            });
+        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all);
     }
 }
 
-const PADDING: f32 = 50.0;
-const HEADER_HEIGHT: f32 = 35.0;
-const MIN_BLOCK_SIZE: egui::Vec2 = egui::vec2(80.0, 120.0);
-const PORT_LENGTH: f32 = 15.0;
-const MIN_PIN_SPACING: f32 = 25.0;
-const PIN_SQUARE_SIZE: f32 = 6.0;
+// ------------------------------------------------------------
+// Expand Block Feature
+// ------------------------------------------------------------
+pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_path: &str) {
+    state.expanded_blocks.insert(instance_path.to_string());
 
+    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let children = get_children_for_mode(pb_type, mode_index);
+
+    for child_pb in children {
+        for i in 0..child_pb.num_pb {
+            let instance_name = generate_child_instance_name(child_pb, i as usize);
+            let child_path = format!("{}.{}", instance_path, instance_name);
+            expand_all_blocks(state, child_pb, &child_path);
+        }
+    }
+}
+
+pub fn collapse_all_blocks(state: &mut IntraTileState) {
+    state.expanded_blocks.clear();
+}
+
+// ------------------------------------------------------------
+// PB Size Measurement
+// ------------------------------------------------------------
 enum LayoutDirection {
     Vertical,
     Horizontal,
 }
 
-fn get_layout_direction(children: &[PBType]) -> LayoutDirection {
-    if children.len() > 1 {
-        // Multiple different child types (e.g. LUT + FF) -> Horizontal flow
+fn get_layout_direction(pb_types: &[PBType]) -> LayoutDirection {
+    if pb_types.len() > 1 {
+        // Multiple different PB types (LUT + FF) -> Horizontal
         LayoutDirection::Horizontal
     } else {
-        // Single child type repeated (e.g. Array of BLEs) -> Vertical stack
+        // Single PB type (Array of BLEs) -> Vertical
         LayoutDirection::Vertical
     }
 }
 
-fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str) -> egui::Vec2 {
-    let is_expanded = state.expanded_blocks.contains(instance_path);
+/// Uses a character width approximation of 0.6 * font size.
+fn estimate_text_width(font: &egui::FontId, text: &str) -> f32 {
+    let char_width = font.size * 0.6;
+    text.len() as f32 * char_width
+}
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+/// Represents the type of port to count.
+#[derive(Clone, Copy)]
+enum PortType {
+    Input,
+    Output,
+    Clock,
+}
 
-    let children = if !pb_type.modes.is_empty() {
+/// Counts pins of a specific type in a PBType.
+fn count_pins(pb_type: &PBType, port_type: PortType) -> i32 {
+    pb_type
+        .ports
+        .iter()
+        .filter_map(|p| match (port_type, p) {
+            (PortType::Input, Port::Input(ip)) => Some(ip.num_pins),
+            (PortType::Output, Port::Output(op)) => Some(op.num_pins),
+            (PortType::Clock, Port::Clock(cp)) => Some(cp.num_pins),
+            _ => None,
+        })
+        .sum()
+}
+
+/// Calculates the header name width
+fn calculate_header_name_width(pb_type: &PBType, has_children: bool) -> f32 {
+    let font = egui::FontId::proportional(14.0);
+    let name_width = estimate_text_width(&font, &pb_type.name);
+    let header_name_width = if has_children {
+        name_width + 25.0 // Expand indicator space
+    } else {
+        name_width + 5.0 // Just margin
+    };
+    if !pb_type.modes.is_empty() {
+        header_name_width + 130.0 // Mode selector space
+    } else {
+        header_name_width
+    }
+}
+
+/// Calculates the width needed for blif_model name.
+fn calculate_blif_model_width(pb_type: &PBType) -> f32 {
+    match pb_type.class {
+        PBTypeClass::None => {
+            if let Some(blif_model) = &pb_type.blif_model {
+                let blif_font = egui::FontId::monospace(14.0);
+                estimate_text_width(&blif_font, blif_model) + 20.0
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    }
+}
+
+fn generate_child_instance_name(child_pb: &PBType, index: usize) -> String {
+    if child_pb.num_pb == 1 {
+        child_pb.name.clone()
+    } else {
+        format!("{}[{}]", child_pb.name, index)
+    }
+}
+
+fn get_children_for_mode(pb_type: &PBType, mode_index: usize) -> &[PBType] {
+    if !pb_type.modes.is_empty() {
         if mode_index < pb_type.modes.len() {
             &pb_type.modes[mode_index].pb_types
         } else {
@@ -250,33 +303,33 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         }
     } else {
         &pb_type.pb_types
-    };
+    }
+}
+
+fn get_interconnects_for_mode(
+    pb_type: &PBType,
+    mode_index: usize,
+) -> &[fpga_arch_parser::Interconnect] {
+    if !pb_type.modes.is_empty() {
+        if mode_index < pb_type.modes.len() {
+            &pb_type.modes[mode_index].interconnects
+        } else {
+            &pb_type.modes[0].interconnects
+        }
+    } else {
+        &pb_type.interconnects
+    }
+}
+
+fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str) -> egui::Vec2 {
+    let is_expanded = state.expanded_blocks.contains(instance_path);
+
+    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let children = get_children_for_mode(pb_type, mode_index);
 
     if !is_expanded && !children.is_empty() {
-        // Calculate minimum width needed for block name in header
-        let font = egui::FontId::proportional(14.0);
-        let name_char_width = font.size * 0.6;
-        let name_width = pb_type.name.len() as f32 * name_char_width;
-        let header_name_width = name_width + 25.0; // Expand indicator space
-        let header_name_width_with_selector = if !pb_type.modes.is_empty() {
-            header_name_width + 130.0 // Mode selector space
-        } else {
-            header_name_width
-        };
-
-        // Calculate width needed for blif_model if present
-        let blif_model_width = match pb_type.class {
-            PBTypeClass::None => {
-                if let Some(blif_model) = &pb_type.blif_model {
-                    let blif_font = egui::FontId::monospace(14.0);
-                    let blif_char_width = blif_font.size * 0.6;
-                    blif_model.len() as f32 * blif_char_width + 20.0
-                } else {
-                    0.0
-                }
-            }
-            _ => 0.0,
-        };
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, true);
+        let blif_model_width = calculate_blif_model_width(pb_type);
 
         let min_width = MIN_BLOCK_SIZE
             .x
@@ -286,30 +339,9 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     }
 
     if children.is_empty() {
-        let total_input_pins: i32 = pb_type
-            .ports
-            .iter()
-            .filter_map(|p| match p {
-                Port::Input(ip) => Some(ip.num_pins),
-                _ => None,
-            })
-            .sum();
-        let total_output_pins: i32 = pb_type
-            .ports
-            .iter()
-            .filter_map(|p| match p {
-                Port::Output(op) => Some(op.num_pins),
-                _ => None,
-            })
-            .sum();
-        let total_clock_pins: i32 = pb_type
-            .ports
-            .iter()
-            .filter_map(|p| match p {
-                Port::Clock(cp) => Some(cp.num_pins),
-                _ => None,
-            })
-            .sum();
+        let total_input_pins = count_pins(pb_type, PortType::Input);
+        let total_output_pins = count_pins(pb_type, PortType::Output);
+        let total_clock_pins = count_pins(pb_type, PortType::Clock);
 
         let max_side_pins = total_input_pins.max(total_output_pins) as f32;
         let min_height_for_pins = if max_side_pins > 0.0 {
@@ -324,25 +356,8 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
             0.0
         };
 
-        // Calculate minimum width needed for block name in header
-        let font = egui::FontId::proportional(14.0);
-        let name_char_width = font.size * 0.6;
-        let name_width = pb_type.name.len() as f32 * name_char_width;
-        let header_name_width = name_width + 5.0; // Margin
-        let header_name_width_with_selector = if !pb_type.modes.is_empty() {
-            header_name_width + 130.0 // Mode selector space
-        } else {
-            header_name_width
-        };
-
-        // Calculate width needed for blif_model if present
-        let blif_model_width = if let Some(blif_model) = &pb_type.blif_model {
-            let blif_font = egui::FontId::monospace(14.0);
-            let blif_char_width = blif_font.size * 0.6; // Monospace font character width
-            blif_model.len() as f32 * blif_char_width + 20.0 // Add padding
-        } else {
-            0.0
-        };
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, false);
+        let blif_model_width = calculate_blif_model_width(pb_type);
 
         let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
         let required_width = min_width_for_clock
@@ -370,11 +385,7 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
 
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = if child_pb.num_pb == 1 {
-                        child_pb.name.clone()
-                    } else {
-                        format!("{}[{}]", child_pb.name, i)
-                    };
+                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -402,11 +413,7 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
 
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = if child_pb.num_pb == 1 {
-                        child_pb.name.clone()
-                    } else {
-                        format!("{}[{}]", child_pb.name, i)
-                    };
+                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -428,22 +435,8 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         }
     }
 
-    let total_input_pins: i32 = pb_type
-        .ports
-        .iter()
-        .filter_map(|p| match p {
-            Port::Input(ip) => Some(ip.num_pins),
-            _ => None,
-        })
-        .sum();
-    let total_output_pins: i32 = pb_type
-        .ports
-        .iter()
-        .filter_map(|p| match p {
-            Port::Output(op) => Some(op.num_pins),
-            _ => None,
-        })
-        .sum();
+    let total_input_pins = count_pins(pb_type, PortType::Input);
+    let total_output_pins = count_pins(pb_type, PortType::Output);
     let max_pins = total_input_pins.max(total_output_pins) as f32;
     let min_port_height = (max_pins + 1.0) * MIN_PIN_SPACING;
 
@@ -453,35 +446,9 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         0.0
     };
 
-    // Calculate minimum width needed for block name in header
-    let font = egui::FontId::proportional(14.0);
-    let name_char_width = font.size * 0.6;
-    let name_width = pb_type.name.len() as f32 * name_char_width;
-    // Add padding for expand indicator, mode selector, and margins
-    let header_name_width = if !children.is_empty() {
-        name_width + 25.0 // Expand indicator space
-    } else {
-        name_width + 5.0 // Just margin
-    };
-    let header_name_width_with_selector = if !pb_type.modes.is_empty() {
-        header_name_width + 130.0 // Mode selector space
-    } else {
-        header_name_width
-    };
-
-    // Calculate width needed for blif_model if present
-    let blif_model_width = match pb_type.class {
-        PBTypeClass::None => {
-            if let Some(blif_model) = &pb_type.blif_model {
-                let blif_font = egui::FontId::monospace(14.0);
-                let blif_char_width = blif_font.size * 0.6; // Monospace font character width
-                blif_model.len() as f32 * blif_char_width + 20.0 // Add padding
-            } else {
-                0.0
-            }
-        }
-        _ => 0.0,
-    };
+    let header_name_width_with_selector =
+        calculate_header_name_width(pb_type, !children.is_empty());
+    let blif_model_width = calculate_blif_model_width(pb_type);
 
     let w = (total_w + PADDING * 2.0 + interconnect_width)
         .max(MIN_BLOCK_SIZE.x)
@@ -493,6 +460,65 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     egui::vec2(w, h)
 }
 
+// ------------------------------------------------------------
+// Drawing System
+// ------------------------------------------------------------
+/// Draws the expand indicator (▶) in the header.
+fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect) {
+    let indicator_x = header_rect.min.x + 8.0;
+    let indicator_y = header_rect.center().y;
+    painter.text(
+        egui::pos2(indicator_x, indicator_y),
+        egui::Align2::LEFT_CENTER,
+        "▶",
+        egui::FontId::proportional(12.0),
+        egui::Color32::BLACK,
+    );
+}
+
+fn resolve_port_pos(
+    port_ref: &str,
+    current_pb_name: &str,
+    my_ports: &HashMap<String, egui::Pos2>,
+    children_ports: &HashMap<String, egui::Pos2>,
+) -> Option<egui::Pos2> {
+    // clb.I -> I
+    if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name)) {
+        if let Some(pos) = my_ports.get(stripped) {
+            return Some(*pos);
+        }
+    }
+
+    // I
+    if let Some(pos) = my_ports.get(port_ref) {
+        return Some(*pos);
+    }
+
+    // ble4[0].in[0]
+    if let Some(pos) = children_ports.get(port_ref) {
+        return Some(*pos);
+    }
+
+    // ble4.in -> ble4[0].in
+    if let Some((instance, port)) = port_ref.split_once('.') {
+        if !instance.contains('[') {
+            let alt_key = format!("{}[0].{}", instance, port);
+            if let Some(pos) = children_ports.get(&alt_key) {
+                return Some(*pos);
+            }
+        } else if let Some(base_instance) = instance.strip_suffix("[0]") {
+            // lut4[0].in -> lut4.in
+            let alt_key = format!("{}.{}", base_instance, port);
+            if let Some(pos) = children_ports.get(&alt_key) {
+                return Some(*pos);
+            }
+        }
+    }
+
+    None
+}
+
+// "in" -> tries "in[0]", "in[1]", ... until "in[4]"
 fn resolve_bus_list(
     port_list: &[String],
     current_pb_name: &str,
@@ -525,6 +551,62 @@ fn resolve_bus_list(
     resolved
 }
 
+// "fle[3:0].out" -> ["fle[3].out", "fle[2].out", ...]
+// "lut5[0:0].in[4:0]" -> ["lut5[0].in[4]", "lut5[0].in[3]", ..., "lut5[0].in[0]"]
+fn expand_port_list(port_list_str: &str) -> Vec<String> {
+    let mut parts: Vec<String> = port_list_str
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
+    let mut i = 0;
+    while i < parts.len() {
+        let part = parts[i].clone();
+        let mut expanded = false;
+        let mut start_search = 0;
+
+        while let Some(open_rel) = part[start_search..].find('[') {
+            let abs_open = start_search + open_rel;
+            if let Some(close_rel) = part[abs_open..].find(']') {
+                let abs_close = abs_open + close_rel;
+                let content = &part[abs_open + 1..abs_close];
+
+                if content.contains(':') {
+                    let prefix = &part[..abs_open];
+                    let suffix = &part[abs_close + 1..];
+
+                    if let Some((msb_str, lsb_str)) = content.split_once(':') {
+                        if let (Ok(msb), Ok(lsb)) = (msb_str.parse::<i32>(), lsb_str.parse::<i32>())
+                        {
+                            let step = if msb >= lsb { -1 } else { 1 };
+                            let mut current = msb;
+                            let mut new_items = Vec::new();
+                            loop {
+                                new_items.push(format!("{}[{}]{}", prefix, current, suffix));
+                                if current == lsb {
+                                    break;
+                                }
+                                current += step;
+                            }
+
+                            parts.splice(i..i + 1, new_items);
+                            expanded = true;
+                            break;
+                        }
+                    }
+                }
+                start_search = abs_close + 1;
+            } else {
+                break;
+            }
+        }
+
+        if !expanded {
+            i += 1;
+        }
+    }
+    parts
+}
+
 fn draw_pb_type(
     painter: &egui::Painter,
     pb_type: &PBType,
@@ -538,15 +620,7 @@ fn draw_pb_type(
     let rect = egui::Rect::from_min_size(pos, size);
 
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
-    let children = if !pb_type.modes.is_empty() {
-        if mode_index < pb_type.modes.len() {
-            &pb_type.modes[mode_index].pb_types
-        } else {
-            &pb_type.modes[0].pb_types
-        }
-    } else {
-        &pb_type.pb_types
-    };
+    let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
     let is_expanded = state.expanded_blocks.contains(instance_path);
@@ -596,15 +670,7 @@ fn draw_pb_type(
 
         // Draw expand/collapse indicator on top
         if has_children {
-            let indicator_x = header_rect.min.x + 8.0;
-            let indicator_y = header_rect.center().y;
-            painter.text(
-                egui::pos2(indicator_x, indicator_y),
-                egui::Align2::LEFT_CENTER,
-                "▶",
-                egui::FontId::proportional(12.0),
-                egui::Color32::BLACK,
-            );
+            draw_expand_indicator(painter, header_rect);
         }
 
         return HashMap::new();
@@ -612,36 +678,28 @@ fn draw_pb_type(
 
     // Determine specific visual style based on class
     let my_ports = match pb_type.class {
-        PBTypeClass::Lut => draw_lut(painter, rect, pb_type, state, ui),
-        PBTypeClass::FlipFlop => draw_flip_flop(painter, rect, pb_type, state, ui),
-        PBTypeClass::Memory => draw_memory(painter, rect, pb_type, state, ui),
+        PBTypeClass::Lut => intra_block_drawing::draw_lut(painter, rect, pb_type, state, ui),
+        PBTypeClass::FlipFlop => intra_block_drawing::draw_flip_flop(painter, rect, pb_type, state, ui),
+        PBTypeClass::Memory => intra_block_drawing::draw_memory(painter, rect, pb_type, state, ui),
         PBTypeClass::None => {
             if pb_type.blif_model.is_some() {
-                draw_blif_block(painter, rect, pb_type, state, ui)
+                intra_block_drawing::draw_blif_block(painter, rect, pb_type, state, ui)
             } else {
-                draw_generic_block(painter, rect, pb_type, state, ui)
+                intra_block_drawing::draw_generic_block(painter, rect, pb_type, state, ui)
             }
         }
     };
 
-    // Draw expand/collapse indicator on top of header (after block is drawn)
-    // Only show indicator when collapsed
+    // Draw collapse indicator
     if has_children && !is_expanded {
-        let indicator_x = header_rect.min.x + 8.0;
-        let indicator_y = header_rect.center().y;
-        painter.text(
-            egui::pos2(indicator_x, indicator_y),
-            egui::Align2::LEFT_CENTER,
-            "▶",
-            egui::FontId::proportional(12.0),
-            egui::Color32::BLACK,
-        );
+        draw_expand_indicator(painter, header_rect);
     }
 
     if pb_type.modes.len() > 1 {
         let mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
         let mode_name = &pb_type.modes[mode_idx].name;
 
+        // Truncate mode name if it's too long
         let selector_width = (120.0_f32).min(rect.width() * 0.4);
         let display_name = if mode_name.len() > 15 {
             format!("{}...", &mode_name[..12])
@@ -680,7 +738,7 @@ fn draw_pb_type(
             state
                 .selected_modes
                 .insert(instance_path.to_string(), selected_mode);
-            // If expand_all is enabled, re-expand all blocks for this instance
+            // If expand_all is enabled, re-expand when switching modes
             if expand_all {
                 expand_all_blocks(state, pb_type, instance_path);
             }
@@ -699,15 +757,13 @@ fn draw_pb_type(
         let mut cursor_y = start_y;
 
         for child_pb in children {
+            let mut max_col_width: f32 = 0.0;
             for i in 0..child_pb.num_pb {
-                let instance_name = if child_pb.num_pb == 1 {
-                    child_pb.name.clone()
-                } else {
-                    format!("{}[{}]", child_pb.name, i)
-                };
+                let instance_name = generate_child_instance_name(child_pb, i as usize);
                 let child_path = format!("{}.{}", instance_path, instance_name);
 
                 let child_single_size = measure_pb_type(child_pb, state, &child_path);
+                max_col_width = max_col_width.max(child_single_size.x);
 
                 let pos = egui::pos2(cursor_x, cursor_y);
                 let child_map =
@@ -718,19 +774,6 @@ fn draw_pb_type(
                 }
 
                 cursor_y += child_single_size.y + PADDING;
-            }
-
-            let mut max_col_width: f32 = 0.0;
-
-            for i in 0..child_pb.num_pb {
-                let instance_name = if child_pb.num_pb == 1 {
-                    child_pb.name.clone()
-                } else {
-                    format!("{}[{}]", child_pb.name, i)
-                };
-                let child_path = format!("{}.{}", instance_path, instance_name);
-                let s = measure_pb_type(child_pb, state, &child_path);
-                max_col_width = max_col_width.max(s.x);
             }
 
             match direction {
@@ -744,15 +787,7 @@ fn draw_pb_type(
     }
 
     if has_children && is_expanded {
-        let interconnects = if !pb_type.modes.is_empty() {
-            if mode_index < pb_type.modes.len() {
-                &pb_type.modes[mode_index].interconnects
-            } else {
-                &pb_type.modes[0].interconnects
-            }
-        } else {
-            &pb_type.interconnects
-        };
+        let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
             let (input_str, output_str, kind) = match inter {
@@ -770,7 +805,7 @@ fn draw_pb_type(
                 for (i, src) in sources.iter().enumerate() {
                     if i < sinks.len() {
                         let dst = &sinks[i];
-                        draw_connection(
+                        draw_direct_connection(
                             painter,
                             src,
                             dst,
@@ -801,6 +836,117 @@ fn draw_pb_type(
     }
 
     my_ports
+}
+
+//-----------------------------------------------------------
+// Draw Wiring
+//-----------------------------------------------------------
+fn draw_wire_segment(
+    painter: &egui::Painter,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    stroke: egui::Stroke,
+    parent_rect: egui::Rect,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+) {
+    let mut points = Vec::new();
+    points.push(start);
+
+    if start.x < end.x {
+        let dist = end.x - start.x;
+        let is_parent_output = end.x >= parent_rect.max.x - 20.0;
+
+        if dist > 100.0 && !is_parent_output {
+            let channel_x_start = start.x + 10.0;
+            let channel_x_end = end.x - 10.0;
+            let route_y = parent_rect.min.y + 40.0;
+
+            points.push(egui::pos2(channel_x_start, start.y));
+            points.push(egui::pos2(channel_x_start, route_y));
+            points.push(egui::pos2(channel_x_end, route_y));
+            points.push(egui::pos2(channel_x_end, end.y));
+        } else {
+            let mid_x = start.x + dist / 2.0;
+            points.push(egui::pos2(mid_x, start.y));
+            points.push(egui::pos2(mid_x, end.y));
+        }
+    } else {
+        let channel_out = start.x + 10.0;
+        let channel_in = end.x - 10.0;
+        let mid_y = start.y + (end.y - start.y) / 2.0;
+
+        points.push(egui::pos2(channel_out, start.y));
+        points.push(egui::pos2(channel_out, mid_y));
+        points.push(egui::pos2(channel_in, mid_y));
+        points.push(egui::pos2(channel_in, end.y));
+    }
+    points.push(end);
+
+    if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
+        let mut hovered = false;
+        for i in 0..points.len() - 1 {
+            let p1 = points[i];
+            let p2 = points[i + 1];
+            let min_x = p1.x.min(p2.x) - 5.0;
+            let max_x = p1.x.max(p2.x) + 5.0;
+            let min_y = p1.y.min(p2.y) - 5.0;
+            let max_y = p1.y.max(p2.y) + 5.0;
+
+            if pointer_pos.x >= min_x
+                && pointer_pos.x <= max_x
+                && pointer_pos.y >= min_y
+                && pointer_pos.y <= max_y
+            {
+                hovered = true;
+                break;
+            }
+        }
+
+        if hovered {
+            state.highlighted_positions_next_frame.push(start);
+            state.highlighted_positions_next_frame.push(end);
+        }
+    }
+
+    painter.add(egui::Shape::line(points, stroke));
+}
+
+fn draw_direct_connection(
+    painter: &egui::Painter,
+    src: &str,
+    dst: &str,
+    current_pb: &PBType,
+    my_ports: &HashMap<String, egui::Pos2>,
+    children_ports: &HashMap<String, egui::Pos2>,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+    parent_rect: egui::Rect,
+) {
+    let src_pos = resolve_port_pos(src, &current_pb.name, my_ports, children_ports);
+    let dst_pos = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports);
+
+    if let (Some(start), Some(end)) = (src_pos, dst_pos) {
+        let is_highlighted = state
+            .highlighted_positions_this_frame
+            .iter()
+            .any(|p| p.distance(start) < 1.0)
+            || state
+                .highlighted_positions_this_frame
+                .iter()
+                .any(|p| p.distance(end) < 1.0);
+
+        let stroke_color = if is_highlighted {
+            egui::Color32::RED
+        } else {
+            egui::Color32::from_rgba_unmultiplied(100, 100, 100, 150)
+        };
+
+        let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
+        let stroke = egui::Stroke::new(stroke_width, stroke_color);
+
+        draw_wire_segment(painter, start, end, stroke, parent_rect, state, ui);
+    }
 }
 
 fn draw_interconnect_block(
@@ -874,6 +1020,7 @@ fn draw_interconnect_block(
     let fill_color = egui::Color32::from_rgb(230, 230, 230);
 
     if kind == "mux" {
+        // trapezoid
         let w = rect.width();
         let h = rect.height();
         let c = rect.center();
@@ -885,6 +1032,7 @@ fn draw_interconnect_block(
         ];
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
+        // rectangle with X
         painter.rect(rect, 2.0, fill_color, stroke);
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
@@ -903,7 +1051,7 @@ fn draw_interconnect_block(
             resolved_sources.push((src, src_pos));
         }
     }
-
+    // We sort by x coordinate, leftmost one will be at the top of the mux
     resolved_sources.sort_by(|a, b| {
         a.1.x
             .partial_cmp(&b.1.x)
@@ -962,622 +1110,6 @@ fn draw_interconnect_block(
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(dst_pos);
-        }
-    }
-}
-
-fn draw_wire_segment(
-    painter: &egui::Painter,
-    start: egui::Pos2,
-    end: egui::Pos2,
-    stroke: egui::Stroke,
-    parent_rect: egui::Rect,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) {
-    let mut points = Vec::new();
-    points.push(start);
-
-    if start.x < end.x {
-        let dist = end.x - start.x;
-        let is_parent_output = end.x >= parent_rect.max.x - 20.0;
-
-        if dist > 100.0 && !is_parent_output {
-            let channel_x_start = start.x + 10.0;
-            let channel_x_end = end.x - 10.0;
-            let route_y = parent_rect.min.y + 40.0;
-
-            points.push(egui::pos2(channel_x_start, start.y));
-            points.push(egui::pos2(channel_x_start, route_y));
-            points.push(egui::pos2(channel_x_end, route_y));
-            points.push(egui::pos2(channel_x_end, end.y));
-        } else {
-            let mid_x = start.x + dist / 2.0;
-            points.push(egui::pos2(mid_x, start.y));
-            points.push(egui::pos2(mid_x, end.y));
-        }
-    } else {
-        let channel_out = start.x + 10.0;
-        let channel_in = end.x - 10.0;
-        let mid_y = start.y + (end.y - start.y) / 2.0;
-
-        points.push(egui::pos2(channel_out, start.y));
-        points.push(egui::pos2(channel_out, mid_y));
-        points.push(egui::pos2(channel_in, mid_y));
-        points.push(egui::pos2(channel_in, end.y));
-    }
-    points.push(end);
-
-    if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
-        let mut hovered = false;
-        for i in 0..points.len() - 1 {
-            let p1 = points[i];
-            let p2 = points[i + 1];
-            let min_x = p1.x.min(p2.x) - 5.0;
-            let max_x = p1.x.max(p2.x) + 5.0;
-            let min_y = p1.y.min(p2.y) - 5.0;
-            let max_y = p1.y.max(p2.y) + 5.0;
-
-            if pointer_pos.x >= min_x
-                && pointer_pos.x <= max_x
-                && pointer_pos.y >= min_y
-                && pointer_pos.y <= max_y
-            {
-                hovered = true;
-                break;
-            }
-        }
-
-        if hovered {
-            state.highlighted_positions_next_frame.push(start);
-            state.highlighted_positions_next_frame.push(end);
-        }
-    }
-
-    painter.add(egui::Shape::line(points, stroke));
-}
-
-fn draw_connection(
-    painter: &egui::Painter,
-    src: &str,
-    dst: &str,
-    current_pb: &PBType,
-    my_ports: &HashMap<String, egui::Pos2>,
-    children_ports: &HashMap<String, egui::Pos2>,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-    parent_rect: egui::Rect,
-) {
-    let src_pos = resolve_port_pos(src, &current_pb.name, my_ports, children_ports);
-    let dst_pos = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports);
-
-    if let (Some(start), Some(end)) = (src_pos, dst_pos) {
-        let is_highlighted = state
-            .highlighted_positions_this_frame
-            .iter()
-            .any(|p| p.distance(start) < 1.0)
-            || state
-                .highlighted_positions_this_frame
-                .iter()
-                .any(|p| p.distance(end) < 1.0);
-
-        let stroke_color = if is_highlighted {
-            egui::Color32::RED
-        } else {
-            egui::Color32::from_rgba_unmultiplied(100, 100, 100, 150)
-        };
-
-        let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
-        let stroke = egui::Stroke::new(stroke_width, stroke_color);
-
-        draw_wire_segment(painter, start, end, stroke, parent_rect, state, ui);
-    }
-}
-
-fn expand_port_list(port_list_str: &str) -> Vec<String> {
-    let mut parts: Vec<String> = port_list_str
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-    let mut i = 0;
-    while i < parts.len() {
-        let part = parts[i].clone();
-        let mut expanded = false;
-        let mut start_search = 0;
-
-        while let Some(open_rel) = part[start_search..].find('[') {
-            let abs_open = start_search + open_rel;
-            if let Some(close_rel) = part[abs_open..].find(']') {
-                let abs_close = abs_open + close_rel;
-                let content = &part[abs_open + 1..abs_close];
-
-                if content.contains(':') {
-                    let prefix = &part[..abs_open];
-                    let suffix = &part[abs_close + 1..];
-
-                    if let Some((msb_str, lsb_str)) = content.split_once(':') {
-                        if let (Ok(msb), Ok(lsb)) = (msb_str.parse::<i32>(), lsb_str.parse::<i32>())
-                        {
-                            let step = if msb >= lsb { -1 } else { 1 };
-                            let mut current = msb;
-                            let mut new_items = Vec::new();
-                            loop {
-                                new_items.push(format!("{}[{}]{}", prefix, current, suffix));
-                                if current == lsb {
-                                    break;
-                                }
-                                current += step;
-                            }
-
-                            parts.splice(i..i + 1, new_items);
-                            expanded = true;
-                            break;
-                        }
-                    }
-                }
-                start_search = abs_close + 1;
-            } else {
-                break;
-            }
-        }
-
-        if !expanded {
-            i += 1;
-        }
-    }
-    parts
-}
-
-fn resolve_port_pos(
-    port_ref: &str,
-    current_pb_name: &str,
-    my_ports: &HashMap<String, egui::Pos2>,
-    children_ports: &HashMap<String, egui::Pos2>,
-) -> Option<egui::Pos2> {
-    if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name)) {
-        if let Some(pos) = my_ports.get(stripped) {
-            return Some(*pos);
-        }
-    }
-
-    if let Some(pos) = my_ports.get(port_ref) {
-        return Some(*pos);
-    }
-
-    if let Some(pos) = children_ports.get(port_ref) {
-        return Some(*pos);
-    }
-
-    if let Some((instance, port)) = port_ref.split_once('.') {
-        if !instance.contains('[') {
-            let alt_key = format!("{}[0].{}", instance, port);
-            if let Some(pos) = children_ports.get(&alt_key) {
-                return Some(*pos);
-            }
-        } else if let Some(base_instance) = instance.strip_suffix("[0]") {
-            let alt_key = format!("{}.{}", base_instance, port);
-            if let Some(pos) = children_ports.get(&alt_key) {
-                return Some(*pos);
-            }
-        }
-    }
-
-    None
-}
-
-fn draw_generic_block(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(240, 240, 240),
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(100, 100, 100)),
-    );
-
-    // Title bar
-    let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
-    painter.rect(
-        title_rect,
-        egui::Rounding::ZERO,
-        egui::Color32::from_rgb(200, 200, 200),
-        egui::Stroke::NONE,
-    );
-
-    painter.text(
-        rect.min + egui::vec2(5.0, 5.0),
-        egui::Align2::LEFT_TOP,
-        &pb_type.name,
-        egui::FontId::proportional(14.0),
-        egui::Color32::BLACK,
-    );
-
-    let mut port_map = HashMap::new();
-    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
-    port_map
-}
-
-fn draw_lut(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(255, 250, 205),
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 180, 0)),
-    );
-
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "LUT",
-        egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(180, 180, 0),
-    );
-
-    painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
-        egui::Align2::LEFT_TOP,
-        &pb_type.name,
-        egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
-    );
-
-    let mut port_map = HashMap::new();
-    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
-    port_map
-}
-
-fn draw_flip_flop(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(220, 230, 255), // Light Blue
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 0, 180)),
-    );
-
-    let triangle_size = 8.0;
-    let bottom_center = rect.center_bottom();
-
-    painter.add(egui::Shape::convex_polygon(
-        vec![
-            bottom_center + egui::vec2(-triangle_size, 0.0),
-            bottom_center + egui::vec2(triangle_size, 0.0),
-            bottom_center + egui::vec2(0.0, -triangle_size),
-        ],
-        egui::Color32::TRANSPARENT,
-        egui::Stroke::new(1.5, egui::Color32::BLACK),
-    ));
-
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "FF",
-        egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(0, 0, 180),
-    );
-
-    painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
-        egui::Align2::LEFT_TOP,
-        &pb_type.name,
-        egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
-    );
-
-    let mut port_map = HashMap::new();
-    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
-    port_map
-}
-
-fn draw_memory(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(200, 240, 200), // Light Green
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 100, 0)),
-    );
-
-    let grid_spacing = 10.0;
-    let mut y = rect.min.y + 20.0;
-    while y < rect.max.y - 10.0 {
-        painter.line_segment(
-            [
-                egui::pos2(rect.min.x + 10.0, y),
-                egui::pos2(rect.max.x - 10.0, y),
-            ],
-            egui::Stroke::new(0.5, egui::Color32::from_rgb(0, 100, 0)),
-        );
-        y += grid_spacing;
-    }
-
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "RAM",
-        egui::FontId::monospace(16.0),
-        egui::Color32::from_rgb(0, 100, 0),
-    );
-
-    painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
-        egui::Align2::LEFT_TOP,
-        &pb_type.name,
-        egui::FontId::proportional(10.0),
-        egui::Color32::BLACK,
-    );
-
-    let mut port_map = HashMap::new();
-    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
-    port_map
-}
-
-fn draw_blif_block(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) -> HashMap<String, egui::Pos2> {
-    painter.rect(
-        rect,
-        0.0,
-        egui::Color32::from_rgb(255, 220, 220), // Light Pink/Red
-        egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 0, 0)),
-    );
-
-    // Title bar
-    let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
-    painter.rect(
-        title_rect,
-        egui::Rounding::ZERO,
-        egui::Color32::from_rgb(200, 200, 200),
-        egui::Stroke::NONE,
-    );
-
-    // Display blif_model name in center
-    if let Some(blif_model) = &pb_type.blif_model {
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            blif_model,
-            egui::FontId::monospace(14.0),
-            egui::Color32::from_rgb(180, 0, 0),
-        );
-    }
-
-    painter.text(
-        rect.min + egui::vec2(5.0, 5.0),
-        egui::Align2::LEFT_TOP,
-        &pb_type.name,
-        egui::FontId::proportional(14.0),
-        egui::Color32::BLACK,
-    );
-
-    let mut port_map = HashMap::new();
-    draw_ports(painter, rect, pb_type, &mut port_map, state, ui);
-    port_map
-}
-
-fn draw_ports(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    pb_type: &PBType,
-    port_map: &mut HashMap<String, egui::Pos2>,
-    state: &mut IntraTileState,
-    ui: &mut egui::Ui,
-) {
-    struct PinInfo<'a> {
-        name: &'a str,
-        index: i32,
-    }
-
-    let mut input_pins: Vec<PinInfo> = Vec::new();
-    let mut output_pins: Vec<PinInfo> = Vec::new();
-    let mut clock_pins: Vec<PinInfo> = Vec::new();
-
-    for port in &pb_type.ports {
-        match port {
-            Port::Input(p) => {
-                for i in 0..p.num_pins {
-                    input_pins.push(PinInfo {
-                        name: &p.name,
-                        index: i,
-                    });
-                }
-            }
-            Port::Output(p) => {
-                for i in 0..p.num_pins {
-                    output_pins.push(PinInfo {
-                        name: &p.name,
-                        index: i,
-                    });
-                }
-            }
-            Port::Clock(p) => {
-                for i in 0..p.num_pins {
-                    clock_pins.push(PinInfo {
-                        name: &p.name,
-                        index: i,
-                    });
-                }
-            }
-        }
-    }
-
-    if !input_pins.is_empty() {
-        let total_pins = input_pins.len() as f32;
-        let min_required_height = (total_pins + 1.0) * MIN_PIN_SPACING;
-        let spacing = if rect.height() >= min_required_height {
-            rect.height() / (total_pins + 1.0)
-        } else {
-            MIN_PIN_SPACING
-        };
-        // Center the pins vertically
-        let total_pin_height = spacing * (total_pins - 1.0);
-        let start_y = rect.min.y + (rect.height() - total_pin_height) / 2.0;
-        let x_pos = rect.min.x;
-
-        for (i, pin) in input_pins.iter().enumerate() {
-            let y_pos = start_y + spacing * i as f32;
-            let start = egui::pos2(x_pos, y_pos);
-            let end = egui::pos2(x_pos - PORT_LENGTH, y_pos);
-            let port_pos = end;
-
-            let is_highlighted = state
-                .highlighted_positions_this_frame
-                .iter()
-                .any(|p| p.distance(port_pos) < 1.0);
-
-            let stroke_color = if is_highlighted {
-                egui::Color32::RED
-            } else {
-                egui::Color32::BLACK
-            };
-            let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
-            let stroke = egui::Stroke::new(stroke_width, stroke_color);
-
-            painter.line_segment([start, end], stroke);
-
-            let pin_name = format!("{}[{}]", pin.name, pin.index);
-            port_map.insert(pin_name.clone(), port_pos);
-
-            let square_size = PIN_SQUARE_SIZE;
-            let square_rect =
-                egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
-            painter.rect_filled(square_rect, 0.0, stroke_color);
-
-            let hit_rect = square_rect.expand(3.0);
-            let response = ui.put(hit_rect, egui::Label::new(""));
-            if response.hovered() {
-                state.highlighted_positions_next_frame.push(port_pos);
-            }
-            response.on_hover_ui(|ui| {
-                ui.label(&pin_name);
-            });
-        }
-    }
-
-    if !output_pins.is_empty() {
-        let total_pins = output_pins.len() as f32;
-        let min_required_height = (total_pins + 1.0) * MIN_PIN_SPACING;
-        let spacing = if rect.height() >= min_required_height {
-            rect.height() / (total_pins + 1.0)
-        } else {
-            MIN_PIN_SPACING
-        };
-        let total_pin_height = spacing * (total_pins - 1.0);
-        let start_y = rect.min.y + (rect.height() - total_pin_height) / 2.0;
-        let x_pos = rect.max.x;
-
-        for (i, pin) in output_pins.iter().enumerate() {
-            let y_pos = start_y + spacing * i as f32;
-            let start = egui::pos2(x_pos, y_pos);
-            let end = egui::pos2(x_pos + PORT_LENGTH, y_pos);
-            let port_pos = end;
-
-            let is_highlighted = state
-                .highlighted_positions_this_frame
-                .iter()
-                .any(|p| p.distance(port_pos) < 1.0);
-
-            let stroke_color = if is_highlighted {
-                egui::Color32::RED
-            } else {
-                egui::Color32::BLACK
-            };
-            let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
-            let stroke = egui::Stroke::new(stroke_width, stroke_color);
-
-            // Draw the line
-            painter.line_segment([start, end], stroke);
-
-            // Register pin in port_map with indexed name
-            let pin_name = format!("{}[{}]", pin.name, pin.index);
-            port_map.insert(pin_name.clone(), port_pos);
-
-            // Draw small solid square at the border (where wire meets block)
-            let square_size = PIN_SQUARE_SIZE;
-            let square_rect =
-                egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
-            painter.rect_filled(square_rect, 0.0, stroke_color);
-
-            // Hover detection and tooltip
-            let hit_rect = square_rect.expand(3.0); // Slightly larger for easier clicking
-            let response = ui.put(hit_rect, egui::Label::new(""));
-            if response.hovered() {
-                state.highlighted_positions_next_frame.push(port_pos);
-            }
-            response.on_hover_ui(|ui| {
-                ui.label(&pin_name);
-            });
-        }
-    }
-
-    if !clock_pins.is_empty() {
-        let total_pins = clock_pins.len() as f32;
-        let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
-        let spacing = if rect.width() >= min_required_width {
-            rect.width() / (total_pins + 1.0)
-        } else {
-            MIN_PIN_SPACING
-        };
-        let total_pin_width = spacing * (total_pins - 1.0);
-        let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
-
-        for (i, pin) in clock_pins.iter().enumerate() {
-            let x_pos = start_x + spacing * i as f32;
-            let start = egui::pos2(x_pos, rect.min.y);
-            let end = egui::pos2(x_pos, rect.min.y - PORT_LENGTH);
-            let port_pos = end;
-
-            let is_highlighted = state
-                .highlighted_positions_this_frame
-                .iter()
-                .any(|p| p.distance(port_pos) < 1.0);
-
-            let stroke_color = egui::Color32::RED;
-            let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
-            let stroke = egui::Stroke::new(stroke_width, stroke_color);
-
-            painter.line_segment([start, end], stroke);
-
-            let pin_name = format!("{}[{}]", pin.name, pin.index);
-            port_map.insert(pin_name.clone(), port_pos);
-
-            let square_size = PIN_SQUARE_SIZE;
-            let square_rect =
-                egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
-            painter.rect_filled(square_rect, 0.0, stroke_color);
-
-            let hit_rect = square_rect.expand(3.0);
-            let response = ui.put(hit_rect, egui::Label::new(""));
-            if response.hovered() {
-                state.highlighted_positions_next_frame.push(port_pos);
-            }
-            response.on_hover_ui(|ui| {
-                ui.label(&pin_name);
-            });
         }
     }
 }

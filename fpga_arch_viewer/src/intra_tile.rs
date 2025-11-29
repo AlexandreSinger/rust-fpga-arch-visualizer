@@ -7,7 +7,7 @@ use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::{HashMap, HashSet};
 
 use crate::intra_block_drawing;
-use crate::intra_color_scheme;
+use crate::color_scheme;
 use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
@@ -485,7 +485,7 @@ fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect, dark_
         egui::Align2::LEFT_CENTER,
         "▶",
         egui::FontId::proportional(12.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 }
 
@@ -663,7 +663,7 @@ fn draw_pb_type(
         painter.rect(
             header_rect,
             egui::Rounding::ZERO,
-            intra_color_scheme::theme_header_bg(dark_mode),
+            color_scheme::theme_header_bg(dark_mode),
             egui::Stroke::NONE,
         );
 
@@ -679,7 +679,7 @@ fn draw_pb_type(
             egui::Align2::LEFT_CENTER,
             &pb_type.name,
             font,
-            intra_color_scheme::theme_text_color(dark_mode),
+            color_scheme::theme_text_color(dark_mode),
         );
 
         // Draw expand/collapse indicator on top
@@ -1004,9 +1004,9 @@ fn draw_direct_connection(
                 .any(|p| p.distance(end) < 1.0);
 
         let stroke_color = if is_highlighted {
-            intra_color_scheme::HIGHLIGHT_COLOR
+            color_scheme::HIGHLIGHT_COLOR
         } else {
-            intra_color_scheme::theme_interconnect_bg(dark_mode)
+            color_scheme::theme_interconnect_bg(dark_mode)
         };
 
         let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
@@ -1094,12 +1094,12 @@ fn draw_interconnect_block(
             .any(|p| rect.contains(*p));
 
     let stroke_color = if is_block_highlighted {
-        intra_color_scheme::HIGHLIGHT_COLOR
+        color_scheme::HIGHLIGHT_COLOR
     } else {
-        intra_color_scheme::theme_border_color(dark_mode)
+        color_scheme::theme_border_color(dark_mode)
     };
     let stroke = egui::Stroke::new(1.5, stroke_color);
-    let fill_color = intra_color_scheme::theme_block_bg(dark_mode);
+    let fill_color = color_scheme::theme_block_bg(dark_mode);
 
     if kind == "mux" {
         // trapezoid
@@ -1149,9 +1149,9 @@ fn draw_interconnect_block(
                 .iter()
                 .any(|p| p.distance(*src_pos) < 1.0);
         let wire_color = if wire_highlighted {
-            intra_color_scheme::HIGHLIGHT_COLOR
+            color_scheme::HIGHLIGHT_COLOR
         } else {
-            intra_color_scheme::theme_interconnect_bg(dark_mode)
+            color_scheme::theme_interconnect_bg(dark_mode)
         };
         let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
@@ -1185,7 +1185,7 @@ fn draw_interconnect_block(
                 .iter()
                 .any(|p| p.distance(dst_pos) < 1.0);
         let wire_color = if wire_highlighted {
-            intra_color_scheme::HIGHLIGHT_COLOR
+            color_scheme::HIGHLIGHT_COLOR
         } else {
             egui::Color32::from_rgba_unmultiplied(100, 100, 100, 100)
         };

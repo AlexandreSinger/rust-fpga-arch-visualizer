@@ -1,4 +1,4 @@
-use crate::intra_color_scheme;
+use crate::color_scheme;
 use eframe::egui::{self, Color32};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,7 +67,7 @@ impl DefaultBlockStyles {
                 "IO",
                 "Input/Output Block",
                 BlockShape::Square,
-                intra_color_scheme::grid_io_color(dark_mode),
+                color_scheme::grid_io_color(dark_mode),
                 1.0,
             ),
 
@@ -76,7 +76,7 @@ impl DefaultBlockStyles {
                 "LB",
                 "Logic Block",
                 BlockShape::Square,
-                intra_color_scheme::grid_lb_color(dark_mode),
+                color_scheme::grid_lb_color(dark_mode),
                 1.0,
             ),
 
@@ -85,7 +85,7 @@ impl DefaultBlockStyles {
                 "SB",
                 "Switch Block",
                 BlockShape::Square,
-                intra_color_scheme::grid_sb_color(dark_mode),
+                color_scheme::grid_sb_color(dark_mode),
                 0.5,
             ),
 
@@ -94,17 +94,17 @@ impl DefaultBlockStyles {
                 "CB",
                 "Connection Block",
                 BlockShape::Square,
-                intra_color_scheme::grid_cb_color(dark_mode),
+                color_scheme::grid_cb_color(dark_mode),
                 0.5,
             ),
         }
     }
 
     pub fn update_colors(&mut self, dark_mode: bool) {
-        self.io.color = intra_color_scheme::grid_io_color(dark_mode);
-        self.lb.color = intra_color_scheme::grid_lb_color(dark_mode);
-        self.sb.color = intra_color_scheme::grid_sb_color(dark_mode);
-        self.cb.color = intra_color_scheme::grid_cb_color(dark_mode);
+        self.io.color = color_scheme::grid_io_color(dark_mode);
+        self.lb.color = color_scheme::grid_lb_color(dark_mode);
+        self.sb.color = color_scheme::grid_sb_color(dark_mode);
+        self.cb.color = color_scheme::grid_cb_color(dark_mode);
     }
 
     pub fn all_styles(&self) -> Vec<&BlockStyle> {
@@ -151,7 +151,7 @@ pub fn draw_block(
             egui::Align2::CENTER_CENTER,
             style.short_name,
             egui::FontId::proportional(size * 0.3),
-            intra_color_scheme::theme_text_color(dark_mode),
+            color_scheme::theme_text_color(dark_mode),
         );
     }
 

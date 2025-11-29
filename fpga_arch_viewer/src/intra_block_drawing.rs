@@ -8,7 +8,7 @@ use fpga_arch_parser::{PBType, Port};
 use std::collections::HashMap;
 
 use super::intra_tile::IntraTileState;
-use super::intra_color_scheme;
+use super::color_scheme;
 
 // Constants
 const HEADER_HEIGHT: f32 = 35.0;
@@ -90,7 +90,7 @@ fn draw_pins_on_side(
                 PinSide::Right => rect.max.x,
                 _ => unreachable!(),
             };
-            (spacing, (x_pos, start_y), intra_color_scheme::PIN_COLOR)
+            (spacing, (x_pos, start_y), color_scheme::PIN_COLOR)
         }
         PinSide::Top => {
             let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
@@ -104,7 +104,7 @@ fn draw_pins_on_side(
             (
                 spacing,
                 (start_x, rect.min.y),
-                intra_color_scheme::CLOCK_PIN_COLOR,
+                color_scheme::CLOCK_PIN_COLOR,
             )
         }
         PinSide::Bottom => {
@@ -119,7 +119,7 @@ fn draw_pins_on_side(
             (
                 spacing,
                 (start_x, rect.max.y),
-                intra_color_scheme::CLOCK_PIN_COLOR,
+                color_scheme::CLOCK_PIN_COLOR,
             )
         }
     };
@@ -162,7 +162,7 @@ fn draw_pins_on_side(
             .any(|p| p.distance(port_pos) < 1.0);
 
         let stroke_color = if is_highlighted {
-            intra_color_scheme::HIGHLIGHT_COLOR
+            color_scheme::HIGHLIGHT_COLOR
         } else {
             default_color
         };
@@ -275,8 +275,8 @@ pub fn draw_generic_block(
     painter.rect(
         rect,
         0.0,
-        intra_color_scheme::theme_block_bg(dark_mode),
-        egui::Stroke::new(1.5, intra_color_scheme::theme_border_color(dark_mode)),
+        color_scheme::theme_block_bg(dark_mode),
+        egui::Stroke::new(1.5, color_scheme::theme_border_color(dark_mode)),
     );
 
     // Title bar
@@ -284,7 +284,7 @@ pub fn draw_generic_block(
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
-        intra_color_scheme::theme_header_bg(dark_mode),
+        color_scheme::theme_header_bg(dark_mode),
         egui::Stroke::NONE,
     );
 
@@ -293,7 +293,7 @@ pub fn draw_generic_block(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(14.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -312,7 +312,7 @@ pub fn draw_lut(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    let colors = intra_color_scheme::lut_colors(dark_mode);
+    let colors = color_scheme::lut_colors(dark_mode);
     painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
 
     painter.text(
@@ -328,7 +328,7 @@ pub fn draw_lut(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -347,7 +347,7 @@ pub fn draw_flip_flop(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    let colors = intra_color_scheme::flip_flop_colors(dark_mode);
+    let colors = color_scheme::flip_flop_colors(dark_mode);
     painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
 
     let triangle_size = 8.0;
@@ -360,7 +360,7 @@ pub fn draw_flip_flop(
             bottom_center + egui::vec2(0.0, -triangle_size),
         ],
         egui::Color32::TRANSPARENT,
-        egui::Stroke::new(1.5, intra_color_scheme::theme_text_color(dark_mode)),
+        egui::Stroke::new(1.5, color_scheme::theme_text_color(dark_mode)),
     ));
 
     painter.text(
@@ -376,7 +376,7 @@ pub fn draw_flip_flop(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -395,7 +395,7 @@ pub fn draw_memory(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    let colors = intra_color_scheme::memory_colors(dark_mode);
+    let colors = color_scheme::memory_colors(dark_mode);
     painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
 
     let grid_spacing = 10.0;
@@ -424,7 +424,7 @@ pub fn draw_memory(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(10.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();
@@ -443,7 +443,7 @@ pub fn draw_blif_block(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
-    let colors = intra_color_scheme::blif_colors(dark_mode);
+    let colors = color_scheme::blif_colors(dark_mode);
     painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
 
     // Title bar
@@ -451,7 +451,7 @@ pub fn draw_blif_block(
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
-        intra_color_scheme::theme_header_bg(dark_mode),
+        color_scheme::theme_header_bg(dark_mode),
         egui::Stroke::NONE,
     );
 
@@ -471,7 +471,7 @@ pub fn draw_blif_block(
         egui::Align2::LEFT_TOP,
         &pb_type.name,
         egui::FontId::proportional(14.0),
-        intra_color_scheme::theme_text_color(dark_mode),
+        color_scheme::theme_text_color(dark_mode),
     );
 
     let mut port_map = HashMap::new();

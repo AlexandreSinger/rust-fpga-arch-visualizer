@@ -1,3 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["fpga_arch_parser","fpga_arch_viewer"]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

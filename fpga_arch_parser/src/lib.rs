@@ -2,8 +2,17 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
+use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 use xml::attribute::OwnedAttribute;
+
+#[derive(Debug)]
+pub enum FPGAArchParseError {
+    ArchFileOpenError(String),
+    MissingRequiredTag(String),
+    InvalidTag(String, TextPosition),
+    XMLParseError(String, TextPosition),
+}
 
 pub struct Model {
 
@@ -380,7 +389,7 @@ pub struct FPGAArch {
 }
 
 fn parse_port(name: &str,
-              attributes: &Vec<OwnedAttribute>) -> Port {
+              attributes: &Vec<OwnedAttribute>) -> Result<Port, FPGAArchParseError> {
     let mut port_name: Option<String> = None;
     let mut num_pins: Option<i32> = None;
     let mut equivalent = String::from("none");
@@ -440,31 +449,31 @@ fn parse_port(name: &str,
     // TODO: Check that non-clock global is only set for inputs.
 
     match name {
-        "input" => Port::Input(InputPort {
+        "input" => Ok(Port::Input(InputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
             is_non_clock_global,
             port_class,
-        }),
-        "output" => Port::Output(OutputPort {
+        })),
+        "output" => Ok(Port::Output(OutputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
             port_class,
-        }),
-        "clock" => Port::Clock(ClockPort {
+        })),
+        "clock" => Ok(Port::Clock(ClockPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
             equivalent: pin_equivalance,
             port_class,
-        }),
+        })),
         _ => panic!("Unknown port tag: {}", name),
     }
 }
 
 fn parse_tile_site(_name: &str,
-                   attributes: &Vec<OwnedAttribute>) -> TileSite {
+                   attributes: &Vec<OwnedAttribute>) -> Result<TileSite, FPGAArchParseError> {
 
     let mut site_pb_type: Option<String> = None;
     let mut site_pin_mapping = String::from("direct");
@@ -488,15 +497,15 @@ fn parse_tile_site(_name: &str,
         _ => panic!("Unknown site pin mapping: {}", site_pin_mapping),
     };
 
-    TileSite {
+    Ok(TileSite {
         pb_type: site_pb_type.unwrap(),
         pin_mapping: site_pin_mapping,
-    }
+    })
 }
 
 fn parse_equivalent_sites(_name: &str,
                           _attributes: &Vec<OwnedAttribute>,
-                          parser: &mut EventReader<BufReader<File>>) -> Vec<TileSite> {
+                          parser: &mut EventReader<BufReader<File>>) -> Result<Vec<TileSite>, FPGAArchParseError> {
 
     let mut equivalent_sites: Vec<TileSite> = Vec::new();
     loop {
@@ -504,7 +513,7 @@ fn parse_equivalent_sites(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "site" => {
-                        equivalent_sites.push(parse_tile_site(&name.to_string(), &attributes));
+                        equivalent_sites.push(parse_tile_site(&name.to_string(), &attributes)?);
                     },
                     _ => {
                         panic!("Unnexpected tag in equivalent_sites.");
@@ -525,27 +534,27 @@ fn parse_equivalent_sites(_name: &str,
         }
     };
 
-    equivalent_sites
+    Ok(equivalent_sites)
 }
 
-fn create_sub_tile_io_fc(ty: &str, val: &str) -> SubTileIOFC {
+fn create_sub_tile_io_fc(ty: &str, val: &str) -> Result<SubTileIOFC, FPGAArchParseError> {
     match ty {
         "frac" => {
-            SubTileIOFC::Frac(SubTileFracFC {
+            Ok(SubTileIOFC::Frac(SubTileFracFC {
                 val: val.parse().expect("fc_val should be frac"),
-            })
+            }))
         },
         "abs" => {
-            SubTileIOFC::Abs(SubTileAbsFC {
+            Ok(SubTileIOFC::Abs(SubTileAbsFC {
                 val: val.parse().expect("fc_val should be abs"),
-            })
+            }))
         },
         _ => panic!("Unknown fc_type: {}", ty),
     }
 }
 
 fn parse_sub_tile_fc(_name: &str,
-                     attributes: &Vec<OwnedAttribute>) -> SubTileFC {
+                     attributes: &Vec<OwnedAttribute>) -> Result<SubTileFC, FPGAArchParseError> {
     let mut in_type: Option<String> = None;
     let mut in_val: Option<String> = None;
     let mut out_type: Option<String> = None;
@@ -577,18 +586,18 @@ fn parse_sub_tile_fc(_name: &str,
     assert!(out_type.is_some());
     assert!(out_val.is_some());
 
-    let in_fc = create_sub_tile_io_fc(&in_type.unwrap(), &in_val.unwrap());
-    let out_fc = create_sub_tile_io_fc(&out_type.unwrap(), &out_val.unwrap());
+    let in_fc = create_sub_tile_io_fc(&in_type.unwrap(), &in_val.unwrap())?;
+    let out_fc = create_sub_tile_io_fc(&out_type.unwrap(), &out_val.unwrap())?;
 
-    SubTileFC {
+    Ok(SubTileFC {
         in_fc,
         out_fc,
-    }
+    })
 }
 
 fn parse_pin_loc(_name: &str,
                  attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) -> PinLoc {
+                 parser: &mut EventReader<BufReader<File>>) -> Result<PinLoc, FPGAArchParseError> {
     let mut side: Option<String> = None;
     let mut xoffset: Option<i32> = None;
     let mut yoffset: Option<i32> = None;
@@ -650,17 +659,17 @@ fn parse_pin_loc(_name: &str,
         _ => panic!("Unexpected XML element found in loc tag"),
     };
 
-    PinLoc {
+    Ok(PinLoc {
         side,
         xoffset,
         yoffset,
         pin_strings,
-    }
+    })
 }
 
 fn parse_sub_tile_pin_locations(_name: &str,
                                 attributes: &Vec<OwnedAttribute>,
-                                parser: &mut EventReader<BufReader<File>>) -> SubTilePinLocations {
+                                parser: &mut EventReader<BufReader<File>>) -> Result<SubTilePinLocations, FPGAArchParseError> {
     let mut pattern: Option<String> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
@@ -678,7 +687,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "loc" => {
-                        pin_locs.push(parse_pin_loc(&name.to_string(), &attributes, parser));
+                        pin_locs.push(parse_pin_loc(&name.to_string(), &attributes, parser)?);
                     },
                     _ => panic!("Unnexpected tag in pinlocations: {}", name),
                 };
@@ -702,13 +711,13 @@ fn parse_sub_tile_pin_locations(_name: &str,
 
     match pattern {
         Some(pattern) => match pattern.as_str() {
-            "spread" => SubTilePinLocations::Spread,
-            "perimeter" => SubTilePinLocations::Perimeter,
-            "spread_inputs_perimeter_outputs" => SubTilePinLocations::SpreadInputsPerimeterOutputs,
+            "spread" => Ok(SubTilePinLocations::Spread),
+            "perimeter" => Ok(SubTilePinLocations::Perimeter),
+            "spread_inputs_perimeter_outputs" => Ok(SubTilePinLocations::SpreadInputsPerimeterOutputs),
             "custom" => {
-                SubTilePinLocations::Custom(CustomPinLocations{
+                Ok(SubTilePinLocations::Custom(CustomPinLocations{
                     pin_locations: pin_locs,
-                })
+                }))
             },
             _ => panic!("Unknown spreadpattern for pinlocations: {}", pattern),
         },
@@ -718,7 +727,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
 
 fn parse_sub_tile(_name: &str,
                   attributes: &Vec<OwnedAttribute>,
-                  parser: &mut EventReader<BufReader<File>>) -> SubTile {
+                  parser: &mut EventReader<BufReader<File>>) -> Result<SubTile, FPGAArchParseError> {
 
     let mut sub_tile_name: Option<String> = None;
     let mut sub_tile_capacity: i32 = 1;
@@ -745,17 +754,17 @@ fn parse_sub_tile(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "equivalent_sites" => {
-                        equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser));
+                        equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser)?);
                     },
                     "input" | "output" | "clock" => {
-                        ports.push(parse_port(&name.to_string(), &attributes));
+                        ports.push(parse_port(&name.to_string(), &attributes)?);
                     },
                     "fc" => {
                         assert!(sub_tile_fc.is_none());
-                        sub_tile_fc = Some(parse_sub_tile_fc(&name.to_string(), &attributes));
+                        sub_tile_fc = Some(parse_sub_tile_fc(&name.to_string(), &attributes)?);
                     },
                     "pinlocations" => {
-                        pin_locations = Some(parse_sub_tile_pin_locations(&name.to_string(), &attributes, parser));
+                        pin_locations = Some(parse_sub_tile_pin_locations(&name.to_string(), &attributes, parser)?);
                     },
                     _ => {},
                 };
@@ -778,19 +787,19 @@ fn parse_sub_tile(_name: &str,
     assert!(sub_tile_fc.is_some());
     assert!(pin_locations.is_some());
 
-    SubTile {
+    Ok(SubTile {
         name: sub_tile_name.unwrap(),
         capacity: sub_tile_capacity,
         equivalent_sites: equivalent_sites.unwrap(),
         ports,
         fc: sub_tile_fc.unwrap(),
         pin_locations: pin_locations.unwrap(),
-    }
+    })
 }
 
 fn parse_tile(name: &str,
               attributes: &Vec<OwnedAttribute>,
-              parser: &mut EventReader<BufReader<File>>) -> Tile {
+              parser: &mut EventReader<BufReader<File>>) -> Result<Tile, FPGAArchParseError> {
 
     assert!(name == "tile");
 
@@ -836,10 +845,10 @@ fn parse_tile(name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "sub_tile" => {
-                        sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser));
+                        sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser)?);
                     },
                     "input" | "output" | "clock" => {
-                        ports.push(parse_port(&name.to_string(), &attributes));
+                        ports.push(parse_port(&name.to_string(), &attributes)?);
                     },
                     _ => {
                         panic!("Unnexpected tag in tile: {}.", name);
@@ -860,19 +869,19 @@ fn parse_tile(name: &str,
         }
     };
 
-    Tile {
+    Ok(Tile {
         name: tile_name,
         ports,
         sub_tiles,
         width,
         height,
         area,
-    }
+    })
 }
 
 fn parse_tiles(_name: &str,
                _attributes: &Vec<OwnedAttribute>,
-               parser: &mut EventReader<BufReader<File>>) -> Vec<Tile> {
+               parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Tile>, FPGAArchParseError> {
     // TODO: Error check the name and attributes to ensure that they are corrrect.
 
     // Iterate over the parser until we reach the EndElement for tile.
@@ -881,7 +890,7 @@ fn parse_tiles(_name: &str,
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 if name.to_string().as_str() == "tile" {
-                    tiles.push(parse_tile(&name.to_string(), &attributes, parser));
+                    tiles.push(parse_tile(&name.to_string(), &attributes, parser)?);
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -898,12 +907,12 @@ fn parse_tiles(_name: &str,
         }
     };
 
-    tiles
+    Ok(tiles)
 }
 
 fn parse_grid_location(name: &str,
                        attributes: &Vec<OwnedAttribute>,
-                       parser: &mut EventReader<BufReader<File>>) -> GridLocation {
+                       parser: &mut EventReader<BufReader<File>>) -> Result<GridLocation, FPGAArchParseError> {
 
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
@@ -972,53 +981,53 @@ fn parse_grid_location(name: &str,
 
     match name.to_string().as_ref() {
         "perimeter" => {
-            GridLocation::Perimeter(PerimeterGridLocation {
+            Ok(GridLocation::Perimeter(PerimeterGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-            })
+            }))
         },
         "corners" => {
-            GridLocation::Corners(CornersGridLocation {
+            Ok(GridLocation::Corners(CornersGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-            })
+            }))
         },
         "fill" => {
-            GridLocation::Fill(FillGridLocation {
+            Ok(GridLocation::Fill(FillGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
-            })
+            }))
         },
         "single" => {
-            GridLocation::Single(SingleGridLocation {
+            Ok(GridLocation::Single(SingleGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
                 x_expr: x_expr.unwrap(),
                 y_expr: y_expr.unwrap(),
-            })
+            }))
         },
         "col" => {
-            GridLocation::Col(ColGridLocation {
+            Ok(GridLocation::Col(ColGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
                 start_x_expr,
                 repeat_x_expr,
                 start_y_expr,
                 incr_y_expr,
-            })
+            }))
         },
         "row" => {
-            GridLocation::Row(RowGridLocation {
+            Ok(GridLocation::Row(RowGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
                 start_x_expr,
                 incr_x_expr,
                 start_y_expr,
                 repeat_y_expr,
-            })
+            }))
         },
         "region" => {
-            GridLocation::Region(RegionGridLocation {
+            Ok(GridLocation::Region(RegionGridLocation {
                 pb_type: pb_type.unwrap(),
                 priority: priority.unwrap(),
                 start_x_expr,
@@ -1029,7 +1038,7 @@ fn parse_grid_location(name: &str,
                 end_y_expr,
                 repeat_y_expr,
                 incr_y_expr,
-            })
+            }))
         },
         _ => {
             panic!("Unknown grid location: {}", name);
@@ -1038,12 +1047,12 @@ fn parse_grid_location(name: &str,
 }
 
 fn parse_grid_location_list(layout_type_name: &str,
-                            parser: &mut EventReader<BufReader<File>>) -> Vec<GridLocation> {
+                            parser: &mut EventReader<BufReader<File>>) -> Result<Vec<GridLocation>, FPGAArchParseError> {
     let mut grid_locations: Vec<GridLocation> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser));
+                grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser)?);
             },
             Ok(XmlEvent::EndElement { name }) => {
                 if name.to_string() == layout_type_name {
@@ -1059,12 +1068,12 @@ fn parse_grid_location_list(layout_type_name: &str,
         }
     };
 
-    grid_locations
+    Ok(grid_locations)
 }
 
 fn parse_auto_layout(name: &str,
                      attributes: &Vec<OwnedAttribute>,
-                     parser: &mut EventReader<BufReader<File>>) -> AutoLayout {
+                     parser: &mut EventReader<BufReader<File>>) -> Result<AutoLayout, FPGAArchParseError> {
 
     let mut aspect_ratio: f32 = 1.0;
 
@@ -1079,17 +1088,17 @@ fn parse_auto_layout(name: &str,
         }
     }
 
-    let grid_locations = parse_grid_location_list(name, parser);
+    let grid_locations = parse_grid_location_list(name, parser)?;
 
-    AutoLayout {
+    Ok(AutoLayout {
         aspect_ratio,
         grid_locations,
-    }
+    })
 }
 
 fn parse_fixed_layout(name: &str,
                       attributes: &Vec<OwnedAttribute>,
-                      parser: &mut EventReader<BufReader<File>>) -> FixedLayout {
+                      parser: &mut EventReader<BufReader<File>>) -> Result<FixedLayout, FPGAArchParseError> {
     let mut layout_name: Option<String> = None;
     let mut width: Option<i32> = None;
     let mut height: Option<i32> = None;
@@ -1114,19 +1123,19 @@ fn parse_fixed_layout(name: &str,
         }
     }
 
-    let grid_locations = parse_grid_location_list(name, parser);
+    let grid_locations = parse_grid_location_list(name, parser)?;
 
-    FixedLayout {
+    Ok(FixedLayout {
         name: layout_name.unwrap(),
         width: width.unwrap(),
         height: height.unwrap(),
         grid_locations,
-    }
+    })
 }
 
 fn parse_layouts(_name: &str,
                  _attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) -> Vec<Layout> {
+                 parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Layout>, FPGAArchParseError> {
 
     // TODO: Error check the name and attributes.
 
@@ -1136,10 +1145,10 @@ fn parse_layouts(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "auto_layout" => {
-                        layouts.push(Layout::AutoLayout(parse_auto_layout(&name.to_string(), &attributes, parser)));
+                        layouts.push(Layout::AutoLayout(parse_auto_layout(&name.to_string(), &attributes, parser)?));
                     },
                     "fixed_layout" => {
-                        layouts.push(Layout::FixedLayout(parse_fixed_layout(&name.to_string(), &attributes, parser)));
+                        layouts.push(Layout::FixedLayout(parse_fixed_layout(&name.to_string(), &attributes, parser)?));
                     },
                     _ => {},
                 };
@@ -1158,12 +1167,12 @@ fn parse_layouts(_name: &str,
         }
     };
 
-    layouts
+    Ok(layouts)
 }
 
 fn parse_chan_w_dist(name: &str,
                      attributes: &Vec<OwnedAttribute>,
-                     parser: &mut EventReader<BufReader<File>>) -> ChanWDist {
+                     parser: &mut EventReader<BufReader<File>>) -> Result<ChanWDist, FPGAArchParseError> {
     assert!(name == "x" || name == "y");
     let mut distr: Option<String> = None;
     let mut peak: Option<f32> = None;
@@ -1206,26 +1215,26 @@ fn parse_chan_w_dist(name: &str,
     match distr {
         Some(distr_str) => {
             match distr_str.as_str() {
-                "gaussian" => ChanWDist::Gaussian(GaussianChanWDist {
+                "gaussian" => Ok(ChanWDist::Gaussian(GaussianChanWDist {
                     peak: peak.unwrap(),
                     width: width.unwrap(),
                     xpeak: xpeak.unwrap(),
                     dc: dc.unwrap(),
-                }),
-                "uniform" => ChanWDist::Uniform(UniformChanWDist {
+                })),
+                "uniform" => Ok(ChanWDist::Uniform(UniformChanWDist {
                     peak: peak.unwrap(),
-                }),
-                "pulse" => ChanWDist::Pulse(PulseChanWDist {
+                })),
+                "pulse" => Ok(ChanWDist::Pulse(PulseChanWDist {
                     peak: peak.unwrap(),
                     width: width.unwrap(),
                     xpeak: xpeak.unwrap(),
                     dc: dc.unwrap(),
-                }),
-                "delta" => ChanWDist::Delta(DeltaChanWDist {
+                })),
+                "delta" => Ok(ChanWDist::Delta(DeltaChanWDist {
                     peak: peak.unwrap(),
                     xpeak: xpeak.unwrap(),
                     dc: dc.unwrap(),
-                }),
+                })),
                 _ => panic!("Unknown distr for chan_w_distr: {}", distr_str),
             }
         },
@@ -1235,7 +1244,7 @@ fn parse_chan_w_dist(name: &str,
 
 fn parse_device(name: &str,
                 attributes: &[OwnedAttribute],
-                parser: &mut EventReader<BufReader<File>>) -> DeviceInfo {
+                parser: &mut EventReader<BufReader<File>>) -> Result<DeviceInfo, FPGAArchParseError> {
     assert!(name == "device");
     assert!(attributes.is_empty());
 
@@ -1297,11 +1306,11 @@ fn parse_device(name: &str,
                                     match name.to_string().as_str() {
                                         "x" => {
                                             assert!(x_distr.is_none());
-                                            x_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser));
+                                            x_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser)?);
                                         },
                                         "y" => {
                                             assert!(y_distr.is_none());
-                                            y_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser));
+                                            y_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser)?);
                                         },
                                         _ => panic!("Unexpected tag in chan_width_distr: {}", name),
                                     };
@@ -1384,7 +1393,7 @@ fn parse_device(name: &str,
         }
     };
 
-    DeviceInfo {
+    Ok(DeviceInfo {
         r_min_w_nmos: r_min_w_nmos.unwrap(),
         r_min_w_pmos: r_min_w_pmos.unwrap(),
         input_switch_name: input_switch_name.unwrap(),
@@ -1393,12 +1402,12 @@ fn parse_device(name: &str,
         sb_fs,
         x_distr: x_distr.unwrap(),
         y_distr: y_distr.unwrap(),
-    }
+    })
 }
 
 fn parse_segment(name: &str,
                  attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) -> Segment {
+                 parser: &mut EventReader<BufReader<File>>) -> Result<Segment, FPGAArchParseError> {
     assert!(name == "segment");
 
     let mut axis = SegmentAxis::XY;
@@ -1469,7 +1478,7 @@ fn parse_segment(name: &str,
         None => String::from("UnnamedSegment"),
     };
 
-    Segment {
+    Ok(Segment {
         name,
         axis,
         length: length.unwrap(),
@@ -1478,12 +1487,12 @@ fn parse_segment(name: &str,
         freq: freq.unwrap(),
         r_metal: r_metal.unwrap(),
         c_metal: c_metal.unwrap(),
-    }
+    })
 }
 
 fn parse_segment_list(name: &str,
                       attributes: &[OwnedAttribute],
-                      parser: &mut EventReader<BufReader<File>>) -> Vec<Segment> {
+                      parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Segment>, FPGAArchParseError> {
     assert!(name == "segmentlist");
     assert!(attributes.is_empty());
 
@@ -1493,7 +1502,7 @@ fn parse_segment_list(name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "segment" => {
-                        segments.push(parse_segment(&name.to_string(), &attributes, parser));
+                        segments.push(parse_segment(&name.to_string(), &attributes, parser)?);
                     },
                     _ => panic!("Unnexpected tag in segmentlist: {}", name),
                 };
@@ -1513,12 +1522,12 @@ fn parse_segment_list(name: &str,
         }
     };
 
-    segments
+    Ok(segments)
 }
 
 fn parse_pack_pattern(name: &str,
                       attributes: &Vec<OwnedAttribute>,
-                      parser: &mut EventReader<BufReader<File>>) -> PackPattern {
+                      parser: &mut EventReader<BufReader<File>>) -> Result<PackPattern, FPGAArchParseError> {
     assert!(name == "pack_pattern");
 
     let mut pattern_name: Option<String> = None;
@@ -1553,16 +1562,16 @@ fn parse_pack_pattern(name: &str,
         _ => panic!("Unnexpected end tag."),
     };
 
-    PackPattern {
+    Ok(PackPattern {
         name: pattern_name.unwrap(),
         in_port: in_port.unwrap(),
         out_port: out_port.unwrap(),
-    }
+    })
 }
 
 fn parse_interconnect(name: &str,
                       attributes: &Vec<OwnedAttribute>,
-                      parser: &mut EventReader<BufReader<File>>) -> Interconnect {
+                      parser: &mut EventReader<BufReader<File>>) -> Result<Interconnect, FPGAArchParseError> {
 
     let mut inter_name: Option<String> = None;
     let mut input: Option<String> = None;
@@ -1594,7 +1603,7 @@ fn parse_interconnect(name: &str,
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 if name.to_string().as_str() == "pack_pattern" {
-                    pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser));
+                    pack_patterns.push(parse_pack_pattern(&name.to_string(), &attributes, parser)?);
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -1613,31 +1622,31 @@ fn parse_interconnect(name: &str,
     };
 
     match name {
-        "direct" => Interconnect::Direct(DirectInterconnect {
+        "direct" => Ok(Interconnect::Direct(DirectInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
             pack_patterns,
-        }),
-        "mux" => Interconnect::Mux(MuxInterconnect {
+        })),
+        "mux" => Ok(Interconnect::Mux(MuxInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
             pack_patterns,
-        }),
-        "complete" => Interconnect::Complete(CompleteInterconnect {
+        })),
+        "complete" => Ok(Interconnect::Complete(CompleteInterconnect {
             name: inter_name.unwrap(),
             input: input.unwrap(),
             output: output.unwrap(),
             pack_patterns,
-        }),
+        })),
         _ => panic!("Unknown interconnect tag: {}", name),
     }
 }
 
 fn parse_interconnects(name: &str,
                        attributes: &[OwnedAttribute],
-                       parser: &mut EventReader<BufReader<File>>) -> Vec<Interconnect> {
+                       parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Interconnect>, FPGAArchParseError> {
     assert!(name == "interconnect");
     assert!(attributes.is_empty());
 
@@ -1647,7 +1656,7 @@ fn parse_interconnects(name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "direct" | "mux" | "complete" => {
-                        interconnects.push(parse_interconnect(&name.to_string(), &attributes, parser));
+                        interconnects.push(parse_interconnect(&name.to_string(), &attributes, parser)?);
                     },
                     _ => {},
                 };
@@ -1666,12 +1675,12 @@ fn parse_interconnects(name: &str,
         }
     };
 
-    interconnects
+    Ok(interconnects)
 }
 
 fn parse_pb_mode(_name: &str,
                  attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) -> PBMode {
+                 parser: &mut EventReader<BufReader<File>>) -> Result<PBMode, FPGAArchParseError> {
     let mut mode_name: Option<String> = None;
     for a in attributes {
         match a.name.to_string().as_ref() {
@@ -1692,11 +1701,11 @@ fn parse_pb_mode(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pb_type" => {
-                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
                     },
                     "interconnect" => {
                         // TODO: Check that there is only a single interconnect tag.
-                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser);
+                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser)?;
                     }
                     _ => {},
                 };
@@ -1715,16 +1724,16 @@ fn parse_pb_mode(_name: &str,
         }
     };
 
-    PBMode {
+    Ok(PBMode {
         name: mode_name.unwrap(),
         pb_types,
         interconnects,
-    }
+    })
 }
 
 fn parse_pb_type(_name: &str,
                  attributes: &Vec<OwnedAttribute>,
-                 parser: &mut EventReader<BufReader<File>>) -> PBType {
+                 parser: &mut EventReader<BufReader<File>>) -> Result<PBType, FPGAArchParseError> {
     let mut pb_type_name: Option<String> = None;
     let mut num_pb: i32 = 1;
     let mut blif_model: Option<String> = None;
@@ -1759,17 +1768,17 @@ fn parse_pb_type(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "input" | "output" | "clock" => {
-                        pb_ports.push(parse_port(&name.to_string(), &attributes));
+                        pb_ports.push(parse_port(&name.to_string(), &attributes)?);
                     },
                     "pb_type" => {
-                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
                     },
                     "mode" => {
-                        pb_modes.push(parse_pb_mode(&name.to_string(), &attributes, parser));
+                        pb_modes.push(parse_pb_mode(&name.to_string(), &attributes, parser)?);
                     },
                     "interconnect" => {
                         // TODO: Check that there is only a single interconnect tag.
-                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser);
+                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser)?;
                     }
                     _ => {},
                 };
@@ -1780,8 +1789,7 @@ fn parse_pb_type(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1798,7 +1806,7 @@ fn parse_pb_type(_name: &str,
         },
     };
 
-    PBType {
+    Ok(PBType {
         name: pb_type_name.unwrap(),
         num_pb,
         blif_model,
@@ -1807,12 +1815,12 @@ fn parse_pb_type(_name: &str,
         modes: pb_modes,
         pb_types,
         interconnects,
-    }
+    })
 }
 
 fn parse_complex_block_list(_name: &str,
                             _attributes: &Vec<OwnedAttribute>,
-                            parser: &mut EventReader<BufReader<File>>) -> Vec<PBType> {
+                            parser: &mut EventReader<BufReader<File>>) -> Result<Vec<PBType>, FPGAArchParseError> {
 
     // TODO: Error check the name and the attributes.
 
@@ -1822,9 +1830,9 @@ fn parse_complex_block_list(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pb_type" => {
-                        complex_block_list.push(parse_pb_type(&name.to_string(), &attributes, parser));
+                        complex_block_list.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
                     },
-                    _ => panic!("Invalid tag in complex block list."),
+                    _ => return Err(FPGAArchParseError::InvalidTag("Invalid tag in complex block list.".to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
@@ -1833,20 +1841,22 @@ fn parse_complex_block_list(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
         }
     };
 
-    complex_block_list
+    Ok(complex_block_list)
 }
 
-// TODO: This result type should be changed to something better than std::io
-pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
-    let file = File::open(arch_file)?;
+pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
+    let file = File::open(arch_file);
+    let file = match file {
+        Ok(f) => f,
+        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
+    };
     // Buffering is used for performance.
     let file = BufReader::new(file);
 
@@ -1871,15 +1881,15 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                     },
                     "tiles" => {
                         // TODO: Need to check that we do not see multiple tiles tags.
-                        tiles = parse_tiles(&name.to_string(), &attributes, &mut parser);
+                        tiles = parse_tiles(&name.to_string(), &attributes, &mut parser)?;
                     },
                     "layout" => {
                         // TODO: Need to check that we do not see multiple layout tags.
-                        layouts = parse_layouts(&name.to_string(), &attributes, &mut parser);
+                        layouts = parse_layouts(&name.to_string(), &attributes, &mut parser)?;
                     },
                     "device" => {
                         assert!(device.is_none());
-                        device = Some(parse_device(&name.to_string(), &attributes, &mut parser));
+                        device = Some(parse_device(&name.to_string(), &attributes, &mut parser)?);
                     },
                     "switchlist" => {
                         // TODO: Implement.
@@ -1887,11 +1897,11 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                     },
                     "segmentlist" => {
                         assert!(segment_list.is_empty());
-                        segment_list = parse_segment_list(&name.to_string(), &attributes, &mut parser);
+                        segment_list = parse_segment_list(&name.to_string(), &attributes, &mut parser)?;
                     },
                     "complexblocklist" => {
                         // TODO: Need to check that we do not see multiple complex block tags.
-                        complex_block_list = parse_complex_block_list(&name.to_string(), &attributes, &mut parser);
+                        complex_block_list = parse_complex_block_list(&name.to_string(), &attributes, &mut parser)?;
                     },
                     _ => {
                         // TODO: Raise an error here if a tag is found that is
@@ -1910,21 +1920,23 @@ pub fn parse(arch_file: &Path) -> std::io::Result<FPGAArch> {
                 break;
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // There's more: https://docs.rs/xml/latest/xml/reader/enum.XmlEvent.html
             _ => {},
         };
     }
 
-    assert!(device.is_some());
+    let device = match device {
+        Some(d) => d,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<device>".to_string())),
+    };
 
     Ok(FPGAArch {
         models: Vec::new(),
         tiles,
         layouts,
-        device: device.unwrap(),
+        device,
         switch_list: Vec::new(),
         segment_list,
         complex_block_list,

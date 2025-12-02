@@ -11,11 +11,14 @@ use xml::attribute::OwnedAttribute;
 pub enum FPGAArchParseError {
     ArchFileOpenError(String),
     MissingRequiredTag(String),
+    MissingRequiredAttribute(String, TextPosition),
     InvalidTag(String, TextPosition),
     XMLParseError(String, TextPosition),
     UnknownAttribute(String, TextPosition),
     DuplicateTag(String, TextPosition),
+    DuplicateAttribute(String, TextPosition),
     UnexpectedEndTag(String, TextPosition),
+    AttributeParseError(String, TextPosition),
     UnexpectedEndOfDocument(String),
 }
 
@@ -393,8 +396,9 @@ pub struct FPGAArch {
     pub complex_block_list: Vec<PBType>,
 }
 
-fn parse_port(name: &str,
-              attributes: &Vec<OwnedAttribute>) -> Result<Port, FPGAArchParseError> {
+fn parse_port(tag_name: &str,
+              attributes: &Vec<OwnedAttribute>,
+              parser: &mut EventReader<BufReader<File>>) -> Result<Port, FPGAArchParseError> {
     let mut port_name: Option<String> = None;
     let mut num_pins: Option<i32> = None;
     let mut equivalent = String::from("none");
@@ -453,7 +457,16 @@ fn parse_port(name: &str,
 
     // TODO: Check that non-clock global is only set for inputs.
 
-    match name {
+    match parser.next() {
+       Ok(XmlEvent::EndElement { name }) => {
+           if name.to_string() != tag_name {
+               return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+           }
+       },
+       _ => return Err(FPGAArchParseError::InvalidTag("Unexpected tag parsed within port tag.".to_string(), parser.position())),
+    };
+
+    match tag_name {
         "input" => Ok(Port::Input(InputPort {
             name: port_name.unwrap(),
             num_pins: num_pins.unwrap(),
@@ -473,7 +486,7 @@ fn parse_port(name: &str,
             equivalent: pin_equivalance,
             port_class,
         })),
-        _ => panic!("Unknown port tag: {}", name),
+        _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown port tag: {tag_name}"), parser.position())),
     }
 }
 
@@ -760,7 +773,7 @@ fn parse_sub_tile(_name: &str,
                         equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser)?);
                     },
                     "input" | "output" | "clock" => {
-                        ports.push(parse_port(&name.to_string(), &attributes)?);
+                        ports.push(parse_port(&name.to_string(), &attributes, parser)?);
                     },
                     "fc" => {
                         assert!(sub_tile_fc.is_none());
@@ -850,7 +863,7 @@ fn parse_tile(name: &str,
                         sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser)?);
                     },
                     "input" | "output" | "clock" => {
-                        ports.push(parse_port(&name.to_string(), &attributes)?);
+                        ports.push(parse_port(&name.to_string(), &attributes, parser)?);
                     },
                     _ => {
                         panic!("Unnexpected tag in tile: {}.", name);
@@ -1695,7 +1708,7 @@ fn parse_pb_mode(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pb_type" => {
-                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
+                        pb_types.push(parse_pb_type(&name, &attributes, parser)?);
                     },
                     "interconnect" => {
                         // TODO: Check that there is only a single interconnect tag.
@@ -1724,89 +1737,159 @@ fn parse_pb_mode(_name: &str,
     })
 }
 
-fn parse_pb_type(name: &str,
+fn parse_pb_type(name: &OwnedName,
                  attributes: &Vec<OwnedAttribute>,
                  parser: &mut EventReader<BufReader<File>>) -> Result<PBType, FPGAArchParseError> {
+    assert!(name.to_string() == "pb_type");
+
     let mut pb_type_name: Option<String> = None;
-    let mut num_pb: i32 = 1;
+    let mut num_pb: Option<i32> = None;
     let mut blif_model: Option<String> = None;
-    let mut class: Option<String> = None;
+    let mut class: Option<PBTypeClass> = None;
 
     for a in attributes {
         match a.name.to_string().as_ref() {
             "name" => {
-                assert!(pb_type_name.is_none());
-                pb_type_name = Some(a.value.clone());
+                pb_type_name = match pb_type_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "num_pb" => {
-                num_pb = a.value.parse().expect("num_pb should be an integer.");
+                num_pb = match num_pb {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "blif_model" => {
-                blif_model = Some(a.value.clone());
+                blif_model = match blif_model {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "class" => {
-                class = Some(a.value.clone());
+                class = match class {
+                    None => match a.value.to_string().as_ref() {
+                        "lut" => Some(PBTypeClass::Lut),
+                        "flipflop" => Some(PBTypeClass::FlipFlop),
+                        "memory" => Some(PBTypeClass::Memory),
+                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: Unknown port class"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unknown attribute in pb_type: {}", a.name),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
-    assert!(pb_type_name.is_some());
+
+    let pb_type_name = match pb_type_name {
+        Some(p) => p,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
+    };
+    let num_pb = num_pb.unwrap_or(1);
+    let class = match class {
+        None => PBTypeClass::None,
+        Some(c) => c,
+    };
 
     let mut pb_ports: Vec<Port> = Vec::new();
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut pb_modes: Vec<PBMode> = Vec::new();
-    let mut interconnects: Vec<Interconnect> = Vec::new();
+    let mut interconnects: Option<Vec<Interconnect>> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "input" | "output" | "clock" => {
-                        pb_ports.push(parse_port(&name.to_string(), &attributes)?);
+                        pb_ports.push(parse_port(&name.to_string(), &attributes, parser)?);
                     },
                     "pb_type" => {
-                        pb_types.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
+                        pb_types.push(parse_pb_type(&name, &attributes, parser)?);
                     },
                     "mode" => {
                         pb_modes.push(parse_pb_mode(&name.to_string(), &attributes, parser)?);
                     },
                     "interconnect" => {
-                        // TODO: Check that there is only a single interconnect tag.
-                        interconnects = parse_interconnects(&name.to_string(), &attributes, parser)?;
-                    }
-                    _ => {},
+                        interconnects = match interconnects {
+                            None => Some(parse_interconnects(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    "power" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "delay_constant" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "delay_matrix" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "T_setup" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "T_hold" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "T_clock_to_Q" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "metadata" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "pinlocations" | "fc" => {
+                        // This one is strange. This should not be in the pb_types.
+                        // The ZA architectures have this here for some reason.
+                        // FIXME: Talk to ZA, I think this is a mistake in their arch
+                        //        files.
+                        //        Will skip for now without error so we can support
+                        //        their arch files.
+                        let _ = parser.skip();
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "pb_type" {
-                    break;
+                match name.to_string().as_str() {
+                    "pb_type" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
             },
             Ok(XmlEvent::EndDocument) => {
-                return Err(FPGAArchParseError::UnexpectedEndOfDocument(String::from(name)));
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
 
-    let pb_class = match class {
-        None => PBTypeClass::None,
-        Some(class_name) => match class_name.as_str() {
-            "lut" => PBTypeClass::Lut,
-            "flipflop" => PBTypeClass::FlipFlop,
-            "memory" => PBTypeClass::Memory,
-            _ => panic!("Unknown PB class: {}", class_name),
-        },
-    };
+    // TODO: The documentation is not very clear on if this is required or not.
+    //       Assuming that it is not.
+    let interconnects = interconnects.unwrap_or_default();
 
     Ok(PBType {
-        name: pb_type_name.unwrap(),
+        name: pb_type_name,
         num_pb,
         blif_model,
-        class: pb_class,
+        class,
         ports: pb_ports,
         modes: pb_modes,
         pb_types,
@@ -1814,11 +1897,13 @@ fn parse_pb_type(name: &str,
     })
 }
 
-fn parse_complex_block_list(name: &str,
-                            _attributes: &Vec<OwnedAttribute>,
+fn parse_complex_block_list(name: &OwnedName,
+                            attributes: &[OwnedAttribute],
                             parser: &mut EventReader<BufReader<File>>) -> Result<Vec<PBType>, FPGAArchParseError> {
-
-    // TODO: Error check the name and the attributes.
+    assert!(name.to_string() == "complexblocklist");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
     let mut complex_block_list: Vec<PBType> = Vec::new();
     loop {
@@ -1826,23 +1911,23 @@ fn parse_complex_block_list(name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "pb_type" => {
-                        complex_block_list.push(parse_pb_type(&name.to_string(), &attributes, parser)?);
+                        complex_block_list.push(parse_pb_type(&name, &attributes, parser)?);
                     },
-                    _ => return Err(FPGAArchParseError::InvalidTag("Invalid tag in complex block list.".to_string(), parser.position())),
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "complexblocklist" {
-                    break;
+                match name.to_string().as_str() {
+                    "complexblocklist" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
             },
             Ok(XmlEvent::EndDocument) => {
-                return Err(FPGAArchParseError::UnexpectedEndOfDocument(String::from(name)));
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
@@ -1912,7 +1997,7 @@ pub fn parse_architecture(name: &OwnedName,
                     },
                     "complexblocklist" => {
                         complex_block_list = match complex_block_list {
-                            None => Some(parse_complex_block_list(&name.to_string(), &attributes, parser)?),
+                            None => Some(parse_complex_block_list(&name, &attributes, parser)?),
                             Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
                         }
                     },

@@ -96,6 +96,46 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 }
 
 #[test]
+fn test_k4_n8_legacy_45nm_parse() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k4_N8_legacy_45nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let _res = fpga_arch_parser::parse(&input_xml)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_k6_n10_40nm_parse() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_N10_40nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let _res = fpga_arch_parser::parse(&input_xml)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_k6_n10_sparse_crossbar_40nm_parse() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_N10_sparse_crossbar_40nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let _res = fpga_arch_parser::parse(&input_xml)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_k6_frac_n10_40nm_parse() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_frac_N10_40nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let _res = fpga_arch_parser::parse(&input_xml)?;
+
+    Ok(())
+}
+
+#[test]
 fn test_vtr_flagship_parse() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");

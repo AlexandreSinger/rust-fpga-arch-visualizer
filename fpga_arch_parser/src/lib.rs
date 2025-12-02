@@ -4,6 +4,7 @@ use std::path::Path;
 
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
+use xml::name::OwnedName;
 use xml::attribute::OwnedAttribute;
 
 #[derive(Debug)]
@@ -12,6 +13,10 @@ pub enum FPGAArchParseError {
     MissingRequiredTag(String),
     InvalidTag(String, TextPosition),
     XMLParseError(String, TextPosition),
+    UnknownAttribute(String, TextPosition),
+    DuplicateTag(String, TextPosition),
+    UnexpectedEndTag(String, TextPosition),
+    UnexpectedEndOfDocument(String),
 }
 
 pub struct Model {
@@ -526,8 +531,7 @@ fn parse_equivalent_sites(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -698,8 +702,7 @@ fn parse_sub_tile_pin_locations(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -775,8 +778,7 @@ fn parse_sub_tile(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -861,8 +863,7 @@ fn parse_tile(name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -899,8 +900,7 @@ fn parse_tiles(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1060,8 +1060,7 @@ fn parse_grid_location_list(layout_type_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1159,8 +1158,7 @@ fn parse_layouts(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1385,8 +1383,7 @@ fn parse_device(name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1514,8 +1511,7 @@ fn parse_segment_list(name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1613,8 +1609,7 @@ fn parse_interconnect(name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1667,8 +1662,7 @@ fn parse_interconnects(name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1716,8 +1710,7 @@ fn parse_pb_mode(_name: &str,
                 }
             },
             Err(e) => {
-                eprintln!("Error: {e}");
-                break;
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
             // TODO: Handle the other cases.
             _ => {},
@@ -1731,7 +1724,7 @@ fn parse_pb_mode(_name: &str,
     })
 }
 
-fn parse_pb_type(_name: &str,
+fn parse_pb_type(name: &str,
                  attributes: &Vec<OwnedAttribute>,
                  parser: &mut EventReader<BufReader<File>>) -> Result<PBType, FPGAArchParseError> {
     let mut pb_type_name: Option<String> = None;
@@ -1788,6 +1781,9 @@ fn parse_pb_type(_name: &str,
                     break;
                 }
             },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(String::from(name)));
+            },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
@@ -1818,7 +1814,7 @@ fn parse_pb_type(_name: &str,
     })
 }
 
-fn parse_complex_block_list(_name: &str,
+fn parse_complex_block_list(name: &str,
                             _attributes: &Vec<OwnedAttribute>,
                             parser: &mut EventReader<BufReader<File>>) -> Result<Vec<PBType>, FPGAArchParseError> {
 
@@ -1840,6 +1836,9 @@ fn parse_complex_block_list(_name: &str,
                     break;
                 }
             },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(String::from(name)));
+            },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
@@ -1851,25 +1850,19 @@ fn parse_complex_block_list(_name: &str,
     Ok(complex_block_list)
 }
 
-pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
-    let file = File::open(arch_file);
-    let file = match file {
-        Ok(f) => f,
-        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
-    };
-    // Buffering is used for performance.
-    let file = BufReader::new(file);
+pub fn parse_architecture(name: &OwnedName,
+                          attributes: &[OwnedAttribute],
+                          parser: &mut EventReader<BufReader<File>>) -> Result<FPGAArch, FPGAArchParseError> {
+    assert!(name.to_string() == "architecture");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
-    let mut tiles: Vec<Tile> = Vec::new();
-    let mut layouts: Vec<Layout> = Vec::new();
+    let mut tiles: Option<Vec<Tile>> = None;
+    let mut layouts: Option<Vec<Layout>> = None;
     let mut device: Option<DeviceInfo> = None;
-    let mut segment_list: Vec<Segment> = Vec::new();
-    let mut complex_block_list: Vec<PBType> = Vec::new();
-
-    // TODO: We should ignore comments and maybe whitespace.
-    let mut parser = EventReader::new(file);
-
-    // TODO: We should check that the first tag is the architecture tag.
+    let mut segment_list: Option<Vec<Segment>> = None;
+    let mut complex_block_list: Option<Vec<PBType>> = None;
 
     loop {
         match parser.next() {
@@ -1880,41 +1873,141 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
                         let _ = parser.skip();
                     },
                     "tiles" => {
-                        // TODO: Need to check that we do not see multiple tiles tags.
-                        tiles = parse_tiles(&name.to_string(), &attributes, &mut parser)?;
+                        tiles = match tiles {
+                            None => Some(parse_tiles(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "layout" => {
-                        // TODO: Need to check that we do not see multiple layout tags.
-                        layouts = parse_layouts(&name.to_string(), &attributes, &mut parser)?;
+                        layouts = match layouts {
+                            None => Some(parse_layouts(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "device" => {
-                        assert!(device.is_none());
-                        device = Some(parse_device(&name.to_string(), &attributes, &mut parser)?);
+                        device = match device {
+                            None => Some(parse_device(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "switchlist" => {
                         // TODO: Implement.
                         let _ = parser.skip();
                     },
                     "segmentlist" => {
-                        assert!(segment_list.is_empty());
-                        segment_list = parse_segment_list(&name.to_string(), &attributes, &mut parser)?;
+                        segment_list = match segment_list {
+                            None => Some(parse_segment_list(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    "switchblocklist" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    "directlist" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
                     },
                     "complexblocklist" => {
-                        // TODO: Need to check that we do not see multiple complex block tags.
-                        complex_block_list = parse_complex_block_list(&name.to_string(), &attributes, &mut parser)?;
+                        complex_block_list = match complex_block_list {
+                            None => Some(parse_complex_block_list(&name.to_string(), &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
-                    _ => {
-                        // TODO: Raise an error here if a tag is found that is
-                        //       not of the above types.
+                    "power" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
                     },
+                    "clocks" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name: _ }) => {
-                // TODO: We should never see an end element if the sub-parsers
-                //       are doing their job. This would imply that there is a
-                //       problem.
-                //       The only end element we should see is the architecture
-                //       tag.
+                match name.to_string().as_str() {
+                    "architecture" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            // There's more: https://docs.rs/xml/latest/xml/reader/enum.XmlEvent.html
+            _ => {},
+        };
+    }
+
+    let tiles = match tiles {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<tiles>".to_string())),
+    };
+    let layouts = match layouts {
+        Some(l) => l,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<layout>".to_string())),
+    };
+    let device = match device {
+        Some(d) => d,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<device>".to_string())),
+    };
+    let segment_list = match segment_list {
+        Some(s) => s,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<segmentlist>".to_string())),
+    };
+    let complex_block_list = match complex_block_list {
+        Some(c) => c,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<complexblocklist>".to_string())),
+    };
+
+    Ok(FPGAArch {
+        models: Vec::new(),
+        tiles,
+        layouts,
+        device,
+        switch_list: Vec::new(),
+        segment_list,
+        complex_block_list,
+    })
+}
+
+pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
+    // Try to open the file.
+    let file = File::open(arch_file);
+    let file = match file {
+        Ok(f) => f,
+        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
+    };
+
+    // Create an XML event reader.
+    // Buffering is used for performance.
+    let file = BufReader::new(file);
+    let mut parser = EventReader::new(file);
+
+    // Parse the top-level tags.
+    // At the top-level, we only expect the architecture tag.
+    let mut arch: Option<FPGAArch> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "architecture" => {
+                        arch = Some(parse_architecture(&name, &attributes, &mut parser)?);
+                    },
+                    _ => {
+                        return Err(FPGAArchParseError::InvalidTag(format!("Invalid top-level tag: {name}, expected only <architecture>"), parser.position()));
+                    },
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
             },
             Ok(XmlEvent::EndDocument) => {
                 break;
@@ -1927,18 +2020,10 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
         };
     }
 
-    let device = match device {
-        Some(d) => d,
-        None => return Err(FPGAArchParseError::MissingRequiredTag("<device>".to_string())),
-    };
-
-    Ok(FPGAArch {
-        models: Vec::new(),
-        tiles,
-        layouts,
-        device,
-        switch_list: Vec::new(),
-        segment_list,
-        complex_block_list,
-    })
+    // Return the architecture if it was provided. Error if no architecture was
+    // provided in the description file.
+    match arch {
+        None => Err(FPGAArchParseError::MissingRequiredTag(String::from("<architecture>"))),
+        Some(arch) => Ok(arch),
+    }
 }

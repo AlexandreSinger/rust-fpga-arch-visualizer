@@ -1,17 +1,14 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist, SegmentType};
+use fpga_arch_parser::{FPGAArchParseError, Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist, SegmentType};
 
 #[test]
-fn test_k4_n4_90nm_parse() {
+fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k4_N4_90nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 2);
@@ -94,17 +91,16 @@ fn test_k4_n4_90nm_parse() {
 
     // TODO: Collect stats on the architecture and ensure they match what is
     //       expected.
+
+    Ok(())
 }
 
 #[test]
-fn test_vtr_flagship_parse() {
+fn test_vtr_flagship_parse() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles
     let tiles = &res.tiles;
@@ -138,17 +134,15 @@ fn test_vtr_flagship_parse() {
     assert_eq!(io_subtile.capacity, 8);
 
     // TODO: Add stronger tests for the tiles.
+    Ok(())
 }
 
 #[test]
-fn test_stratix_iv_parse() {
+fn test_stratix_iv_parse() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/stratixiv_arch.timing.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles
     assert_eq!(res.tiles.len(), 6);
@@ -175,46 +169,45 @@ fn test_stratix_iv_parse() {
 
     // Check complex blocks.
     assert_eq!(res.complex_block_list.len(), 6);
+
+    Ok(())
 }
 
 #[test]
-fn test_z1000() {
+fn test_z1000() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/z1000.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 6);
+
+    Ok(())
 }
 
 #[test]
-fn test_z1010() {
+fn test_z1010() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/z1010.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 8);
+
+    Ok(())
 }
 
 #[test]
-fn test_z1060() {
+fn test_z1060() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/z1060.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
-    let res = fpga_arch_parser::parse(&input_xml);
-    assert!(res.is_ok());
-
-    let res = res.unwrap();
+    let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 8);
+
+    Ok(())
 }

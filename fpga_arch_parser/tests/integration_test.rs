@@ -52,13 +52,13 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     }
 
     // Check device.
-    assert_eq!(res.device.r_min_w_nmos, 4_220.93);
-    assert_eq!(res.device.r_min_w_pmos, 11_207.6);
-    assert!(matches!(res.device.x_distr, ChanWDist::Uniform { .. }));
-    assert!(matches!(res.device.y_distr, ChanWDist::Uniform { .. }));
-    assert!(matches!(res.device.sb_type, SBType::Wilton));
-    assert_eq!(res.device.sb_fs, Some(3));
-    assert_eq!(res.device.input_switch_name, "ipin_cblock");
+    assert_eq!(res.device.sizing.r_min_w_nmos, 4_220.93);
+    assert_eq!(res.device.sizing.r_min_w_pmos, 11_207.6);
+    assert!(matches!(res.device.chan_width_distr.x_distr, ChanWDist::Uniform { .. }));
+    assert!(matches!(res.device.chan_width_distr.y_distr, ChanWDist::Uniform { .. }));
+    assert!(matches!(res.device.switch_block.sb_type, SBType::Wilton));
+    assert_eq!(res.device.switch_block.sb_fs, Some(3));
+    assert_eq!(res.device.connection_block.input_switch_name, "ipin_cblock");
 
     // Check segment list
     assert_eq!(res.segment_list.len(), 1);

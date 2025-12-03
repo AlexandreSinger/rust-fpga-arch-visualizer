@@ -1,5 +1,35 @@
 # rust-fpga-arch-visualizer
 
+## Install
+
+### Pre-Built Binaries
+
+#### macOS and Linux (not NixOS):
+
+Run the following code in a terminal:
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases/latest/download/fpga_arch_viewer-installer.sh | sh
+```
+
+#### Windows PowerShell:
+
+Run the following code in PowerShell:
+```sh
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases/latest/download/fpga_arch_viewer-installer.ps1 | iex"
+```
+
+### Build From Source
+
+This project uses `cargo` as a build system. You will need to install `cargo` to
+build this project from source.
+
+Download the code for this repository and navigate into it. Then run the following
+commands:
+```sh
+cargo build --release
+
+./target/release/fpga_arch_viewer
+```
 
 ## Motivation
 

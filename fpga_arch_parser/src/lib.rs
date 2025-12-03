@@ -276,21 +276,36 @@ pub enum ChanWDist {
     Delta(DeltaChanWDist),
 }
 
-pub struct DeviceInfo {
-    // Sizing.
+pub struct DeviceSizingInfo {
     pub r_min_w_nmos: f32,
     pub r_min_w_pmos: f32,
-    // Connection block.
+}
+
+pub struct DeviceConnectionBlockInfo {
     pub input_switch_name: String,
-    // Area.
+}
+
+pub struct DeviceAreaInfo {
     pub grid_logic_tile_area: f32,
-    // Switch block.
+}
+
+pub struct DeviceSwitchBlockInfo {
     pub sb_type: SBType,
     //      NOTE: SB fs is required if the sb type is non-custom.
     pub sb_fs: Option<i32>,
-    // Chan width distribution.
+}
+
+pub struct DeviceChanWidthDistrInfo {
     pub x_distr: ChanWDist,
     pub y_distr: ChanWDist,
+}
+
+pub struct DeviceInfo {
+    pub sizing: DeviceSizingInfo,
+    pub connection_block: DeviceConnectionBlockInfo,
+    pub area: DeviceAreaInfo,
+    pub switch_block: DeviceSwitchBlockInfo,
+    pub chan_width_distr: DeviceChanWidthDistrInfo,
     // TODO: default_fc
 }
 
@@ -1510,10 +1525,246 @@ fn parse_layouts(name: &OwnedName,
     Ok(layouts)
 }
 
-fn parse_chan_w_dist(name: &str,
-                     attributes: &Vec<OwnedAttribute>,
+fn parse_device_sizing(name: &OwnedName,
+                       attributes: &[OwnedAttribute],
+                       parser: &mut EventReader<BufReader<File>>) -> Result<DeviceSizingInfo, FPGAArchParseError> {
+    assert!(name.to_string() == "sizing");
+
+    let mut r_min_w_nmos: Option<f32> = None;
+    let mut r_min_w_pmos: Option<f32> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "R_minW_nmos" => {
+                r_min_w_nmos = match r_min_w_nmos {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            "R_minW_pmos" => {
+                r_min_w_pmos = match r_min_w_pmos {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        };
+    }
+    let r_min_w_nmos = match r_min_w_nmos {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("R_minW_nmos".to_string(), parser.position())),
+    };
+    let r_min_w_pmos = match r_min_w_pmos {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("R_minW_pmos".to_string(), parser.position())),
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    Ok(DeviceSizingInfo {
+        r_min_w_nmos,
+        r_min_w_pmos,
+    })
+}
+
+fn parse_device_connection_block(name: &OwnedName,
+                                 attributes: &[OwnedAttribute],
+                                 parser: &mut EventReader<BufReader<File>>) -> Result<DeviceConnectionBlockInfo, FPGAArchParseError> {
+    assert!(name.to_string() == "connection_block");
+
+    let mut input_switch_name: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "input_switch_name" => {
+                input_switch_name = match input_switch_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        };
+    }
+    let input_switch_name = match input_switch_name {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("input_switch_name".to_string(), parser.position())),
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    Ok(DeviceConnectionBlockInfo {
+        input_switch_name,
+    })
+}
+
+fn parse_device_area(name: &OwnedName,
+                     attributes: &[OwnedAttribute],
+                     parser: &mut EventReader<BufReader<File>>) -> Result<DeviceAreaInfo, FPGAArchParseError> {
+    assert!(name.to_string() == "area");
+
+    let mut grid_logic_tile_area: Option<f32> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "grid_logic_tile_area" => {
+                grid_logic_tile_area = match grid_logic_tile_area {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        };
+    }
+    let grid_logic_tile_area = match grid_logic_tile_area {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("grid_logic_tile_area".to_string(), parser.position())),
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    Ok(DeviceAreaInfo {
+        grid_logic_tile_area,
+    })
+}
+
+fn parse_device_switch_block(name: &OwnedName,
+                             attributes: &[OwnedAttribute],
+                             parser: &mut EventReader<BufReader<File>>) -> Result<DeviceSwitchBlockInfo, FPGAArchParseError> {
+    assert!(name.to_string() == "switch_block");
+
+    let mut sb_type: Option<SBType> = None;
+    let mut sb_fs: Option<i32> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "type" => {
+                sb_type = match sb_type {
+                    None => match a.value.as_ref() {
+                        "wilton" => Some(SBType::Wilton),
+                        "subset" => Some(SBType::Subset),
+                        "universal" => Some(SBType::Universal),
+                        "custom" => Some(SBType::Custom),
+                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("Unknown switch_block type: {}", a.value), parser.position())),
+
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            "fs" => {
+                sb_fs = match sb_fs {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        };
+    }
+    let sb_type = match sb_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("type".to_string(), parser.position())),
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    Ok(DeviceSwitchBlockInfo {
+        sb_type,
+        sb_fs,
+    })
+}
+
+fn parse_chan_w_dist(name: &OwnedName,
+                     attributes: &[OwnedAttribute],
                      parser: &mut EventReader<BufReader<File>>) -> Result<ChanWDist, FPGAArchParseError> {
-    assert!(name == "x" || name == "y");
+    assert!(name.to_string() == "x" || name.to_string() == "y");
+
     let mut distr: Option<String> = None;
     let mut peak: Option<f32> = None;
     let mut width: Option<f32> = None;
@@ -1522,64 +1773,205 @@ fn parse_chan_w_dist(name: &str,
     for a in attributes {
         match a.name.to_string().as_ref() {
             "distr" => {
-                assert!(distr.is_none());
-                distr = Some(a.value.clone());
+                distr = match distr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "peak" => {
-                assert!(peak.is_none());
-                peak = Some(a.value.parse().expect("chan_w_dist peak expected to be f32"));
+                peak = match peak {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "width" => {
-                assert!(width.is_none());
-                width = Some(a.value.parse().expect("chan_w_dist width expected to be f32"));
+                width = match width {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "xpeak" => {
-                assert!(xpeak.is_none());
-                xpeak = Some(a.value.parse().expect("chan_w_dist xpeak expected to be f32"));
+                xpeak = match xpeak {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "dc" => {
-                assert!(dc.is_none());
-                dc = Some(a.value.parse().expect("chan_w_dist dc expected to be f32"));
+                dc = match dc {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unexpected attribute in chan_w_distr: {}", a),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
-    match parser.next() {
-        Ok(XmlEvent::EndElement { name: end_name }) => {
-            assert!(end_name.to_string() == name);
-        },
-        _ => panic!("Unnexpected tag in chan_w_distr x/y tag"),
+    let distr = match distr {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("distr".to_string(), parser.position())),
+    };
+    let peak = match peak {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("peak".to_string(), parser.position())),
     };
 
-    match distr {
-        Some(distr_str) => {
-            match distr_str.as_str() {
-                "gaussian" => Ok(ChanWDist::Gaussian(GaussianChanWDist {
-                    peak: peak.unwrap(),
-                    width: width.unwrap(),
-                    xpeak: xpeak.unwrap(),
-                    dc: dc.unwrap(),
-                })),
-                "uniform" => Ok(ChanWDist::Uniform(UniformChanWDist {
-                    peak: peak.unwrap(),
-                })),
-                "pulse" => Ok(ChanWDist::Pulse(PulseChanWDist {
-                    peak: peak.unwrap(),
-                    width: width.unwrap(),
-                    xpeak: xpeak.unwrap(),
-                    dc: dc.unwrap(),
-                })),
-                "delta" => Ok(ChanWDist::Delta(DeltaChanWDist {
-                    peak: peak.unwrap(),
-                    xpeak: xpeak.unwrap(),
-                    dc: dc.unwrap(),
-                })),
-                _ => panic!("Unknown distr for chan_w_distr: {}", distr_str),
-            }
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    match distr.as_str() {
+        "gaussian" => {
+            let width = match width {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("width".to_string(), parser.position())),
+            };
+            let xpeak = match xpeak {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("xpeak".to_string(), parser.position())),
+            };
+            let dc = match dc {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("dc".to_string(), parser.position())),
+            };
+            Ok(ChanWDist::Gaussian(GaussianChanWDist {
+                peak,
+                width,
+                xpeak,
+                dc,
+            }))
         },
-        None => panic!("No distr provided for chan_w_distr"),
+        "uniform" => {
+            Ok(ChanWDist::Uniform(UniformChanWDist {
+                peak,
+            }))
+        },
+        "pulse" => {
+            let width = match width {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("width".to_string(), parser.position())),
+            };
+            let xpeak = match xpeak {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("xpeak".to_string(), parser.position())),
+            };
+            let dc = match dc {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("dc".to_string(), parser.position())),
+            };
+            Ok(ChanWDist::Pulse(PulseChanWDist {
+                peak,
+                width,
+                xpeak,
+                dc,
+            }))
+        },
+        "delta" => {
+            let xpeak = match xpeak {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("xpeak".to_string(), parser.position())),
+            };
+            let dc = match dc {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("dc".to_string(), parser.position())),
+            };
+            Ok(ChanWDist::Delta(DeltaChanWDist {
+                peak,
+                xpeak,
+                dc,
+            }))
+        },
+        _ => Err(FPGAArchParseError::AttributeParseError(format!("Unknown distr for chan_w_distr: {distr}"), parser.position())),
     }
+}
+
+fn parse_device_chan_w_distr(name: &OwnedName,
+                             attributes: &[OwnedAttribute],
+                             parser: &mut EventReader<BufReader<File>>) -> Result<DeviceChanWidthDistrInfo, FPGAArchParseError> {
+    assert!(name.to_string() == "chan_width_distr");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
+
+    let mut x_distr: Option<ChanWDist> = None;
+    let mut y_distr: Option<ChanWDist> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "x" => {
+                        x_distr = match x_distr {
+                            None => Some(parse_chan_w_dist(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    "y" => {
+                        y_distr = match y_distr {
+                            None => Some(parse_chan_w_dist(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "chan_width_distr" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+
+    let x_distr = match x_distr {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<x>".to_string())),
+    };
+    let y_distr = match y_distr {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<y>".to_string())),
+    };
+
+    Ok(DeviceChanWidthDistrInfo {
+        x_distr,
+        y_distr,
+    })
 }
 
 fn parse_device(name: &OwnedName,
@@ -1590,159 +1982,92 @@ fn parse_device(name: &OwnedName,
         return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
     }
 
-    let mut r_min_w_nmos: Option<f32> = None;
-    let mut r_min_w_pmos: Option<f32> = None;
-    let mut grid_logic_tile_area: Option<f32> = None;
-    let mut x_distr: Option<ChanWDist> = None;
-    let mut y_distr: Option<ChanWDist> = None;
-    let mut sb_type: Option<SBType> = None;
-    let mut sb_fs: Option<i32> = None;
-    let mut input_switch_name: Option<String> = None;
+    let mut sizing: Option<DeviceSizingInfo> = None;
+    let mut connection_block: Option<DeviceConnectionBlockInfo> = None;
+    let mut area: Option<DeviceAreaInfo> = None;
+    let mut switch_block: Option<DeviceSwitchBlockInfo> = None;
+    let mut chan_width_distr: Option<DeviceChanWidthDistrInfo> = None;
 
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "sizing" => {
-                        for a in attributes {
-                            match a.name.to_string().as_ref() {
-                                "R_minW_nmos" => {
-                                    assert!(r_min_w_nmos.is_none());
-                                    r_min_w_nmos = Some(a.value.parse().expect("R_minW_nmos expected to be f32 type"));
-                                },
-                                "R_minW_pmos" => {
-                                    assert!(r_min_w_pmos.is_none());
-                                    r_min_w_pmos = Some(a.value.parse().expect("R_minW_pmos expected to be f32 type"));
-                                },
-                                _ => panic!("Unknown attribute for sizing tag: {}", a),
-                            };
+                        sizing = match sizing {
+                            None => Some(parse_device_sizing(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
                         }
-                        match parser.next() {
-                            Ok(XmlEvent::EndElement { name: end_name }) => {
-                                assert!(end_name.to_string() == "sizing");
-                            },
-                            _ => panic!("Unnexpected tag in sizing tag"),
-                        };
-                    },
-                    "area" => {
-                        for a in attributes {
-                            match a.name.to_string().as_ref() {
-                                "grid_logic_tile_area" => {
-                                    assert!(grid_logic_tile_area.is_none());
-                                    grid_logic_tile_area = Some(a.value.parse().expect("grid_logic_tile_area expected to be f32 type"));
-                                },
-                                _ => panic!("Unknown attribute for area tag: {}", a),
-                            };
-                        }
-                        match parser.next() {
-                            Ok(XmlEvent::EndElement { name: end_name }) => {
-                                assert!(end_name.to_string() == "area");
-                            },
-                            _ => panic!("Unnexpected tag in area tag"),
-                        };
-                    },
-                    "chan_width_distr" => {
-                        loop {
-                            match parser.next() {
-                                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                                    match name.to_string().as_str() {
-                                        "x" => {
-                                            assert!(x_distr.is_none());
-                                            x_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser)?);
-                                        },
-                                        "y" => {
-                                            assert!(y_distr.is_none());
-                                            y_distr = Some(parse_chan_w_dist(&name.to_string(), &attributes, parser)?);
-                                        },
-                                        _ => panic!("Unexpected tag in chan_width_distr: {}", name),
-                                    };
-                                },
-                                Ok(XmlEvent::EndElement { name }) => {
-                                    match name.to_string().as_str() {
-                                        "chan_width_distr" => break,
-                                        _ => panic!("Unexpected end tag in chan_width_distr: {}", name),
-                                    }
-                                },
-                                Err(e) => {
-                                    eprintln!("Error: {e}");
-                                    break;
-                                },
-                                // TODO: Handle the other cases.
-                                _ => {},
-                            }
-                        };
-
-                    },
-                    "switch_block" => {
-                        for a in attributes {
-                            match a.name.to_string().as_ref() {
-                                "type" => {
-                                    assert!(sb_type.is_none());
-                                    sb_type = match a.value.as_ref() {
-                                        "wilton" => Some(SBType::Wilton),
-                                        "subset" => Some(SBType::Subset),
-                                        "universal" => Some(SBType::Universal),
-                                        "custom" => Some(SBType::Custom),
-                                        _ => panic!("Unknown switch_block type: {}", a.value),
-                                    };
-                                },
-                                "fs" => {
-                                    assert!(sb_fs.is_none());
-                                    sb_fs = Some(a.value.parse().expect("switch_block fs expected to be i32 type, got"));
-                                },
-                                _ => panic!("Unknown attribute for area tag: {}", a),
-                            };
-                        }
-                        match parser.next() {
-                            Ok(XmlEvent::EndElement { name: end_name }) => {
-                                assert!(end_name.to_string() == "switch_block");
-                            },
-                            _ => panic!("Unnexpected tag in switch_block tag"),
-                        };
                     },
                     "connection_block" => {
-                        for a in attributes {
-                            match a.name.to_string().as_ref() {
-                                "input_switch_name" => {
-                                    assert!(input_switch_name.is_none());
-                                    input_switch_name = Some(a.value.clone());
-                                },
-                                _ => panic!("Unknown attribute for connection_block tag: {}", a),
-                            };
+                        connection_block = match connection_block {
+                            None => Some(parse_device_connection_block(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
                         }
-                        match parser.next() {
-                            Ok(XmlEvent::EndElement { name: end_name }) => {
-                                assert!(end_name.to_string() == "connection_block");
-                            },
-                            _ => panic!("Unnexpected tag in connection_block tag"),
-                        };
-
                     },
-                    _ => {},
+                    "area" => {
+                        area = match area {
+                            None => Some(parse_device_area(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    "switch_block" => {
+                        switch_block = match switch_block {
+                            None => Some(parse_device_switch_block(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    "chan_width_distr" => {
+                        chan_width_distr = match chan_width_distr {
+                            None => Some(parse_device_chan_w_distr(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "device" {
-                    break;
+                match name.to_string().as_str() {
+                    "device" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
 
+    let sizing = match sizing {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<sizing>".to_string())),
+    };
+    let area = match area {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<area>".to_string())),
+    };
+    let connection_block = match connection_block {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<connection_block>".to_string())),
+    };
+    let switch_block = match switch_block {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<switch_block>".to_string())),
+    };
+    let chan_width_distr = match chan_width_distr {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<chan_width_distr>".to_string())),
+    };
+
     Ok(DeviceInfo {
-        r_min_w_nmos: r_min_w_nmos.unwrap(),
-        r_min_w_pmos: r_min_w_pmos.unwrap(),
-        input_switch_name: input_switch_name.unwrap(),
-        grid_logic_tile_area: grid_logic_tile_area.unwrap(),
-        sb_type: sb_type.unwrap(),
-        sb_fs,
-        x_distr: x_distr.unwrap(),
-        y_distr: y_distr.unwrap(),
+        sizing,
+        area,
+        connection_block,
+        switch_block,
+        chan_width_distr,
     })
 }
 
@@ -1967,22 +2292,26 @@ fn parse_pack_pattern(name: &OwnedName,
         None => return Err(FPGAArchParseError::MissingRequiredAttribute("out_port".to_string(), parser.position())),
     };
 
-    match parser.next() {
-        Ok(XmlEvent::StartElement { name, .. }) => {
-            return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
-        },
-        Ok(XmlEvent::EndElement { name }) => {
-            if name.to_string() != "pack_pattern" {
-                return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
-            }
-        },
-        Ok(XmlEvent::EndDocument) => {
-            return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
-        },
-        Err(e) => {
-            return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
-        },
-        _ => {},
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
     };
 
     Ok(PackPattern {

@@ -499,40 +499,75 @@ fn parse_port(tag_name: &str,
     }
 }
 
-fn parse_tile_site(_name: &str,
-                   attributes: &Vec<OwnedAttribute>) -> Result<TileSite, FPGAArchParseError> {
+fn parse_tile_site(name: &OwnedName,
+                   attributes: &[OwnedAttribute],
+                   parser: &mut EventReader<BufReader<File>>) -> Result<TileSite, FPGAArchParseError> {
+    assert!(name.to_string() == "site");
 
     let mut site_pb_type: Option<String> = None;
-    let mut site_pin_mapping = String::from("direct");
+    let mut site_pin_mapping: Option<TileSitePinMapping> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "pb_type" => {
-                site_pb_type = Some(a.value.clone());
+                site_pb_type = match site_pb_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "pin_mapping" => {
-                site_pin_mapping = a.value.clone();
+                site_pin_mapping = match site_pin_mapping {
+                    None => match a.value.as_str() {
+                        "direct" => Some(TileSitePinMapping::Direct),
+                        "custom" => Some(TileSitePinMapping::Custom),
+                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("Unknown site pin mapping: {}", a.value), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => {
-                panic!("Unnexpected attribute.");
-            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
-    let site_pin_mapping = match site_pin_mapping.as_str() {
-        "direct" => TileSitePinMapping::Direct,
-        "custom" => TileSitePinMapping::Custom,
-        _ => panic!("Unknown site pin mapping: {}", site_pin_mapping),
+    let site_pb_type = match site_pb_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("pb_type".to_string(), parser.position())),
     };
+    let site_pin_mapping = site_pin_mapping.unwrap_or(TileSitePinMapping::Direct);
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "site" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument("fc".to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
 
     Ok(TileSite {
-        pb_type: site_pb_type.unwrap(),
+        pb_type: site_pb_type,
         pin_mapping: site_pin_mapping,
     })
 }
 
-fn parse_equivalent_sites(_name: &str,
-                          _attributes: &Vec<OwnedAttribute>,
+fn parse_equivalent_sites(name: &OwnedName,
+                          attributes: &[OwnedAttribute],
                           parser: &mut EventReader<BufReader<File>>) -> Result<Vec<TileSite>, FPGAArchParseError> {
+    assert!(name.to_string() == "equivalent_sites");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
     let mut equivalent_sites: Vec<TileSite> = Vec::new();
     loop {
@@ -540,47 +575,61 @@ fn parse_equivalent_sites(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "site" => {
-                        equivalent_sites.push(parse_tile_site(&name.to_string(), &attributes)?);
+                        equivalent_sites.push(parse_tile_site(&name, &attributes, parser)?);
                     },
-                    _ => {
-                        panic!("Unnexpected tag in equivalent_sites.");
-                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "equivalent_sites" {
-                    break;
+                match name.to_string().as_str() {
+                    "equivalent_sites" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
 
+    // TODO: Check the documentation. Is it allowed for equivalent sites to be empty?
+
     Ok(equivalent_sites)
 }
 
-fn create_sub_tile_io_fc(ty: &str, val: &str) -> Result<SubTileIOFC, FPGAArchParseError> {
+fn create_sub_tile_io_fc(ty: &str,
+                         val: &str,
+                         parser: &EventReader<BufReader<File>>) -> Result<SubTileIOFC, FPGAArchParseError> {
     match ty {
         "frac" => {
             Ok(SubTileIOFC::Frac(SubTileFracFC {
-                val: val.parse().expect("fc_val should be frac"),
+                val: match val.parse() {
+                    Ok(v) => v,
+                    Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{val}: {e}"), parser.position())),
+                },
             }))
         },
         "abs" => {
             Ok(SubTileIOFC::Abs(SubTileAbsFC {
-                val: val.parse().expect("fc_val should be abs"),
+                val: match val.parse() {
+                    Ok(v) => v,
+                    Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{val}: {e}"), parser.position())),
+                },
             }))
         },
-        _ => panic!("Unknown fc_type: {}", ty),
+        _ => Err(FPGAArchParseError::AttributeParseError(format!("Unknown fc_type: {}", ty), parser.position())),
     }
 }
 
-fn parse_sub_tile_fc(_name: &str,
-                     attributes: &Vec<OwnedAttribute>) -> Result<SubTileFC, FPGAArchParseError> {
+fn parse_sub_tile_fc(name: &OwnedName,
+                     attributes: &[OwnedAttribute],
+                     parser: &mut EventReader<BufReader<File>>) -> Result<SubTileFC, FPGAArchParseError> {
+    assert!(name.to_string() == "fc");
+
     let mut in_type: Option<String> = None;
     let mut in_val: Option<String> = None;
     let mut out_type: Option<String> = None;
@@ -588,32 +637,80 @@ fn parse_sub_tile_fc(_name: &str,
     for a in attributes {
         match a.name.to_string().as_str() {
             "in_type" => {
-                assert!(in_type.is_none());
-                in_type = Some(a.value.clone());
+                in_type = match in_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "in_val" => {
-                assert!(in_val.is_none());
-                in_val = Some(a.value.clone());
+                in_val = match in_val {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "out_type" => {
-                assert!(out_type.is_none());
-                out_type = Some(a.value.clone());
+                out_type = match out_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "out_val" => {
-                assert!(out_val.is_none());
-                out_val = Some(a.value.clone());
+                out_val = match out_val {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unknown fc attribute: {}", a.name),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
-    assert!(in_type.is_some());
-    assert!(in_val.is_some());
-    assert!(out_type.is_some());
-    assert!(out_val.is_some());
+    let in_type = match in_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("in_type".to_string(), parser.position())),
+    };
+    let in_val = match in_val {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("in_val".to_string(), parser.position())),
+    };
+    let out_type = match out_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("out_type".to_string(), parser.position())),
+    };
+    let out_val = match out_val {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("out_val".to_string(), parser.position())),
+    };
 
-    let in_fc = create_sub_tile_io_fc(&in_type.unwrap(), &in_val.unwrap())?;
-    let out_fc = create_sub_tile_io_fc(&out_type.unwrap(), &out_val.unwrap())?;
+    let in_fc = create_sub_tile_io_fc(&in_type, &in_val, parser)?;
+    let out_fc = create_sub_tile_io_fc(&out_type, &out_val, parser)?;
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                match name.to_string().as_str() {
+                    "fc_override" => {
+                        // TODO: Implement.
+                        // FIXME: Check that this is documented in VTR.
+                        let _ = parser.skip();
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "fc" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument("fc".to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
 
     Ok(SubTileFC {
         in_fc,
@@ -621,69 +718,91 @@ fn parse_sub_tile_fc(_name: &str,
     })
 }
 
-fn parse_pin_loc(_name: &str,
-                 attributes: &Vec<OwnedAttribute>,
+fn parse_pin_loc(name: &OwnedName,
+                 attributes: &[OwnedAttribute],
                  parser: &mut EventReader<BufReader<File>>) -> Result<PinLoc, FPGAArchParseError> {
-    let mut side: Option<String> = None;
+    assert!(name.to_string() == "loc");
+
+    let mut side: Option<PinSide> = None;
     let mut xoffset: Option<i32> = None;
     let mut yoffset: Option<i32> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "side" => {
-                assert!(side.is_none());
-                side = Some(a.value.clone());
+                side = match side {
+                    None => match a.value.as_str() {
+                        "left" => Some(PinSide::Left),
+                        "right" => Some(PinSide::Right),
+                        "top" => Some(PinSide::Top),
+                        "bottom" => Some(PinSide::Bottom),
+                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("Unknown pin side: {}", a.value), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "xoffset" => {
-                assert!(xoffset.is_none());
-                xoffset = Some(a.value.parse().expect("xoffset expected to be an i32."));
+                xoffset = match xoffset {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "yoffset" => {
-                assert!(yoffset.is_none());
-                yoffset = Some(a.value.parse().expect("yoffset expected to be an i32."));
+                yoffset = match yoffset {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unnexpected attribute in loc: {}", a.name),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
+    let side = match side {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("side".to_string(), parser.position())),
+    };
     let xoffset = xoffset.unwrap_or_default();
     let yoffset = yoffset.unwrap_or_default();
 
-    let side = match side {
-        Some(side) => match side.as_str() {
-            "left" => PinSide::Left,
-            "right" => PinSide::Right,
-            "top" => PinSide::Top,
-            "bottom" => PinSide::Bottom,
-            _ => panic!("Unknown pin side: {}", side),
-        },
-        None => panic!("loc tag has no side attribute."),
-    };
-
     // Parse the pin strings.
-    let pin_strings: Vec<String>;
-    match parser.next() {
-        Ok(XmlEvent::Characters(text)) => {
-            pin_strings = text.split_whitespace().map(|s| s.to_string()).collect();
+    let mut pin_strings: Option<Vec<String>> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::Characters(text)) => {
+                pin_strings = match pin_strings {
+                    None => Some(text.split_whitespace().map(|s| s.to_string()).collect()),
+                    Some(_) => return Err(FPGAArchParseError::InvalidTag("Duplicate characters within loc tag.".to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "loc" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
 
-            // Parse the end loc tag. This is just to make this method clean.
-            match parser.next() {
-                Ok(XmlEvent::EndElement { name }) => {
-                    assert!(name.to_string() == "loc");
-                },
-                _ => panic!("Unexpected tag in loc tag"),
-            };
-        },
-        Ok(XmlEvent::EndElement { name }) => {
-            assert!(name.to_string() == "loc");
-
-            // FIXME: The Stratix-IV has cases where a loc is provided with no
-            //        pin strings. Need to update the documentation to make this
-            //        clear what to do in this case.
-            // For now, just make the pin strings empty.
-            pin_strings = Vec::new();
-        },
-        _ => panic!("Unexpected XML element found in loc tag"),
-    };
+    // FIXME: The Stratix-IV has cases where a loc is provided with no
+    //        pin strings. Need to update the documentation to make this
+    //        clear what to do in this case.
+    // For now, just make the pin strings empty.
+    let pin_strings = pin_strings.unwrap_or_default();
 
     Ok(PinLoc {
         side,
@@ -693,19 +812,28 @@ fn parse_pin_loc(_name: &str,
     })
 }
 
-fn parse_sub_tile_pin_locations(_name: &str,
-                                attributes: &Vec<OwnedAttribute>,
+fn parse_sub_tile_pin_locations(name: &OwnedName,
+                                attributes: &[OwnedAttribute],
                                 parser: &mut EventReader<BufReader<File>>) -> Result<SubTilePinLocations, FPGAArchParseError> {
+    assert!(name.to_string() == "pinlocations");
+
     let mut pattern: Option<String> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "pattern" => {
-                assert!(pattern.is_none());
-                pattern = Some(a.value.clone());
+                pattern = match pattern {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unknown pin locations attribute: {}", a.name),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
+
+    let pattern = match pattern {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("pattern".to_string(), parser.position())),
+    };
 
     let mut pin_locs: Vec<PinLoc> = Vec::new();
     loop {
@@ -713,62 +841,78 @@ fn parse_sub_tile_pin_locations(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "loc" => {
-                        pin_locs.push(parse_pin_loc(&name.to_string(), &attributes, parser)?);
+                        // If pin locations are defined for any patter other than
+                        // custom, something is wrong.
+                        if pattern != "custom" {
+                            return Err(FPGAArchParseError::InvalidTag("Pin locations can only be given for custom pattern".to_string(), parser.position()));
+                        }
+                        pin_locs.push(parse_pin_loc(&name, &attributes, parser)?);
                     },
-                    _ => panic!("Unnexpected tag in pinlocations: {}", name),
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "pinlocations" {
-                    break;
+                match name.to_string().as_str() {
+                    "pinlocations" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
 
-    // TODO: If pin locs is defined for any pattern other than custom, something
-    //       is wrong.
-
-    match pattern {
-        Some(pattern) => match pattern.as_str() {
-            "spread" => Ok(SubTilePinLocations::Spread),
-            "perimeter" => Ok(SubTilePinLocations::Perimeter),
-            "spread_inputs_perimeter_outputs" => Ok(SubTilePinLocations::SpreadInputsPerimeterOutputs),
-            "custom" => {
-                Ok(SubTilePinLocations::Custom(CustomPinLocations{
-                    pin_locations: pin_locs,
-                }))
-            },
-            _ => panic!("Unknown spreadpattern for pinlocations: {}", pattern),
+    match pattern.as_str() {
+        "spread" => Ok(SubTilePinLocations::Spread),
+        "perimeter" => Ok(SubTilePinLocations::Perimeter),
+        "spread_inputs_perimeter_outputs" => Ok(SubTilePinLocations::SpreadInputsPerimeterOutputs),
+        "custom" => {
+            Ok(SubTilePinLocations::Custom(CustomPinLocations{
+                pin_locations: pin_locs,
+            }))
         },
-        None => panic!("pinlocations tag has no pattern attribute."),
+        _ => Err(FPGAArchParseError::AttributeParseError(format!("Unknown spreadpattern for pinlocations: {}", pattern), parser.position())),
     }
 }
 
-fn parse_sub_tile(_name: &str,
-                  attributes: &Vec<OwnedAttribute>,
+fn parse_sub_tile(name: &OwnedName,
+                  attributes: &[OwnedAttribute],
                   parser: &mut EventReader<BufReader<File>>) -> Result<SubTile, FPGAArchParseError> {
+    assert!(name.to_string() == "sub_tile");
 
     let mut sub_tile_name: Option<String> = None;
-    let mut sub_tile_capacity: i32 = 1;
+    let mut sub_tile_capacity: Option<i32> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "name" => {
-                sub_tile_name = Some(a.value.clone());
+                sub_tile_name = match sub_tile_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "capacity" => {
-                sub_tile_capacity = a.value.parse().expect("Invalid capacity");
+                sub_tile_capacity = match sub_tile_capacity {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => {},
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
-    assert!(sub_tile_name.is_some());
+    let sub_tile_name = match sub_tile_name {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
+    };
+    let sub_tile_capacity = sub_tile_capacity.unwrap_or(1);
 
     let mut equivalent_sites: Option<Vec<TileSite>> = None;
     let mut ports: Vec<Port> = Vec::new();
@@ -779,53 +923,72 @@ fn parse_sub_tile(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "equivalent_sites" => {
-                        equivalent_sites = Some(parse_equivalent_sites(&name.to_string(), &attributes, parser)?);
+                        equivalent_sites = match equivalent_sites {
+                            None => Some(parse_equivalent_sites(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "input" | "output" | "clock" => {
                         ports.push(parse_port(&name.to_string(), &attributes, parser)?);
                     },
                     "fc" => {
-                        assert!(sub_tile_fc.is_none());
-                        sub_tile_fc = Some(parse_sub_tile_fc(&name.to_string(), &attributes)?);
+                        sub_tile_fc = match sub_tile_fc {
+                            None => Some(parse_sub_tile_fc(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "pinlocations" => {
-                        pin_locations = Some(parse_sub_tile_pin_locations(&name.to_string(), &attributes, parser)?);
+                        pin_locations = match pin_locations {
+                            None => Some(parse_sub_tile_pin_locations(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
-                    _ => {},
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "sub_tile" {
-                    break;
+                match name.to_string().as_str() {
+                    "sub_tile" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
 
-    assert!(equivalent_sites.is_some());
-    assert!(sub_tile_fc.is_some());
-    assert!(pin_locations.is_some());
+    let equivalent_sites = match equivalent_sites {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<equivalent_sites>".to_string())),
+    };
+    let sub_tile_fc = match sub_tile_fc {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<fc>".to_string())),
+    };
+    let pin_locations = match pin_locations {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<pinlocations>".to_string())),
+    };
 
     Ok(SubTile {
-        name: sub_tile_name.unwrap(),
+        name: sub_tile_name,
         capacity: sub_tile_capacity,
-        equivalent_sites: equivalent_sites.unwrap(),
+        equivalent_sites,
         ports,
-        fc: sub_tile_fc.unwrap(),
-        pin_locations: pin_locations.unwrap(),
+        fc: sub_tile_fc,
+        pin_locations,
     })
 }
 
-fn parse_tile(name: &str,
-              attributes: &Vec<OwnedAttribute>,
+fn parse_tile(name: &OwnedName,
+              attributes: &[OwnedAttribute],
               parser: &mut EventReader<BufReader<File>>) -> Result<Tile, FPGAArchParseError> {
-
-    assert!(name == "tile");
+    assert!(name.to_string() == "tile");
 
     let mut tile_name: Option<String> = None;
     let mut width: Option<i32> = None;
@@ -834,28 +997,45 @@ fn parse_tile(name: &str,
     for a in attributes {
         match a.name.to_string().as_ref() {
             "name" => {
-                assert!(tile_name.is_none());
-                tile_name = Some(a.value.clone());
+                tile_name = match tile_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "width" => {
-                assert!(width.is_none());
-                width = Some(a.value.parse().expect("Tile width expected to be i32 type."));
+                width = match width {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "height" => {
-                assert!(height.is_none());
-                height = Some(a.value.parse().expect("Tile height expected to be i32 type."));
+                height = match height {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "area" => {
-                assert!(area.is_none());
-                area = Some(a.value.parse().expect("Tile area expected to be f32 type."));
+                area = match area {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unnexpected attribute in tile tag: {}", a),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         }
     }
 
     let tile_name = match tile_name {
         Some(n) => n,
-        None => panic!("Tile name required but not given."),
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
     };
 
     // If the width or height is not provided, they are assumed to be 1.
@@ -869,25 +1049,26 @@ fn parse_tile(name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "sub_tile" => {
-                        sub_tiles.push(parse_sub_tile(&name.to_string(), &attributes, parser)?);
+                        sub_tiles.push(parse_sub_tile(&name, &attributes, parser)?);
                     },
                     "input" | "output" | "clock" => {
                         ports.push(parse_port(&name.to_string(), &attributes, parser)?);
                     },
-                    _ => {
-                        panic!("Unnexpected tag in tile: {}.", name);
-                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "tile" {
-                    break;
+                match name.to_string().as_str() {
+                    "tile" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
@@ -902,29 +1083,38 @@ fn parse_tile(name: &str,
     })
 }
 
-fn parse_tiles(_name: &str,
-               _attributes: &Vec<OwnedAttribute>,
+fn parse_tiles(name: &OwnedName,
+               attributes: &[OwnedAttribute],
                parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Tile>, FPGAArchParseError> {
-    // TODO: Error check the name and attributes to ensure that they are corrrect.
+    assert!(name.to_string() == "tiles");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
     // Iterate over the parser until we reach the EndElement for tile.
     let mut tiles: Vec<Tile> = Vec::new();
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                if name.to_string().as_str() == "tile" {
-                    tiles.push(parse_tile(&name.to_string(), &attributes, parser)?);
+                match name.to_string().as_str() {
+                    "tile" => {
+                        tiles.push(parse_tile(&name, &attributes, parser)?);
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "tiles" {
-                    break;
+                match name.to_string().as_str() {
+                    "tiles" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
@@ -932,70 +1122,119 @@ fn parse_tiles(_name: &str,
     Ok(tiles)
 }
 
-fn parse_grid_location(name: &str,
-                       attributes: &Vec<OwnedAttribute>,
+fn parse_grid_location(name: &OwnedName,
+                       attributes: &[OwnedAttribute],
                        parser: &mut EventReader<BufReader<File>>) -> Result<GridLocation, FPGAArchParseError> {
 
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
     let mut x_expr: Option<String> = None;
     let mut y_expr: Option<String> = None;
-    let mut start_x_expr = String::from("0");
-    let mut end_x_expr = String::from("W - 1");
+    let mut start_x_expr: Option<String> = None;
+    let mut end_x_expr: Option<String> = None;
     let mut repeat_x_expr: Option<String> = None;
-    let mut incr_x_expr = String::from("w");
-    let mut start_y_expr = String::from("0");
-    let mut end_y_expr = String::from("H - 1");
+    let mut incr_x_expr: Option<String> = None;
+    let mut start_y_expr: Option<String> = None;
+    let mut end_y_expr: Option<String> = None;
     let mut repeat_y_expr: Option<String> = None;
-    let mut incr_y_expr = String::from("h");
+    let mut incr_y_expr: Option<String> = None;
 
     for a in attributes {
         match a.name.to_string().as_ref() {
             "type" => {
-                pb_type = Some(a.value.clone());
+                pb_type = match pb_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "priority" => {
-                priority = Some(a.value.parse().expect("Not a valid number"));
+                priority = match priority {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "x" => {
-                assert!(x_expr.is_none());
-                x_expr = Some(a.value.clone());
+                x_expr = match x_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "y" => {
-                assert!(y_expr.is_none());
-                y_expr = Some(a.value.clone());
+                y_expr = match y_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "startx" => {
-                start_x_expr = a.value.clone();
+                start_x_expr = match start_x_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "endx" => {
-                end_x_expr = a.value.clone();
+                end_x_expr = match end_x_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "repeatx" => {
-                repeat_x_expr = Some(a.value.clone());
+                repeat_x_expr = match repeat_x_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "incrx" => {
-                incr_x_expr = a.value.clone();
+                incr_x_expr = match incr_x_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "starty" => {
-                start_y_expr = a.value.clone();
+                start_y_expr = match start_y_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "endy" => {
-                end_y_expr = a.value.clone();
+                end_y_expr = match end_y_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "repeaty" => {
-                repeat_y_expr = Some(a.value.clone());
+                repeat_y_expr = match repeat_y_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "incry" => {
-                incr_y_expr = a.value.clone();
+                incr_y_expr = match incr_y_expr {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => panic!("Unnexpected attribute in grid location: {}", a),
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         };
     }
 
-    if pb_type.is_none() || priority.is_none() {
-        panic!("Grid location {name} missing type and/or priority");
-    }
+    let pb_type = match pb_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("type".to_string(), parser.position())),
+    };
+    let priority = match priority {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("priority".to_string(), parser.position())),
+    };
+
+    let start_x_expr = start_x_expr.unwrap_or(String::from("0"));
+    let end_x_expr = end_x_expr.unwrap_or(String::from("W - 1"));
+    let incr_x_expr = incr_x_expr.unwrap_or(String::from("w"));
+    let start_y_expr = start_y_expr.unwrap_or(String::from("0"));
+    let end_y_expr = end_y_expr.unwrap_or(String::from("H - 1"));
+    let incr_y_expr = incr_y_expr.unwrap_or(String::from("h"));
 
     // Skip the contents of the grid location tag.
     // TODO: Should parse metadata tag.
@@ -1004,34 +1243,42 @@ fn parse_grid_location(name: &str,
     match name.to_string().as_ref() {
         "perimeter" => {
             Ok(GridLocation::Perimeter(PerimeterGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
             }))
         },
         "corners" => {
             Ok(GridLocation::Corners(CornersGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
             }))
         },
         "fill" => {
             Ok(GridLocation::Fill(FillGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
             }))
         },
         "single" => {
+            let x_expr = match x_expr {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("x".to_string(), parser.position())),
+            };
+            let y_expr = match y_expr {
+                Some(n) => n,
+                None => return Err(FPGAArchParseError::MissingRequiredAttribute("y".to_string(), parser.position())),
+            };
             Ok(GridLocation::Single(SingleGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
-                x_expr: x_expr.unwrap(),
-                y_expr: y_expr.unwrap(),
+                pb_type,
+                priority,
+                x_expr,
+                y_expr,
             }))
         },
         "col" => {
             Ok(GridLocation::Col(ColGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
                 start_x_expr,
                 repeat_x_expr,
                 start_y_expr,
@@ -1040,8 +1287,8 @@ fn parse_grid_location(name: &str,
         },
         "row" => {
             Ok(GridLocation::Row(RowGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
                 start_x_expr,
                 incr_x_expr,
                 start_y_expr,
@@ -1050,8 +1297,8 @@ fn parse_grid_location(name: &str,
         },
         "region" => {
             Ok(GridLocation::Region(RegionGridLocation {
-                pb_type: pb_type.unwrap(),
-                priority: priority.unwrap(),
+                pb_type,
+                priority,
                 start_x_expr,
                 end_x_expr,
                 repeat_x_expr,
@@ -1062,9 +1309,7 @@ fn parse_grid_location(name: &str,
                 incr_y_expr,
             }))
         },
-        _ => {
-            panic!("Unknown grid location: {}", name);
-        },
+        _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown grid location: {name}"), parser.position())),
     }
 }
 
@@ -1074,7 +1319,7 @@ fn parse_grid_location_list(layout_type_name: &OwnedName,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser)?);
+                grid_locations.push(parse_grid_location(&name, &attributes, parser)?);
             },
             Ok(XmlEvent::EndElement { name }) => {
                 if name.to_string() == layout_type_name.to_string() {
@@ -2155,7 +2400,7 @@ pub fn parse_architecture(name: &OwnedName,
                     },
                     "tiles" => {
                         tiles = match tiles {
-                            None => Some(parse_tiles(&name.to_string(), &attributes, parser)?),
+                            None => Some(parse_tiles(&name, &attributes, parser)?),
                             Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
                         }
                     },

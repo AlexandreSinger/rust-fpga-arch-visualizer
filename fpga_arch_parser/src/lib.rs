@@ -1068,7 +1068,7 @@ fn parse_grid_location(name: &str,
     }
 }
 
-fn parse_grid_location_list(layout_type_name: &str,
+fn parse_grid_location_list(layout_type_name: &OwnedName,
                             parser: &mut EventReader<BufReader<File>>) -> Result<Vec<GridLocation>, FPGAArchParseError> {
     let mut grid_locations: Vec<GridLocation> = Vec::new();
     loop {
@@ -1077,14 +1077,18 @@ fn parse_grid_location_list(layout_type_name: &str,
                 grid_locations.push(parse_grid_location(&name.to_string(), &attributes, parser)?);
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == layout_type_name {
+                if name.to_string() == layout_type_name.to_string() {
                     break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(layout_type_name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
@@ -1092,22 +1096,29 @@ fn parse_grid_location_list(layout_type_name: &str,
     Ok(grid_locations)
 }
 
-fn parse_auto_layout(name: &str,
-                     attributes: &Vec<OwnedAttribute>,
+fn parse_auto_layout(name: &OwnedName,
+                     attributes: &[OwnedAttribute],
                      parser: &mut EventReader<BufReader<File>>) -> Result<AutoLayout, FPGAArchParseError> {
+    assert!(name.to_string() == "auto_layout");
 
-    let mut aspect_ratio: f32 = 1.0;
+    let mut aspect_ratio: Option<f32> = None;
 
     for a in attributes {
         match a.name.to_string().as_ref() {
             "aspect_ratio" => {
-                aspect_ratio = a.value.parse().expect("Invalid aspect ratio");
+                aspect_ratio = match aspect_ratio {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => {
-                panic!("Unknown attribute for auto layout: {}", a.name);
-            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         }
     }
+
+    let aspect_ratio = aspect_ratio.unwrap_or(1.0);
 
     let grid_locations = parse_grid_location_list(name, parser)?;
 
@@ -1117,9 +1128,11 @@ fn parse_auto_layout(name: &str,
     })
 }
 
-fn parse_fixed_layout(name: &str,
-                      attributes: &Vec<OwnedAttribute>,
+fn parse_fixed_layout(name: &OwnedName,
+                      attributes: &[OwnedAttribute],
                       parser: &mut EventReader<BufReader<File>>) -> Result<FixedLayout, FPGAArchParseError> {
+    assert!(name.to_string() == "fixed_layout");
+
     let mut layout_name: Option<String> = None;
     let mut width: Option<i32> = None;
     let mut height: Option<i32> = None;
@@ -1127,38 +1140,63 @@ fn parse_fixed_layout(name: &str,
     for a in attributes {
         match a.name.to_string().as_ref() {
             "name" => {
-                assert!(layout_name.is_none());
-                layout_name = Some(a.value.clone());
+                layout_name = match layout_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "width" => {
-                assert!(width.is_none());
-                width = Some(a.value.parse().expect("Width for fixed layout expected to be i32."));
+                width = match width {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
             "height" => {
-                assert!(height.is_none());
-                height = Some(a.value.parse().expect("Height for fixed layout expected to be i32."));
+                height = match height {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                    },
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
             },
-            _ => {
-                panic!("Unknown attribute for fixed layout: {}", a.name);
-            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
         }
     }
+
+    let layout_name = match layout_name {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
+    };
+    let width = match width {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("width".to_string(), parser.position())),
+    };
+    let height = match height {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("height".to_string(), parser.position())),
+    };
 
     let grid_locations = parse_grid_location_list(name, parser)?;
 
     Ok(FixedLayout {
-        name: layout_name.unwrap(),
-        width: width.unwrap(),
-        height: height.unwrap(),
+        name: layout_name,
+        width,
+        height,
         grid_locations,
     })
 }
 
-fn parse_layouts(_name: &str,
-                 _attributes: &Vec<OwnedAttribute>,
+fn parse_layouts(name: &OwnedName,
+                 attributes: &[OwnedAttribute],
                  parser: &mut EventReader<BufReader<File>>) -> Result<Vec<Layout>, FPGAArchParseError> {
-
-    // TODO: Error check the name and attributes.
+    assert!(name.to_string() == "layout");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
     let mut layouts: Vec<Layout> = Vec::new();
     loop {
@@ -1166,23 +1204,26 @@ fn parse_layouts(_name: &str,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "auto_layout" => {
-                        layouts.push(Layout::AutoLayout(parse_auto_layout(&name.to_string(), &attributes, parser)?));
+                        layouts.push(Layout::AutoLayout(parse_auto_layout(&name, &attributes, parser)?));
                     },
                     "fixed_layout" => {
-                        layouts.push(Layout::FixedLayout(parse_fixed_layout(&name.to_string(), &attributes, parser)?));
+                        layouts.push(Layout::FixedLayout(parse_fixed_layout(&name, &attributes, parser)?));
                     },
-                    _ => {},
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
             },
             Ok(XmlEvent::EndElement { name }) => {
-                if name.to_string() == "layout" {
-                    break;
+                match name.to_string().as_str() {
+                    "layout" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
                 }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
             },
             Err(e) => {
                 return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
             },
-            // TODO: Handle the other cases.
             _ => {},
         }
     };
@@ -1262,11 +1303,13 @@ fn parse_chan_w_dist(name: &str,
     }
 }
 
-fn parse_device(name: &str,
+fn parse_device(name: &OwnedName,
                 attributes: &[OwnedAttribute],
                 parser: &mut EventReader<BufReader<File>>) -> Result<DeviceInfo, FPGAArchParseError> {
-    assert!(name == "device");
-    assert!(attributes.is_empty());
+    assert!(name.to_string() == "device");
+    if !attributes.is_empty() {
+        return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
+    }
 
     let mut r_min_w_nmos: Option<f32> = None;
     let mut r_min_w_pmos: Option<f32> = None;
@@ -2118,13 +2161,13 @@ pub fn parse_architecture(name: &OwnedName,
                     },
                     "layout" => {
                         layouts = match layouts {
-                            None => Some(parse_layouts(&name.to_string(), &attributes, parser)?),
+                            None => Some(parse_layouts(&name, &attributes, parser)?),
                             Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
                         }
                     },
                     "device" => {
                         device = match device {
-                            None => Some(parse_device(&name.to_string(), &attributes, parser)?),
+                            None => Some(parse_device(&name, &attributes, parser)?),
                             Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
                         }
                     },

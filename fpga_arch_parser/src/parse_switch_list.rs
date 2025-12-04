@@ -217,7 +217,7 @@ fn parse_switch(name: &OwnedName,
     let mut t_del_tags: Vec<SwitchTDel> = Vec::new();
     loop {
         match parser.next() {
-            Ok(XmlEvent::StartElement { name, .. }) => {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "Tdel" => {
                         t_del_tags.push(parse_switch_t_del(&name, &attributes, parser)?);

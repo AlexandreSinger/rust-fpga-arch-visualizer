@@ -71,22 +71,21 @@ pub struct TileSite {
     pub pin_mapping: TileSitePinMapping,
 }
 
-pub struct SubTileFracFC {
-    pub val: f32,
-}
-
-pub struct SubTileAbsFC {
-    pub val: i32,
-}
-
 pub enum SubTileIOFC {
-    Frac(SubTileFracFC),
-    Abs(SubTileAbsFC),
+    Frac(f32),
+    Abs(i32),
+}
+
+pub struct SubTileFCOverride {
+    pub fc: SubTileIOFC,
+    pub port_name: Option<String>,
+    pub segment_name: Option<String>,
 }
 
 pub struct SubTileFC {
     pub in_fc: SubTileIOFC,
     pub out_fc: SubTileIOFC,
+    pub fc_overrides: Vec<SubTileFCOverride>,
 }
 
 pub enum PinSide {

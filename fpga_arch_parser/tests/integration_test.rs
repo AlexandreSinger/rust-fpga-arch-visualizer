@@ -1,7 +1,20 @@
 
 use std::path::{PathBuf, absolute};
 
-use fpga_arch_parser::{FPGAArchParseError, Layout, GridLocation, Port, SubTileIOFC, TileSitePinMapping, SubTilePinLocations, SBType, ChanWDist, SegmentType};
+use fpga_arch_parser::{
+    FPGAArchParseError,
+    Layout,
+    GridLocation,
+    Port,
+    SubTileIOFC,
+    TileSitePinMapping,
+    SubTilePinLocations,
+    SBType,
+    ChanWDist,
+    SegmentType,
+    SwitchType,
+    SwitchBufSize,
+};
 
 #[test]
 fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
@@ -59,6 +72,30 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     assert!(matches!(res.device.switch_block.sb_type, SBType::Wilton));
     assert_eq!(res.device.switch_block.sb_fs, Some(3));
     assert_eq!(res.device.connection_block.input_switch_name, "ipin_cblock");
+
+    // Check switch list.
+    assert_eq!(res.switch_list.len(), 2);
+    let switch1 = &res.switch_list[0];
+    assert!(matches!(switch1.sw_type, SwitchType::Mux));
+    assert_eq!(switch1.name, "0");
+    assert_eq!(switch1.resistance, 0.0);
+    assert_eq!(switch1.c_in, 0.0);
+    assert_eq!(switch1.c_out, 0.0);
+    assert_eq!(switch1.t_del, Some(6.244e-11));
+    assert_eq!(switch1.mux_trans_size, Some(1.835460));
+    match switch1.buf_size {
+        SwitchBufSize::Val(v) => assert_eq!(v, 10.498600),
+        SwitchBufSize::Auto => panic!("switch1 buf size expected to be Val"),
+    };
+    let switch2 = &res.switch_list[1];
+    assert!(matches!(switch2.sw_type, SwitchType::Mux));
+    assert_eq!(switch2.name, "ipin_cblock");
+    assert_eq!(switch2.resistance, 1055.232544);
+    assert_eq!(switch2.c_in, 0.0);
+    assert_eq!(switch2.c_out, 0.0);
+    assert_eq!(switch2.t_del, Some(8.045e-11));
+    assert_eq!(switch2.mux_trans_size, Some(0.983352));
+    assert!(matches!(switch2.buf_size, SwitchBufSize::Auto));
 
     // Check segment list
     assert_eq!(res.segment_list.len(), 1);

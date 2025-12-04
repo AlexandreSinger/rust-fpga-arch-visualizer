@@ -13,6 +13,7 @@ mod parse_port;
 mod parse_tiles;
 mod parse_layouts;
 mod parse_device;
+mod parse_switch_list;
 mod parse_segment_list;
 mod parse_complex_block_list;
 
@@ -23,6 +24,7 @@ use crate::parse_port::parse_port;
 use crate::parse_tiles::parse_tiles;
 use crate::parse_layouts::parse_layouts;
 use crate::parse_device::parse_device;
+use crate::parse_switch_list::parse_switch_list;
 use crate::parse_segment_list::parse_segment_list;
 use crate::parse_complex_block_list::parse_complex_block_list;
 
@@ -37,6 +39,7 @@ fn parse_architecture(name: &OwnedName,
     let mut tiles: Option<Vec<Tile>> = None;
     let mut layouts: Option<Vec<Layout>> = None;
     let mut device: Option<DeviceInfo> = None;
+    let mut switch_list: Option<Vec<Switch>> = None;
     let mut segment_list: Option<Vec<Segment>> = None;
     let mut complex_block_list: Option<Vec<PBType>> = None;
 
@@ -67,8 +70,10 @@ fn parse_architecture(name: &OwnedName,
                         }
                     },
                     "switchlist" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        switch_list = match switch_list {
+                            None => Some(parse_switch_list(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "segmentlist" => {
                         segment_list = match segment_list {
@@ -134,6 +139,10 @@ fn parse_architecture(name: &OwnedName,
         Some(d) => d,
         None => return Err(FPGAArchParseError::MissingRequiredTag("<device>".to_string())),
     };
+    let switch_list = match switch_list {
+        Some(s) => s,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<switchlist>".to_string())),
+    };
     let segment_list = match segment_list {
         Some(s) => s,
         None => return Err(FPGAArchParseError::MissingRequiredTag("<segmentlist>".to_string())),
@@ -148,7 +157,7 @@ fn parse_architecture(name: &OwnedName,
         tiles,
         layouts,
         device,
-        switch_list: Vec::new(),
+        switch_list,
         segment_list,
         complex_block_list,
     })

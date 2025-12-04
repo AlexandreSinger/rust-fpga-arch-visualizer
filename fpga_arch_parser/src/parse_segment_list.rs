@@ -9,6 +9,132 @@ use xml::attribute::OwnedAttribute;
 use crate::parse_error::*;
 use crate::arch::*;
 
+fn parse_pattern_int_list(text: &str,
+                          parser: &EventReader<BufReader<File>>) -> Result<Vec<bool>, FPGAArchParseError> {
+    let mut list: Vec<bool> = Vec::new();
+
+    for v in text.split_whitespace() {
+        let point_val: i32 = match v.parse() {
+            Ok(val) => val,
+            Err(e) => return Err(FPGAArchParseError::InvalidTag(format!("Pattern int list parse error: {e}"), parser.position())),
+        };
+        match point_val {
+            0 => list.push(false),
+            1 => list.push(true),
+            _ => return Err(FPGAArchParseError::InvalidTag(format!("Pattern int list expected to only have 0s and 1s. Found: {point_val}"), parser.position())),
+        }
+    }
+
+    Ok(list)
+}
+
+fn parse_segment_pattern(name: &OwnedName,
+                    attributes: &[OwnedAttribute],
+                    parser: &mut EventReader<BufReader<File>>) -> Result<Vec<bool>, FPGAArchParseError> {
+    assert!(name.to_string() == "sb" || name.to_string() == "cb");
+
+    let mut block_type: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "type" => {
+                block_type = match block_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            }
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        }
+    }
+    let block_type = match block_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("type".to_string(), parser.position())),
+    };
+    if block_type != "pattern" {
+        return Err(FPGAArchParseError::AttributeParseError(format!("{name} type must be pattern"), parser.position()));
+    }
+
+    let mut pattern: Option<Vec<bool>> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::Characters(text)) => {
+                pattern = match pattern {
+                    None => Some(parse_pattern_int_list(&text, parser)?),
+                    Some(_) => return Err(FPGAArchParseError::InvalidTag("Duplicate characters within sb.".to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
+    let pattern = match pattern {
+        Some(p) => p,
+        None => return Err(FPGAArchParseError::InvalidTag("Missing pattern int list".to_string(), parser.position())),
+    };
+
+    Ok(pattern)
+}
+
+fn parse_segment_switch_point_descriptor(name: &OwnedName,
+                                         attributes: &[OwnedAttribute],
+                                         parser: &mut EventReader<BufReader<File>>) -> Result<String, FPGAArchParseError> {
+
+    let mut desc_name: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "name" => {
+                desc_name = match desc_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        }
+    }
+    let desc_name = match desc_name {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
+
+    Ok(desc_name)
+}
+
 fn parse_segment(name: &OwnedName,
                  attributes: &[OwnedAttribute],
                  parser: &mut EventReader<BufReader<File>>) -> Result<Segment, FPGAArchParseError> {
@@ -132,8 +258,140 @@ fn parse_segment(name: &OwnedName,
 
     let res_type = res_type.unwrap_or(SegmentResourceType::General);
 
-    // TODO: Need to parse the mux, sb, and cb tags. For now just ignore.
-    let _ = parser.skip();
+    let mut sb_pattern: Option<Vec<bool>> = None;
+    let mut cb_pattern: Option<Vec<bool>> = None;
+    let mut mux: Option<String> = None;
+    let mut mux_inc: Option<String> = None;
+    let mut mux_dec: Option<String> = None;
+    let mut wire_switch: Option<String> = None;
+    let mut opin_switch: Option<String> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "sb" => {
+                        sb_pattern = match sb_pattern {
+                            None => Some(parse_segment_pattern(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        };
+                    },
+                    "cb" => {
+                        cb_pattern = match cb_pattern {
+                            None => Some(parse_segment_pattern(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        };
+                    },
+                    "mux" => {
+                        mux = match mux {
+                            None => Some(parse_segment_switch_point_descriptor(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    "mux_inc" => {
+                        mux_inc = match mux_inc {
+                            None => Some(parse_segment_switch_point_descriptor(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    "mux_dec" => {
+                        mux_dec = match mux_dec {
+                            None => Some(parse_segment_switch_point_descriptor(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    "wire_switch" => {
+                        wire_switch = match wire_switch {
+                            None => Some(parse_segment_switch_point_descriptor(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    "opin_switch" => {
+                        opin_switch = match opin_switch {
+                            None => Some(parse_segment_switch_point_descriptor(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
+                };
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "segment" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
+    let sb_pattern = match sb_pattern {
+        Some(p) => {
+            if p.len() as i32 != length + 1 {
+                return Err(FPGAArchParseError::InvalidTag("For a length L wire there must be L+1 entries separated by spaces for <sb>".to_string(), parser.position()));
+            } else {
+                p
+            }
+        },
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<sb>".to_string())),
+    };
+    let cb_pattern = match cb_pattern {
+        Some(p) => {
+            if p.len() as i32 != length {
+                return Err(FPGAArchParseError::InvalidTag("For a length L wire there must be L entries separated by spaces for <cb>".to_string(), parser.position()));
+            } else {
+                p
+            }
+        },
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<sb>".to_string())),
+    };
+    let switch_points = match segment_type {
+        SegmentType::Unidir => {
+            match mux {
+                Some(mux_name) => {
+                    if mux_inc.is_some() || mux_dec.is_some() {
+                        return Err(FPGAArchParseError::InvalidTag("For unidirectional segments, either <mux> tag or both <mux_inc> and <mux_dec> should be defined in the architecture file.".to_string(), parser.position()));
+                    }
+                    SegmentSwitchPoints::Unidir{
+                        mux_inc: mux_name.clone(),
+                        mux_dec: mux_name,
+                    }
+                },
+                None => {
+                    let mux_inc = match mux_inc {
+                        Some(m) => m,
+                        None => return Err(FPGAArchParseError::InvalidTag("For unidirectional segments, either <mux> tag or both <mux_inc> and <mux_dec> should be defined in the architecture file.".to_string(), parser.position())),
+                    };
+                    let mux_dec = match mux_dec {
+                        Some(m) => m,
+                        None => return Err(FPGAArchParseError::InvalidTag("For unidirectional segments, either <mux> tag or both <mux_inc> and <mux_dec> should be defined in the architecture file.".to_string(), parser.position())),
+                    };
+                    SegmentSwitchPoints::Unidir{
+                        mux_inc,
+                        mux_dec,
+                    }
+                }
+            }
+        },
+        SegmentType::Bidir => {
+            let wire_switch = match wire_switch {
+                Some(w) => w,
+                None => return Err(FPGAArchParseError::MissingRequiredTag("<wire_switch>".to_string())),
+            };
+            let opin_switch = match opin_switch {
+                Some(w) => w,
+                None => return Err(FPGAArchParseError::MissingRequiredTag("<opin_switch>".to_string())),
+            };
+            SegmentSwitchPoints::Bidir {
+                wire_switch,
+                opin_switch,
+            }
+        },
+    };
 
     Ok(Segment {
         name,
@@ -144,6 +402,9 @@ fn parse_segment(name: &OwnedName,
         freq,
         r_metal,
         c_metal,
+        sb_pattern,
+        cb_pattern,
+        switch_points,
     })
 }
 

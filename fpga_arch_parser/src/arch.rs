@@ -334,6 +334,17 @@ pub enum SegmentResourceType {
     General,
 }
 
+pub enum SegmentSwitchPoints {
+    Unidir {
+        mux_inc: String,
+        mux_dec: String,
+    },
+    Bidir {
+        wire_switch: String,
+        opin_switch: String,
+    },
+}
+
 pub struct Segment {
     pub axis: SegmentAxis,
     pub name: String,
@@ -343,6 +354,9 @@ pub struct Segment {
     pub freq: f32,
     pub r_metal: f32,
     pub c_metal: f32,
+    pub sb_pattern: Vec<bool>,
+    pub cb_pattern: Vec<bool>,
+    pub switch_points: SegmentSwitchPoints,
 }
 
 pub struct PackPattern {

@@ -10,6 +10,7 @@ use crate::parse_error::*;
 use crate::arch::*;
 
 use crate::parse_port;
+use crate::parse_metadata::parse_metadata;
 
 fn parse_pack_pattern(name: &OwnedName,
                       attributes: &[OwnedAttribute],
@@ -130,6 +131,7 @@ fn parse_interconnect(name: &OwnedName,
     };
 
     let mut pack_patterns: Vec<PackPattern> = Vec::new();
+    let mut metadata: Option<Vec<Metadata>> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -148,9 +150,10 @@ fn parse_interconnect(name: &OwnedName,
                         let _ = parser.skip();
                     },
                     "metadata" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        metadata = match metadata {
+                            None => Some(parse_metadata(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
@@ -177,18 +180,21 @@ fn parse_interconnect(name: &OwnedName,
             input,
             output,
             pack_patterns,
+            metadata,
         })),
         "mux" => Ok(Interconnect::Mux(MuxInterconnect {
             name: inter_name,
             input,
             output,
             pack_patterns,
+            metadata,
         })),
         "complete" => Ok(Interconnect::Complete(CompleteInterconnect {
             name: inter_name,
             input,
             output,
             pack_patterns,
+            metadata,
         })),
         _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown interconnect tag: {name}"), parser.position())),
     }
@@ -257,6 +263,7 @@ fn parse_pb_mode(name: &OwnedName,
 
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut interconnects: Option<Vec<Interconnect>> = None;
+    let mut metadata: Option<Vec<Metadata>> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -271,9 +278,10 @@ fn parse_pb_mode(name: &OwnedName,
                         }
                     },
                     "metadata" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        metadata = match metadata {
+                            None => Some(parse_metadata(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
                     },
                     _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
@@ -302,6 +310,7 @@ fn parse_pb_mode(name: &OwnedName,
         name: mode_name,
         pb_types,
         interconnects,
+        metadata,
     })
 }
 
@@ -367,6 +376,7 @@ fn parse_pb_type(name: &OwnedName,
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut pb_modes: Vec<PBMode> = Vec::new();
     let mut interconnects: Option<Vec<Interconnect>> = None;
+    let mut metadata: Option<Vec<Metadata>> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
@@ -417,9 +427,10 @@ fn parse_pb_type(name: &OwnedName,
                         let _ = parser.skip();
                     },
                     "metadata" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        metadata = match metadata {
+                            None => Some(parse_metadata(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(name.to_string(), parser.position())),
+                        }
                     },
                     "pinlocations" | "fc" => {
                         // This one is strange. This should not be in the pb_types.
@@ -462,6 +473,7 @@ fn parse_pb_type(name: &OwnedName,
         modes: pb_modes,
         pb_types,
         interconnects,
+        metadata,
     })
 }
 

@@ -3,6 +3,11 @@ pub struct Model {
 
 }
 
+pub struct Metadata {
+    pub name: String,
+    pub value: String,
+}
+
 pub enum PinEquivalence {
     None,
     Full,
@@ -137,16 +142,19 @@ pub struct Tile {
 pub struct FillGridLocation {
     pub pb_type: String,
     pub priority: i32,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct PerimeterGridLocation {
     pub pb_type: String,
     pub priority: i32,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct CornersGridLocation {
     pub pb_type: String,
     pub priority: i32,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct SingleGridLocation {
@@ -154,6 +162,7 @@ pub struct SingleGridLocation {
     pub priority: i32,
     pub x_expr: String,
     pub y_expr: String,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct ColGridLocation {
@@ -163,6 +172,7 @@ pub struct ColGridLocation {
     pub repeat_x_expr: Option<String>,
     pub start_y_expr: String,
     pub incr_y_expr: String,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct RowGridLocation {
@@ -172,6 +182,7 @@ pub struct RowGridLocation {
     pub incr_x_expr: String,
     pub start_y_expr: String,
     pub repeat_y_expr: Option<String>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct RegionGridLocation {
@@ -185,6 +196,7 @@ pub struct RegionGridLocation {
     pub end_y_expr: String,
     pub repeat_y_expr: Option<String>,
     pub incr_y_expr: String,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub enum GridLocation {
@@ -373,6 +385,7 @@ pub struct CompleteInterconnect {
     //        may be a single pack pattern; however, an interconnect may have many
     //        pack patterns.
     pub pack_patterns: Vec<PackPattern>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct DirectInterconnect {
@@ -380,6 +393,7 @@ pub struct DirectInterconnect {
     pub input: String,
     pub output: String,
     pub pack_patterns: Vec<PackPattern>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct MuxInterconnect {
@@ -387,6 +401,7 @@ pub struct MuxInterconnect {
     pub input: String,
     pub output: String,
     pub pack_patterns: Vec<PackPattern>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub enum Interconnect {
@@ -399,6 +414,7 @@ pub struct PBMode {
     pub name: String,
     pub pb_types: Vec<PBType>,
     pub interconnects: Vec<Interconnect>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub enum PBTypeClass {
@@ -417,6 +433,7 @@ pub struct PBType {
     pub modes: Vec<PBMode>,
     pub pb_types: Vec<PBType>,
     pub interconnects: Vec<Interconnect>,
+    pub metadata: Option<Vec<Metadata>>,
 }
 
 pub struct FPGAArch {

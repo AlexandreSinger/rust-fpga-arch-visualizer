@@ -9,6 +9,8 @@ use xml::attribute::OwnedAttribute;
 use crate::parse_error::*;
 use crate::arch::*;
 
+use crate::parse_metadata::parse_metadata;
+
 fn parse_grid_location(name: &OwnedName,
                        attributes: &[OwnedAttribute],
                        parser: &mut EventReader<BufReader<File>>) -> Result<GridLocation, FPGAArchParseError> {
@@ -123,27 +125,57 @@ fn parse_grid_location(name: &OwnedName,
     let end_y_expr = end_y_expr.unwrap_or(String::from("H - 1"));
     let incr_y_expr = incr_y_expr.unwrap_or(String::from("h"));
 
-    // Skip the contents of the grid location tag.
-    // TODO: Should parse metadata tag.
-    let _ = parser.skip();
+    let mut metadata: Option<Vec<Metadata>> = None;
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                match name.to_string().as_str() {
+                    "metadata" => {
+                        metadata = match metadata {
+                            None => Some(parse_metadata(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
+                    },
+                    _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
+                };
+            },
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        }
+    };
 
     match name.to_string().as_ref() {
         "perimeter" => {
             Ok(GridLocation::Perimeter(PerimeterGridLocation {
                 pb_type,
                 priority,
+                metadata,
             }))
         },
         "corners" => {
             Ok(GridLocation::Corners(CornersGridLocation {
                 pb_type,
                 priority,
+                metadata,
             }))
         },
         "fill" => {
             Ok(GridLocation::Fill(FillGridLocation {
                 pb_type,
                 priority,
+                metadata,
             }))
         },
         "single" => {
@@ -160,6 +192,7 @@ fn parse_grid_location(name: &OwnedName,
                 priority,
                 x_expr,
                 y_expr,
+                metadata,
             }))
         },
         "col" => {
@@ -170,6 +203,7 @@ fn parse_grid_location(name: &OwnedName,
                 repeat_x_expr,
                 start_y_expr,
                 incr_y_expr,
+                metadata,
             }))
         },
         "row" => {
@@ -180,6 +214,7 @@ fn parse_grid_location(name: &OwnedName,
                 incr_x_expr,
                 start_y_expr,
                 repeat_y_expr,
+                metadata,
             }))
         },
         "region" => {
@@ -194,6 +229,7 @@ fn parse_grid_location(name: &OwnedName,
                 end_y_expr,
                 repeat_y_expr,
                 incr_y_expr,
+                metadata,
             }))
         },
         _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown grid location: {name}"), parser.position())),

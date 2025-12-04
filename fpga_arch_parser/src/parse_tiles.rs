@@ -118,23 +118,103 @@ fn create_sub_tile_io_fc(ty: &str,
                          parser: &EventReader<BufReader<File>>) -> Result<SubTileIOFC, FPGAArchParseError> {
     match ty {
         "frac" => {
-            Ok(SubTileIOFC::Frac(SubTileFracFC {
-                val: match val.parse() {
+            Ok(SubTileIOFC::Frac(
+                match val.parse() {
                     Ok(v) => v,
                     Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{val}: {e}"), parser.position())),
                 },
-            }))
+            ))
         },
         "abs" => {
-            Ok(SubTileIOFC::Abs(SubTileAbsFC {
-                val: match val.parse() {
+            Ok(SubTileIOFC::Abs(
+                match val.parse() {
                     Ok(v) => v,
                     Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{val}: {e}"), parser.position())),
                 },
-            }))
+            ))
         },
         _ => Err(FPGAArchParseError::AttributeParseError(format!("Unknown fc_type: {}", ty), parser.position())),
     }
+}
+
+fn parse_sub_tile_fc_override(name: &OwnedName,
+                              attributes: &[OwnedAttribute],
+                              parser: &mut EventReader<BufReader<File>>) -> Result<SubTileFCOverride, FPGAArchParseError> {
+    assert!(name.to_string() == "fc_override");
+
+    let mut fc_type: Option<String> = None;
+    let mut fc_val: Option<String> = None;
+    let mut port_name: Option<String> = None;
+    let mut segment_name: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "fc_type" => {
+                fc_type = match fc_type {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            "fc_val" => {
+                fc_val = match fc_val {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            "port_name" => {
+                port_name = match port_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            "segment_name" => {
+                segment_name = match segment_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                }
+            },
+            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+        };
+    }
+    let fc_type = match fc_type {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("fc_type".to_string(), parser.position())),
+    };
+    let fc_val = match fc_val {
+        Some(n) => n,
+        None => return Err(FPGAArchParseError::MissingRequiredAttribute("fc_val".to_string(), parser.position())),
+    };
+    let fc = create_sub_tile_io_fc(&fc_type, &fc_val, parser)?;
+    if port_name.is_none() && segment_name.is_none() {
+        return Err(FPGAArchParseError::MissingRequiredAttribute("At least one of port_name or segment_name must be specified.".to_string(), parser.position()));
+    }
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                match name.to_string().as_str() {
+                    "fc_override" => break,
+                    _ => return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position())),
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(name.to_string()));
+            },
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
+            },
+            _ => {},
+        };
+    }
+
+    Ok(SubTileFCOverride{
+        fc,
+        port_name,
+        segment_name,
+    })
 }
 
 fn parse_sub_tile_fc(name: &OwnedName,
@@ -196,14 +276,13 @@ fn parse_sub_tile_fc(name: &OwnedName,
     let in_fc = create_sub_tile_io_fc(&in_type, &in_val, parser)?;
     let out_fc = create_sub_tile_io_fc(&out_type, &out_val, parser)?;
 
+    let mut fc_overrides: Vec<SubTileFCOverride> = Vec::new();
     loop {
         match parser.next() {
-            Ok(XmlEvent::StartElement { name, .. }) => {
+            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "fc_override" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        fc_overrides.push(parse_sub_tile_fc_override(&name, &attributes, parser)?);
                     },
                     _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),
                 };
@@ -227,6 +306,7 @@ fn parse_sub_tile_fc(name: &OwnedName,
     Ok(SubTileFC {
         in_fc,
         out_fc,
+        fc_overrides,
     })
 }
 

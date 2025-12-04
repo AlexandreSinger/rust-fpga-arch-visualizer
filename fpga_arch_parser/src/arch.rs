@@ -286,8 +286,36 @@ pub struct DeviceInfo {
     // TODO: default_fc
 }
 
-pub struct Switch {
+pub enum SwitchType {
+    Mux,
+    Tristate,
+    PassGate,
+    Short,
+    Buffer,
+}
 
+pub enum SwitchBufSize {
+    Auto,
+    Val(f32),
+}
+
+pub struct SwitchTDel {
+    pub num_inputs: i32,
+    pub delay: f32,
+}
+
+pub struct Switch {
+    pub sw_type: SwitchType,
+    pub name: String,
+    pub resistance: f32,
+    pub c_in: f32,
+    pub c_out: f32,
+    pub c_internal: Option<f32>,
+    pub t_del: Option<f32>,
+    pub buf_size: SwitchBufSize,
+    pub mux_trans_size: Option<f32>,
+    pub power_buf_size: Option<i32>,
+    pub t_del_tags: Vec<SwitchTDel>,
 }
 
 pub enum SegmentAxis {

@@ -9,6 +9,7 @@ use xml::attribute::OwnedAttribute;
 
 mod arch;
 mod parse_error;
+mod parse_metadata;
 mod parse_port;
 mod parse_tiles;
 mod parse_layouts;

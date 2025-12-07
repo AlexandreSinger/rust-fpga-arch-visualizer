@@ -381,6 +381,18 @@ pub struct Segment {
     pub switch_points: SegmentSwitchPoints,
 }
 
+pub struct GlobalDirect {
+    pub name: String,
+    pub from_pin: String,
+    pub to_pin: String,
+    pub x_offset: i32,
+    pub y_offset: i32,
+    pub z_offset: i32,
+    pub switch_name: Option<String>,
+    pub from_side: Option<PinSide>,
+    pub to_side: Option<PinSide>,
+}
+
 pub enum DelayType {
     Max,
     Min,
@@ -496,5 +508,6 @@ pub struct FPGAArch {
     pub device: DeviceInfo,
     pub switch_list: Vec<Switch>,
     pub segment_list: Vec<Segment>,
+    pub direct_list: Vec<GlobalDirect>,
     pub complex_block_list: Vec<PBType>,
 }

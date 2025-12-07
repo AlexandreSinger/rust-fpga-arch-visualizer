@@ -16,12 +16,12 @@ mod parse_layouts;
 mod parse_device;
 mod parse_switch_list;
 mod parse_segment_list;
+mod parse_timing;
 mod parse_complex_block_list;
 
 pub use crate::parse_error::FPGAArchParseError;
 pub use crate::arch::*;
 
-use crate::parse_port::parse_port;
 use crate::parse_tiles::parse_tiles;
 use crate::parse_layouts::parse_layouts;
 use crate::parse_device::parse_device;

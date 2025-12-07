@@ -107,22 +107,25 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 
     // Check complex block list.
     assert_eq!(res.complex_block_list.len(), 2);
-    assert_eq!(res.complex_block_list[0].name, "io");
-    assert_eq!(res.complex_block_list[0].num_pb, 1);
-    assert!(res.complex_block_list[0].blif_model.is_none());
-    assert_eq!(res.complex_block_list[0].ports.len(), 3);
-    assert!(matches!(res.complex_block_list[0].ports[0], Port::Input { .. }));
-    assert!(matches!(res.complex_block_list[0].ports[1], Port::Output { .. }));
-    assert!(matches!(res.complex_block_list[0].ports[2], Port::Clock { .. }));
+    let clb0 = &res.complex_block_list[0];
+    assert_eq!(clb0.name, "io");
+    assert_eq!(clb0.num_pb, 1);
+    assert!(clb0.blif_model.is_none());
+    assert_eq!(clb0.ports.len(), 3);
+    assert!(matches!(clb0.ports[0], Port::Input { .. }));
+    assert!(matches!(clb0.ports[1], Port::Output { .. }));
+    assert!(matches!(clb0.ports[2], Port::Clock { .. }));
     // TODO: Add stronger tests for pb_type ports.
-    assert!(res.complex_block_list[0].pb_types.is_empty());
-    assert_eq!(res.complex_block_list[0].modes.len(), 2);
-    assert_eq!(res.complex_block_list[0].modes[0].name, "inpad");
-    assert_eq!(res.complex_block_list[0].modes[0].pb_types.len(), 1);
-    assert_eq!(res.complex_block_list[0].modes[0].pb_types[0].name, "inpad");
-    assert!(res.complex_block_list[0].modes[0].pb_types[0].blif_model.is_some());
-    assert_eq!(res.complex_block_list[0].modes[1].name, "outpad");
-    assert_eq!(res.complex_block_list[0].modes[1].pb_types.len(), 1);
+    assert!(clb0.pb_types.is_empty());
+    assert_eq!(clb0.modes.len(), 2);
+    let clb0_mode0 = &clb0.modes[0];
+    assert_eq!(clb0_mode0.name, "inpad");
+    assert_eq!(clb0_mode0.pb_types.len(), 1);
+    assert_eq!(clb0_mode0.pb_types[0].name, "inpad");
+    assert!(clb0_mode0.pb_types[0].blif_model.is_some());
+    assert_eq!(clb0_mode0.interconnects.len(), 1);
+    assert_eq!(clb0.modes[1].name, "outpad");
+    assert_eq!(clb0.modes[1].pb_types.len(), 1);
     // TODO: Make these pb_type heirarchy checks more robust.
     assert_eq!(res.complex_block_list[1].name, "clb");
 

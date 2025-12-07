@@ -9,8 +9,13 @@ use xml::attribute::OwnedAttribute;
 use crate::parse_error::*;
 use crate::arch::*;
 
-use crate::parse_port;
+use crate::parse_port::parse_port;
 use crate::parse_metadata::parse_metadata;
+use crate::parse_timing::parse_delay_constant;
+use crate::parse_timing::parse_delay_matrix;
+use crate::parse_timing::parse_t_setup;
+use crate::parse_timing::parse_t_hold;
+use crate::parse_timing::parse_clock_to_q;
 
 fn parse_pack_pattern(name: &OwnedName,
                       attributes: &[OwnedAttribute],
@@ -131,6 +136,7 @@ fn parse_interconnect(name: &OwnedName,
     };
 
     let mut pack_patterns: Vec<PackPattern> = Vec::new();
+    let mut delays: Vec<DelayInfo> = Vec::new();
     let mut metadata: Option<Vec<Metadata>> = None;
     loop {
         match parser.next() {
@@ -140,14 +146,10 @@ fn parse_interconnect(name: &OwnedName,
                         pack_patterns.push(parse_pack_pattern(&name, &attributes, parser)?);
                     },
                     "delay_constant" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        delays.push(parse_delay_constant(&name, &attributes, parser)?);
                     },
                     "delay_matrix" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        delays.push(parse_delay_matrix(&name, &attributes, parser)?);
                     },
                     "metadata" => {
                         metadata = match metadata {
@@ -180,6 +182,7 @@ fn parse_interconnect(name: &OwnedName,
             input,
             output,
             pack_patterns,
+            delays,
             metadata,
         })),
         "mux" => Ok(Interconnect::Mux(MuxInterconnect {
@@ -187,6 +190,7 @@ fn parse_interconnect(name: &OwnedName,
             input,
             output,
             pack_patterns,
+            delays,
             metadata,
         })),
         "complete" => Ok(Interconnect::Complete(CompleteInterconnect {
@@ -194,6 +198,7 @@ fn parse_interconnect(name: &OwnedName,
             input,
             output,
             pack_patterns,
+            delays,
             metadata,
         })),
         _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown interconnect tag: {name}"), parser.position())),
@@ -376,6 +381,8 @@ fn parse_pb_type(name: &OwnedName,
     let mut pb_types: Vec<PBType> = Vec::new();
     let mut pb_modes: Vec<PBMode> = Vec::new();
     let mut interconnects: Option<Vec<Interconnect>> = None;
+    let mut delays: Vec<DelayInfo> = Vec::new();
+    let mut timing_constraints: Vec<TimingConstraintInfo> = Vec::new();
     let mut metadata: Option<Vec<Metadata>> = None;
     loop {
         match parser.next() {
@@ -402,29 +409,19 @@ fn parse_pb_type(name: &OwnedName,
                         let _ = parser.skip();
                     },
                     "delay_constant" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        delays.push(parse_delay_constant(&name, &attributes, parser)?);
                     },
                     "delay_matrix" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        delays.push(parse_delay_matrix(&name, &attributes, parser)?);
                     },
                     "T_setup" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        timing_constraints.push(parse_t_setup(&name, &attributes, parser)?);
                     },
                     "T_hold" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        timing_constraints.push(parse_t_hold(&name, &attributes, parser)?);
                     },
                     "T_clock_to_Q" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        timing_constraints.push(parse_clock_to_q(&name, &attributes, parser)?);
                     },
                     "metadata" => {
                         metadata = match metadata {
@@ -473,6 +470,8 @@ fn parse_pb_type(name: &OwnedName,
         modes: pb_modes,
         pb_types,
         interconnects,
+        delays,
+        timing_constraints,
         metadata,
     })
 }

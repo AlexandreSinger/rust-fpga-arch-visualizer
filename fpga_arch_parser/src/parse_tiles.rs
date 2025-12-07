@@ -9,7 +9,7 @@ use xml::attribute::OwnedAttribute;
 use crate::parse_error::*;
 use crate::arch::*;
 
-use crate::parse_port;
+use crate::parse_port::parse_port;
 
 fn parse_tile_site(name: &OwnedName,
                    attributes: &[OwnedAttribute],

@@ -477,8 +477,8 @@ fn parse_pb_type(name: &OwnedName,
 }
 
 pub fn parse_complex_block_list(name: &OwnedName,
-                            attributes: &[OwnedAttribute],
-                            parser: &mut EventReader<BufReader<File>>) -> Result<Vec<PBType>, FPGAArchParseError> {
+                                attributes: &[OwnedAttribute],
+                                parser: &mut EventReader<BufReader<File>>) -> Result<Vec<PBType>, FPGAArchParseError> {
     assert!(name.to_string() == "complexblocklist");
     if !attributes.is_empty() {
         return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));

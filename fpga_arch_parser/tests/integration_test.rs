@@ -23,6 +23,9 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 
     let res = fpga_arch_parser::parse(&input_xml)?;
 
+    // Check models.
+    assert_eq!(res.models.len(), 0);
+
     // Check tiles.
     assert_eq!(res.tiles.len(), 2);
     assert_eq!(res.tiles[0].name,"io");
@@ -181,6 +184,23 @@ fn test_vtr_flagship_parse() -> Result<(), FPGAArchParseError> {
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
     let res = fpga_arch_parser::parse(&input_xml)?;
+
+    // Check models.
+    assert_eq!(res.models.len(), 4);
+    let multiply_model = &res.models[0];
+    assert_eq!(multiply_model.name, "multiply");
+    assert_eq!(multiply_model.input_ports.len(), 2);
+    let multiply_model_port_a = &multiply_model.input_ports[0];
+    assert_eq!(multiply_model_port_a.name, "a");
+    assert_eq!(multiply_model_port_a.combinational_sink_ports.len(), 1);
+    assert_eq!(multiply_model_port_a.combinational_sink_ports[0], "out");
+    let multiply_model_port_b = &multiply_model.input_ports[1];
+    assert_eq!(multiply_model_port_b.name, "b");
+    assert_eq!(multiply_model_port_b.combinational_sink_ports.len(), 1);
+    assert_eq!(multiply_model_port_b.combinational_sink_ports[0], "out");
+    assert_eq!(multiply_model.output_ports.len(), 1);
+    let multiply_model_port_out = &multiply_model.output_ports[0];
+    assert_eq!(multiply_model_port_out.name, "out");
 
     // Check tiles
     let tiles = &res.tiles;

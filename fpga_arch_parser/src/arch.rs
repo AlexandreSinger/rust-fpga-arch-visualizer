@@ -371,6 +371,44 @@ pub struct Segment {
     pub switch_points: SegmentSwitchPoints,
 }
 
+pub enum DelayType {
+    Max,
+    Min,
+}
+
+pub enum DelayInfo {
+    Constant {
+        min: f32,
+        max: f32,
+        in_port: String,
+        out_port: String,
+    },
+    Matrix {
+        delay_type: DelayType,
+        // This matrix is [in_pin_idx][out_pin_idx]
+        // TODO: The documentation should be more clear on this.
+        matrix: Vec<Vec<f32>>,
+        in_port: String,
+        out_port: String,
+    },
+}
+
+pub enum TimingConstraintType {
+    Hold,
+    Setup,
+    ClockToQ,
+}
+
+pub struct TimingConstraintInfo {
+    pub constraint_type: TimingConstraintType,
+    // NOTE: Only ClockToQ can have two different min/max values right now.
+    //       A bit of future proofing and cleanup to split max and min here.
+    pub min_value: f32,
+    pub max_value: f32,
+    pub port: String,
+    pub clock: String,
+}
+
 pub struct PackPattern {
     pub name: String,
     pub in_port: String,
@@ -385,6 +423,7 @@ pub struct CompleteInterconnect {
     //        may be a single pack pattern; however, an interconnect may have many
     //        pack patterns.
     pub pack_patterns: Vec<PackPattern>,
+    pub delays: Vec<DelayInfo>,
     pub metadata: Option<Vec<Metadata>>,
 }
 
@@ -393,6 +432,7 @@ pub struct DirectInterconnect {
     pub input: String,
     pub output: String,
     pub pack_patterns: Vec<PackPattern>,
+    pub delays: Vec<DelayInfo>,
     pub metadata: Option<Vec<Metadata>>,
 }
 
@@ -401,6 +441,7 @@ pub struct MuxInterconnect {
     pub input: String,
     pub output: String,
     pub pack_patterns: Vec<PackPattern>,
+    pub delays: Vec<DelayInfo>,
     pub metadata: Option<Vec<Metadata>>,
 }
 
@@ -433,6 +474,8 @@ pub struct PBType {
     pub modes: Vec<PBMode>,
     pub pb_types: Vec<PBType>,
     pub interconnects: Vec<Interconnect>,
+    pub delays: Vec<DelayInfo>,
+    pub timing_constraints: Vec<TimingConstraintInfo>,
     pub metadata: Option<Vec<Metadata>>,
 }
 

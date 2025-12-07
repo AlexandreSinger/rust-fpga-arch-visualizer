@@ -1,6 +1,16 @@
 
-pub struct Model {
+pub struct ModelPort {
+    pub name: String,
+    pub is_clock: bool,
+    pub clock: Option<String>,
+    pub combinational_sink_ports: Vec<String>,
+}
 
+pub struct Model {
+    pub name: String,
+    pub never_prune: bool,
+    pub input_ports: Vec<ModelPort>,
+    pub output_ports: Vec<ModelPort>,
 }
 
 pub struct Metadata {

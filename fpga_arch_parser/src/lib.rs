@@ -11,6 +11,7 @@ mod arch;
 mod parse_error;
 mod parse_metadata;
 mod parse_port;
+mod parse_models;
 mod parse_tiles;
 mod parse_layouts;
 mod parse_device;
@@ -22,6 +23,7 @@ mod parse_complex_block_list;
 pub use crate::parse_error::FPGAArchParseError;
 pub use crate::arch::*;
 
+use crate::parse_models::parse_models;
 use crate::parse_tiles::parse_tiles;
 use crate::parse_layouts::parse_layouts;
 use crate::parse_device::parse_device;
@@ -37,6 +39,7 @@ fn parse_architecture(name: &OwnedName,
         return Err(FPGAArchParseError::UnknownAttribute(String::from("Expected to be empty"), parser.position()));
     }
 
+    let mut models: Option<Vec<Model>> = None;
     let mut tiles: Option<Vec<Tile>> = None;
     let mut layouts: Option<Vec<Layout>> = None;
     let mut device: Option<DeviceInfo> = None;
@@ -49,8 +52,10 @@ fn parse_architecture(name: &OwnedName,
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 match name.to_string().as_str() {
                     "models" => {
-                        // TODO: Implement.
-                        let _ = parser.skip();
+                        models = match models {
+                            None => Some(parse_models(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "tiles" => {
                         tiles = match tiles {
@@ -128,6 +133,10 @@ fn parse_architecture(name: &OwnedName,
         };
     }
 
+    let models = match models {
+        Some(t) => t,
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<models>".to_string())),
+    };
     let tiles = match tiles {
         Some(t) => t,
         None => return Err(FPGAArchParseError::MissingRequiredTag("<tiles>".to_string())),
@@ -154,7 +163,7 @@ fn parse_architecture(name: &OwnedName,
     };
 
     Ok(FPGAArch {
-        models: Vec::new(),
+        models,
         tiles,
         layouts,
         device,

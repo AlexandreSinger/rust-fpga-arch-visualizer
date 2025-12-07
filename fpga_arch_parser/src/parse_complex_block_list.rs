@@ -436,6 +436,7 @@ fn parse_pb_type(name: &OwnedName,
                         //        files.
                         //        Will skip for now without error so we can support
                         //        their arch files.
+                        // TODO: Print a warning.
                         let _ = parser.skip();
                     },
                     _ => return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position())),

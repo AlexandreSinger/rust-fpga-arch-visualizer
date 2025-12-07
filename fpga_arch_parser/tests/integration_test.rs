@@ -108,6 +108,9 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     assert_eq!(res.segment_list[0].r_metal, 0.0);
     assert_eq!(res.segment_list[0].c_metal, 0.0);
 
+    // Check direct list
+    assert_eq!(res.direct_list.len(), 0);
+
     // Check complex block list.
     assert_eq!(res.complex_block_list.len(), 2);
     let clb0 = &res.complex_block_list[0];
@@ -232,6 +235,19 @@ fn test_vtr_flagship_parse() -> Result<(), FPGAArchParseError> {
     let io_subtile = &io_tile.sub_tiles[0];
     assert_eq!(io_subtile.name, "io");
     assert_eq!(io_subtile.capacity, 8);
+
+    // Check direct list.
+    assert_eq!(res.direct_list.len(), 1);
+    let gdirect = &res.direct_list[0];
+    assert_eq!(gdirect.name, "adder_carry");
+    assert_eq!(gdirect.from_pin, "clb.cout");
+    assert_eq!(gdirect.to_pin, "clb.cin");
+    assert_eq!(gdirect.x_offset, 0);
+    assert_eq!(gdirect.y_offset, -1);
+    assert_eq!(gdirect.z_offset, 0);
+    assert!(gdirect.switch_name.is_none());
+    assert!(gdirect.from_side.is_none());
+    assert!(gdirect.to_side.is_none());
 
     // TODO: Add stronger tests for the tiles.
     Ok(())

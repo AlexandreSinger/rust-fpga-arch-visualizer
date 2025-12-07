@@ -18,6 +18,7 @@ mod parse_device;
 mod parse_switch_list;
 mod parse_segment_list;
 mod parse_timing;
+mod parse_direct_list;
 mod parse_complex_block_list;
 
 pub use crate::parse_error::FPGAArchParseError;
@@ -29,6 +30,7 @@ use crate::parse_layouts::parse_layouts;
 use crate::parse_device::parse_device;
 use crate::parse_switch_list::parse_switch_list;
 use crate::parse_segment_list::parse_segment_list;
+use crate::parse_direct_list::parse_direct_list;
 use crate::parse_complex_block_list::parse_complex_block_list;
 
 fn parse_architecture(name: &OwnedName,
@@ -45,6 +47,7 @@ fn parse_architecture(name: &OwnedName,
     let mut device: Option<DeviceInfo> = None;
     let mut switch_list: Option<Vec<Switch>> = None;
     let mut segment_list: Option<Vec<Segment>> = None;
+    let mut direct_list: Option<Vec<GlobalDirect>> = None;
     let mut complex_block_list: Option<Vec<PBType>> = None;
 
     loop {
@@ -93,9 +96,10 @@ fn parse_architecture(name: &OwnedName,
                         let _ = parser.skip();
                     },
                     "directlist" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        direct_list = match direct_list {
+                            None => Some(parse_direct_list(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "complexblocklist" => {
                         complex_block_list = match complex_block_list {
@@ -161,6 +165,7 @@ fn parse_architecture(name: &OwnedName,
         Some(c) => c,
         None => return Err(FPGAArchParseError::MissingRequiredTag("<complexblocklist>".to_string())),
     };
+    let direct_list = direct_list.unwrap_or_default();
 
     Ok(FPGAArch {
         models,
@@ -169,6 +174,7 @@ fn parse_architecture(name: &OwnedName,
         device,
         switch_list,
         segment_list,
+        direct_list,
         complex_block_list,
     })
 }

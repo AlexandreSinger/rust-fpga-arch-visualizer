@@ -1,7 +1,11 @@
 use eframe::egui;
+use fpga_arch_parser::FPGAArch;
+
+// Import IntraTileState from intra_tile module
 use crate::block_style::DefaultBlockStyles;
 use crate::grid::DeviceGrid;
 use crate::grid_renderer;
+use crate::intra_tile::IntraTileState;
 use crate::settings;
 use std::collections::HashMap;
 
@@ -36,6 +40,19 @@ pub struct FpgaViewer {
     loaded_file_path: Option<std::path::PathBuf>,
     // Tile name to color mapping
     tile_colors: HashMap<String, egui::Color32>,
+    // Parsed architecture (needed for intra-tile view)
+    architecture: Option<FPGAArch>,
+    // Selected tile for intra-tile view
+    selected_tile_name: Option<String>,
+    // Selected sub_tile for intra-tile view
+    selected_sub_tile_index: usize,
+    // Show hierarchy tree in intra-tile view
+    show_hierarchy_tree: bool,
+    intra_tile_state: IntraTileState,
+    // Track if all blocks are expanded
+    all_blocks_expanded: bool,
+    // Theme setting
+    dark_mode: bool,
 }
 
 impl FpgaViewer {
@@ -54,6 +71,42 @@ impl FpgaViewer {
             aspect_ratio: 1.0,
             loaded_file_path: None,
             tile_colors: HashMap::new(),
+            architecture: None,
+            selected_tile_name: None,
+            selected_sub_tile_index: 0,
+            show_hierarchy_tree: false,
+            intra_tile_state: IntraTileState::default(),
+            all_blocks_expanded: false,
+            dark_mode: false,
+        }
+    }
+
+    fn apply_expand_all_state(&mut self) {
+        if self.all_blocks_expanded {
+            if let Some(arch) = &self.architecture {
+                if let Some(tile_name) = &self.selected_tile_name {
+                    if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
+                        if self.selected_sub_tile_index < tile.sub_tiles.len() {
+                            let sub_tile = &tile.sub_tiles[self.selected_sub_tile_index];
+                            if let Some(site) = sub_tile.equivalent_sites.first() {
+                                if let Some(root_pb) = arch
+                                    .complex_block_list
+                                    .iter()
+                                    .find(|pb| pb.name == site.pb_type)
+                                {
+                                    crate::intra_tile::expand_all_blocks(
+                                        &mut self.intra_tile_state,
+                                        root_pb,
+                                        &root_pb.name,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            crate::intra_tile::collapse_all_blocks(&mut self.intra_tile_state);
         }
     }
 
@@ -101,10 +154,29 @@ impl FpgaViewer {
                         }
                         fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
                             eprintln!("FixedLayout not yet supported");
+                // Store the parsed architecture for intra-tile view
+                self.architecture = Some(parsed);
+
+                if let Some(arch) = &self.architecture {
+                    if let Some(layout) = arch.layouts.first() {
+                        match layout {
+                            fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                                let default_size = 10;
+                                let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                                self.grid_width = grid.width;
+                                self.grid_height = grid.height;
+                                self.aspect_ratio = auto_layout.aspect_ratio;
+                                self.device_grid = Some(grid);
+                                self.loaded_file_path = Some(file_path);
+                                println!("Successfully loaded architecture file");
+                            }
+                            fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
+                                eprintln!("FixedLayout not yet supported");
+                            }
                         }
+                    } else {
+                        eprintln!("No layouts found in architecture file");
                     }
-                } else {
-                    eprintln!("No layouts found in architecture file");
                 }
             }
             Err(e) => {
@@ -150,6 +222,13 @@ impl FpgaViewer {
             return;
         }
 
+        // If in intra-tile view, go back to inter-tile view
+        if self.view_mode == ViewMode::IntraTile {
+            self.view_mode = ViewMode::InterTile;
+            self.selected_tile_name = None;
+            return;
+        }
+
         if !self.navigation_history.is_empty() {
             self.navigation_history.pop();
             // TODO: Update current layer based on history
@@ -164,10 +243,76 @@ impl FpgaViewer {
     fn open_settings(&mut self) {
         self.current_page = Page::Settings;
     }
+
+    fn render_welcome_message(&self, ui: &mut egui::Ui) {
+        let available_rect = ui.available_rect_before_wrap();
+        ui.allocate_ui_at_rect(
+            egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0)),
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading("FPGA Architecture Visualizer");
+                    ui.add_space(20.0);
+                    ui.label("No architecture file loaded.");
+                    ui.add_space(10.0);
+                    ui.label("Use File > Open Architecture File to load a VTR architecture file.");
+                    ui.add_space(20.0);
+                    ui.label(format!("Current mode: {:?}", self.view_mode));
+                });
+            },
+        );
+    }
+
+    fn render_centered_message(
+        &mut self,
+        ui: &mut egui::Ui,
+        heading: &str,
+        message: &str,
+        button_text: Option<&str>,
+    ) {
+        let available_rect = ui.available_rect_before_wrap();
+        ui.allocate_ui_at_rect(
+            egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0)),
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading(heading);
+                    ui.add_space(10.0);
+                    ui.label(message);
+                    if let Some(btn_text) = button_text {
+                        ui.add_space(20.0);
+                        if ui.button(btn_text).clicked() {
+                            self.view_mode = ViewMode::InterTile;
+                            self.selected_tile_name = None;
+                        }
+                    }
+                });
+            },
+        );
+    }
+
+    fn update_grid_height_from_width(&mut self) {
+        self.grid_height = (self.grid_width as f32 / self.aspect_ratio)
+            .round()
+            .max(1.0) as usize;
+    }
+
+    fn update_grid_width_from_height(&mut self) {
+        self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
+            .round()
+            .max(1.0) as usize;
+    }
 }
 
 impl eframe::App for FpgaViewer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme based on dark_mode setting
+        if self.dark_mode {
+            ctx.set_visuals(egui::Visuals::dark());
+        } else {
+            ctx.set_visuals(egui::Visuals::light());
+        }
+
+        self.block_styles.update_colors(self.dark_mode);
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             // Top menu
             egui::menu::bar(ui, |ui| {
@@ -215,12 +360,9 @@ impl eframe::App for FpgaViewer {
                     // Shows/hides the expandable layer navigation panel
                     let list_button = ui.add_sized(
                         [BUTTON_SIZE, BUTTON_SIZE],
-                        egui::Button::new(
-                            egui::RichText::new("☰")
-                                .size(24.0)
-                        )
-                        .frame(true)
-                        .rounding(BUTTON_SIZE / 2.0)
+                        egui::Button::new(egui::RichText::new("☰").size(24.0))
+                            .frame(true)
+                            .rounding(BUTTON_SIZE / 2.0),
                     );
                     if list_button.clicked() {
                         self.toggle_layer_list();
@@ -236,35 +378,35 @@ impl eframe::App for FpgaViewer {
                     // Opens the settings page for customizing block appearance
                     let settings_button = ui.add_sized(
                         [BUTTON_SIZE, BUTTON_SIZE],
-                        egui::Button::new(
-                            egui::RichText::new("⚙")
-                                .size(24.0)
-                        )
-                        .frame(true)
-                        .rounding(BUTTON_SIZE / 2.0)
+                        egui::Button::new(egui::RichText::new("⚙").size(24.0))
+                            .frame(true)
+                            .rounding(BUTTON_SIZE / 2.0),
                     );
                     if settings_button.clicked() {
                         self.open_settings();
                     }
                     if settings_button.hovered() {
-                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("settings_tooltip"), |ui| {
-                            ui.label("Open settings");
-                        });
+                        egui::show_tooltip_at_pointer(
+                            ctx,
+                            egui::Id::new("settings_tooltip"),
+                            |ui| {
+                                ui.label("Open settings");
+                            },
+                        );
                     }
                     ui.add_space(10.0);
 
                     // Back button (◀ icon)
-                    // Returns to previous layer or exits settings page
-                    let back_enabled = self.current_page == Page::Settings || !self.navigation_history.is_empty();
+                    // Returns to previous layer, exits settings page, or goes back from intra-tile view
+                    let back_enabled = self.current_page == Page::Settings
+                        || self.view_mode == ViewMode::IntraTile
+                        || !self.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
                             [BUTTON_SIZE, BUTTON_SIZE],
-                            egui::Button::new(
-                                egui::RichText::new("◀")
-                                    .size(24.0)
-                            )
-                            .frame(true)
-                            .rounding(BUTTON_SIZE / 2.0)
+                            egui::Button::new(egui::RichText::new("◀").size(24.0))
+                                .frame(true)
+                                .rounding(BUTTON_SIZE / 2.0),
                         )
                     });
                     if back_button.inner.clicked() {
@@ -274,6 +416,8 @@ impl eframe::App for FpgaViewer {
                         egui::show_tooltip_at_pointer(ctx, egui::Id::new("back_tooltip"), |ui| {
                             if self.current_page == Page::Settings {
                                 ui.label("Back to main");
+                            } else if self.view_mode == ViewMode::IntraTile {
+                                ui.label("Back to grid view");
                             } else {
                                 ui.label("Go back");
                             }
@@ -304,8 +448,10 @@ impl eframe::App for FpgaViewer {
                 });
         }
 
-        // Side panel for grid size controls
-        if self.current_page == Page::Main && self.device_grid.is_some() {
+        if self.current_page == Page::Main
+            && self.view_mode == ViewMode::InterTile
+            && self.device_grid.is_some()
+        {
             egui::SidePanel::right("grid_controls")
                 .default_width(250.0)
                 .show(ctx, |ui| {
@@ -320,15 +466,18 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("Width:");
                         let mut temp_width = self.grid_width as f64;
-                        if ui.add(
-                            egui::Slider::new(&mut temp_width, 1.0..=100.0)
-                                .step_by(1.0)
-                                .show_value(false)
-                        ).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut temp_width, 1.0..=100.0)
+                                    .step_by(1.0)
+                                    .show_value(false),
+                            )
+                            .changed()
+                        {
                             let new_width = temp_width.round() as usize;
                             if new_width != self.grid_width && new_width >= 1 {
                                 self.grid_width = new_width;
-                                self.grid_height = (self.grid_width as f32 / self.aspect_ratio).round().max(1.0) as usize;
+                                self.update_grid_height_from_width();
                                 grid_changed = true;
                             }
                         }
@@ -337,14 +486,17 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("       ");
                         let mut width_text = self.grid_width.to_string();
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut width_text)
-                                .desired_width(60.0)
-                        ).changed() {
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
+                            .changed()
+                        {
                             if let Ok(new_width) = width_text.parse::<usize>() {
-                                if new_width >= 1 && new_width <= 100 && new_width != self.grid_width {
+                                if new_width >= 1
+                                    && new_width <= 100
+                                    && new_width != self.grid_width
+                                {
                                     self.grid_width = new_width;
-                                    self.grid_height = (self.grid_width as f32 / self.aspect_ratio).round().max(1.0) as usize;
+                                    self.update_grid_height_from_width();
                                     grid_changed = true;
                                 }
                             }
@@ -356,15 +508,18 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("Height:");
                         let mut temp_height = self.grid_height as f64;
-                        if ui.add(
-                            egui::Slider::new(&mut temp_height, 1.0..=100.0)
-                                .step_by(1.0)
-                                .show_value(false)
-                        ).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut temp_height, 1.0..=100.0)
+                                    .step_by(1.0)
+                                    .show_value(false),
+                            )
+                            .changed()
+                        {
                             let new_height = temp_height.round() as usize;
                             if new_height != self.grid_height && new_height >= 1 {
                                 self.grid_height = new_height;
-                                self.grid_width = (self.grid_height as f32 * self.aspect_ratio).round().max(1.0) as usize;
+                                self.update_grid_width_from_height();
                                 grid_changed = true;
                             }
                         }
@@ -373,14 +528,17 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("       ");
                         let mut height_text = self.grid_height.to_string();
-                        if ui.add(
-                            egui::TextEdit::singleline(&mut height_text)
-                                .desired_width(60.0)
-                        ).changed() {
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
+                            .changed()
+                        {
                             if let Ok(new_height) = height_text.parse::<usize>() {
-                                if new_height >= 1 && new_height <= 100 && new_height != self.grid_height {
+                                if new_height >= 1
+                                    && new_height <= 100
+                                    && new_height != self.grid_height
+                                {
                                     self.grid_height = new_height;
-                                    self.grid_width = (self.grid_height as f32 * self.aspect_ratio).round().max(1.0) as usize;
+                                    self.update_grid_width_from_height();
                                     grid_changed = true;
                                 }
                             }
@@ -392,10 +550,78 @@ impl eframe::App for FpgaViewer {
                     ui.add_space(10.0);
 
                     ui.label(format!("Aspect Ratio: {:.2}", self.aspect_ratio));
-                    ui.label(format!("Grid Size: {}x{}", self.grid_width, self.grid_height));
+                    ui.label(format!(
+                        "Grid Size: {}x{}",
+                        self.grid_width, self.grid_height
+                    ));
 
                     if grid_changed {
                         self.rebuild_grid();
+                    }
+                });
+        }
+
+        // Side panel for intra-tile view controls
+        if self.current_page == Page::Main
+            && self.view_mode == ViewMode::IntraTile
+            && self.architecture.is_some()
+        {
+            egui::SidePanel::right("intra_tile_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    ui.heading("Intra-Tile View");
+                    ui.add_space(10.0);
+
+                    // Hierarchy tree toggle
+                    ui.checkbox(&mut self.show_hierarchy_tree, "Show Hierarchy Tree");
+
+                    // Expand All toggle
+                    let mut expand_all = self.all_blocks_expanded;
+                    if ui.checkbox(&mut expand_all, "Expand All").changed() {
+                        self.all_blocks_expanded = expand_all;
+                        self.apply_expand_all_state();
+                    }
+
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    // Tile selector - shows all available tiles from architecture
+                    if let Some(arch) = &self.architecture {
+                        if !arch.tiles.is_empty() {
+                            ui.label("Select Tile:");
+                            ui.add_space(5.0);
+
+                            let mut selected_tile_name =
+                                self.selected_tile_name.as_deref().unwrap_or("").to_string();
+
+                            egui::ComboBox::from_id_source("tile_selector")
+                                .selected_text(if !selected_tile_name.is_empty() {
+                                    selected_tile_name.as_str()
+                                } else {
+                                    "Select a tile"
+                                })
+                                .show_ui(ui, |ui| {
+                                    for tile in &arch.tiles {
+                                        ui.selectable_value(
+                                            &mut selected_tile_name,
+                                            tile.name.clone(),
+                                            &tile.name,
+                                        );
+                                    }
+                                });
+
+                            // If tile selection changed, update state
+                            if selected_tile_name
+                                != self.selected_tile_name.as_deref().unwrap_or("")
+                            {
+                                self.selected_tile_name = Some(selected_tile_name);
+                                self.selected_sub_tile_index = 0;
+                                self.apply_expand_all_state();
+                            }
+                        } else {
+                            ui.label("No tiles available in architecture");
+                        }
                     }
                 });
         }
@@ -404,23 +630,66 @@ impl eframe::App for FpgaViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.current_page {
                 Page::Main => {
-                    if let Some(grid) = &self.device_grid {
-                        grid_renderer::render_grid(ui, grid, &self.block_styles, &self.tile_colors);
-                    } else {
-                        // No grid loaded, show welcome message
-                        ui.centered_and_justified(|ui| {
-                            ui.heading("FPGA Architecture Visualizer");
-                            ui.add_space(20.0);
-                            ui.label("No architecture file loaded.");
-                            ui.add_space(10.0);
-                            ui.label("Use File > Open Architecture File to load a VTR architecture file.");
-                            ui.add_space(20.0);
-                            ui.label(format!("Current mode: {:?}", self.view_mode));
-                        });
+                    match self.view_mode {
+                        ViewMode::InterTile => {
+                            if let Some(grid) = &self.device_grid {
+                                // Check if a tile was clicked
+                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles, &self.tile_colors, self.dark_mode) {
+                                    self.selected_tile_name = Some(clicked_tile);
+                                    self.selected_sub_tile_index = 0;
+                                    self.view_mode = ViewMode::IntraTile;
+                                    self.apply_expand_all_state();
+                                }
+                            } else {
+                                // No grid loaded, show welcome message
+                                self.render_welcome_message(ui);
+                            }
+                        }
+                        ViewMode::IntraTile => {
+                            // Show intra-tile view
+                            if self.architecture.is_none() {
+                                // No architecture loaded - show welcome message
+                                self.render_welcome_message(ui);
+                            } else if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.selected_tile_name) {
+                                // Find the tile that matches the selected tile name
+                                if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
+                                    // Ensure selected_sub_tile_index is valid
+                                    let sub_tile_index = if self.selected_sub_tile_index < tile.sub_tiles.len() {
+                                        self.selected_sub_tile_index
+                                    } else {
+                                        0
+                                    };
+                                    crate::intra_tile::render_intra_tile_view(
+                                        ui,
+                                        arch,
+                                        tile,
+                                        &mut self.intra_tile_state,
+                                        self.show_hierarchy_tree,
+                                        sub_tile_index,
+                                        self.all_blocks_expanded,
+                                        self.dark_mode,
+                                    );
+                                } else {
+                                    self.render_centered_message(
+                                        ui,
+                                        "Tile not found",
+                                        &format!("Could not find tile: {}", tile_name),
+                                        Some("Back to Grid View"),
+                                    );
+                                }
+                            } else {
+                                self.render_centered_message(
+                                    ui,
+                                    "No tile selected",
+                                    "Please select a tile from the dropdown or click on a tile in the grid view.",
+                                    Some("Back to Grid View"),
+                                );
+                            }
+                        }
                     }
                 }
                 Page::Settings => {
-                    settings::render_settings_page(ui, &self.block_styles);
+                    settings::render_settings_page(ui, &self.block_styles, &mut self.dark_mode);
                 }
             }
         });
@@ -433,9 +702,13 @@ impl eframe::App for FpgaViewer {
                 .default_size([300.0, 150.0])
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("Nothing Implemented Yet");
+                        ui.heading("FPGA Architecture Visualizer");
                         ui.add_space(10.0);
-                        ui.label("Version 0.0.0");
+                        ui.label("Version 1.0.0");
+                        ui.add_space(10.0);
+                        ui.label("A Rust-based visualizer for VTR FPGA architecture description files.");
+                        ui.add_space(10.0);
+                        ui.label("All rights reserved?");
                         ui.add_space(20.0);
                         if ui.button("Close").clicked() {
                             self.show_about = false;

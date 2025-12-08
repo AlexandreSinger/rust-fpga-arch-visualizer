@@ -659,7 +659,7 @@ impl eframe::App for FpgaViewer {
                     ui.vertical_centered(|ui| {
                         ui.heading("FPGA Architecture Visualizer");
                         ui.add_space(10.0);
-                        ui.label("Version 1.0.0");
+                        ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                         ui.add_space(10.0);
                         ui.label("A Rust-based visualizer for VTR FPGA architecture description files.");
                         ui.add_space(10.0);

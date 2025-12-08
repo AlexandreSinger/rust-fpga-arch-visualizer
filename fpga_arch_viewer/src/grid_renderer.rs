@@ -1,8 +1,9 @@
 use eframe::egui;
-use crate::block_style::{DefaultBlockStyles, draw_block};
+use crate::block_style::{DefaultBlockStyles, draw_block, darken_color};
 use crate::grid::{DeviceGrid, GridCell};
+use std::collections::HashMap;
 
-pub fn render_grid(ui: &mut egui::Ui, grid: &DeviceGrid, block_styles: &DefaultBlockStyles) {
+pub fn render_grid(ui: &mut egui::Ui, grid: &DeviceGrid, block_styles: &DefaultBlockStyles, tile_colors: &HashMap<String, egui::Color32>) {
     // Cell size is based on the available space
     // TODO: may need to change later for routing
     let available_size = ui.available_size();
@@ -31,13 +32,40 @@ pub fn render_grid(ui: &mut egui::Ui, grid: &DeviceGrid, block_styles: &DefaultB
                                             );
                                         }
                                         GridCell::Block(pb_type) => {
-                                            let block_style = match pb_type.as_str() {
-                                                "io" => &block_styles.io,
-                                                "clb" => &block_styles.lb,
-                                                _ => &block_styles.lb,
-                                            };
+                                            // Get color from tile_colors map, fallback to default
+                                            let color = tile_colors.get(pb_type)
+                                                .copied()
+                                                .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
 
-                                            let response = draw_block(ui, block_style, cell_size);
+                                            let (rect, response) = ui.allocate_exact_size(
+                                                egui::vec2(cell_size, cell_size),
+                                                egui::Sense::hover(),
+                                            );
+
+                                            if ui.is_rect_visible(rect) {
+                                                let painter = ui.painter();
+                                                let outline_color = darken_color(color, 0.5);
+
+                                                // Draw filled square
+                                                painter.rect_filled(rect, 0.0, color);
+
+                                                // Draw outline
+                                                painter.rect_stroke(
+                                                    rect,
+                                                    0.0,
+                                                    egui::Stroke::new(2.0, outline_color),
+                                                );
+
+                                                // Draw tile name in center (uppercase)
+                                                let tile_name_upper = pb_type.to_uppercase();
+                                                painter.text(
+                                                    rect.center(),
+                                                    egui::Align2::CENTER_CENTER,
+                                                    &tile_name_upper,
+                                                    egui::FontId::proportional(cell_size * 0.2),
+                                                    egui::Color32::BLACK,
+                                                );
+                                            }
 
                                             if response.hovered() {
                                                 egui::show_tooltip_at_pointer(

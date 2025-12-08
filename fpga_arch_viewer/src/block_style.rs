@@ -46,6 +46,27 @@ pub fn darken_color(color: Color32, factor: f32) -> Color32 {
     )
 }
 
+// Default color palette for tiles
+pub fn get_default_color_palette() -> Vec<Color32> {
+    vec![
+        Color32::from_rgb(0xD8, 0xE7, 0xFD), // Light Blue
+        Color32::from_rgb(0xF5, 0xF5, 0xF5), // Light Gray
+        Color32::from_rgb(0xFF, 0xE6, 0xCE), // Light Orange
+        Color32::from_rgb(0xFF, 0xF3, 0xCC), // Light Yellow
+        Color32::from_rgb(0xE8, 0xF5, 0xE9), // Light Green
+        Color32::from_rgb(0xF3, 0xE5, 0xF5), // Light Purple
+        Color32::from_rgb(0xFF, 0xE0, 0xE0), // Light Pink
+        Color32::from_rgb(0xE0, 0xF7, 0xFA), // Light Cyan
+        Color32::from_rgb(0xFF, 0xF9, 0xC4), // Light Amber
+        Color32::from_rgb(0xF0, 0xF4, 0xC3), // Light Lime
+    ]
+}
+
+pub fn get_tile_color(tile_name: &str, tile_index: usize) -> Color32 {
+    let palette = get_default_color_palette();
+    palette[tile_index % palette.len()]
+}
+
 // Default block styles for the inter-tile grid view
 pub struct DefaultBlockStyles {
     pub io: BlockStyle,

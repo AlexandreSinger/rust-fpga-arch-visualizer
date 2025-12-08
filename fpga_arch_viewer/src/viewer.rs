@@ -3,6 +3,7 @@ use crate::block_style::DefaultBlockStyles;
 use crate::grid::DeviceGrid;
 use crate::grid_renderer;
 use crate::settings;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ViewMode {
@@ -33,6 +34,8 @@ pub struct FpgaViewer {
     aspect_ratio: f32,
     // Currently loaded architecture file path
     loaded_file_path: Option<std::path::PathBuf>,
+    // Tile name to color mapping
+    tile_colors: HashMap<String, egui::Color32>,
 }
 
 impl FpgaViewer {
@@ -50,15 +53,43 @@ impl FpgaViewer {
             grid_height: 10,
             aspect_ratio: 1.0,
             loaded_file_path: None,
+            tile_colors: HashMap::new(),
         }
     }
 
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
             Ok(parsed) => {
+                // Build tile color mapping from grid locations
+                let mut tile_names = std::collections::HashSet::new();
                 if let Some(layout) = parsed.layouts.first() {
                     match layout {
                         fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                            // Collect all unique tile names
+                            for location in &auto_layout.grid_locations {
+                                let pb_type = match location {
+                                    fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
+                                    fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
+                                    fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
+                                    fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
+                                    fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
+                                    fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
+                                    fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
+                                };
+                                if pb_type != "EMPTY" {
+                                    tile_names.insert(pb_type.clone());
+                                }
+                            }
+
+                            // Assign colors to tiles
+                            self.tile_colors.clear();
+                            let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
+                            sorted_tiles.sort(); // Sort for consistent ordering
+                            for (i, tile_name) in sorted_tiles.iter().enumerate() {
+                                let color = crate::block_style::get_tile_color(tile_name, i);
+                                self.tile_colors.insert(tile_name.clone(), color);
+                            }
+
                             let default_size = 10;
                             let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
                             self.grid_width = grid.width;
@@ -66,7 +97,7 @@ impl FpgaViewer {
                             self.aspect_ratio = auto_layout.aspect_ratio;
                             self.device_grid = Some(grid);
                             self.loaded_file_path = Some(file_path);
-                            println!("Successfully loaded architecture file");
+                            println!("Successfully loaded architecture file with {} tile types", self.tile_colors.len());
                         }
                         fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
                             eprintln!("FixedLayout not yet supported");
@@ -374,7 +405,7 @@ impl eframe::App for FpgaViewer {
             match self.current_page {
                 Page::Main => {
                     if let Some(grid) = &self.device_grid {
-                        grid_renderer::render_grid(ui, grid, &self.block_styles);
+                        grid_renderer::render_grid(ui, grid, &self.block_styles, &self.tile_colors);
                     } else {
                         // No grid loaded, show welcome message
                         ui.centered_and_justified(|ui| {

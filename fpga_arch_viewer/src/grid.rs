@@ -72,6 +72,50 @@ impl DeviceGrid {
         Self::from_auto_layout_impl(auto_layout, width, height, tile_sizes)
     }
 
+    pub fn from_fixed_layout(arch: &FPGAArch, layout_index: usize) -> Self {
+        let fixed_layout = match arch.layouts.get(layout_index) {
+            Some(fpga_arch_parser::Layout::FixedLayout(fl)) => fl,
+            _ => panic!("Expected FixedLayout at index {}", layout_index),
+        };
+
+        let tile_sizes = Self::build_tile_size_map(arch);
+        let width = fixed_layout.width as usize;
+        let height = fixed_layout.height as usize;
+
+        let mut grid = Self {
+            width,
+            height,
+            cells: vec![vec![GridCell::Empty; width]; height],
+            tile_sizes,
+        };
+
+        // Sort locations by priority
+        let mut location_indices: Vec<_> = fixed_layout.grid_locations
+            .iter()
+            .enumerate()
+            .map(|(i, loc)| {
+                let priority = match loc {
+                    GridLocation::Fill(f) => f.priority,
+                    GridLocation::Perimeter(p) => p.priority,
+                    GridLocation::Corners(c) => c.priority,
+                    GridLocation::Single(s) => s.priority,
+                    GridLocation::Col(c) => c.priority,
+                    GridLocation::Row(r) => r.priority,
+                    GridLocation::Region(r) => r.priority,
+                };
+                (priority, i)
+            })
+            .collect();
+
+        location_indices.sort_by_key(|(priority, _)| *priority);
+
+        for (_, idx) in location_indices {
+            grid.apply_grid_location(&fixed_layout.grid_locations[idx]);
+        }
+
+        grid
+    }
+
     fn calculate_dimensions(auto_layout: &AutoLayout, default_size: usize) -> (usize, usize) {
         let aspect_ratio = auto_layout.aspect_ratio;
 

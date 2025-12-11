@@ -33,7 +33,8 @@ pub fn render_grid(
             for row in 0..grid.height {
                 for col in 0..grid.width {
                     if let Some(cell) = grid.get(row, col) {
-                        let cell_pos = offset + egui::vec2(col as f32 * cell_size, row as f32 * cell_size);
+                        // Flip y-coordinate so (0,0) is at bottom-left
+                        let cell_pos = offset + egui::vec2(col as f32 * cell_size, (grid.height - 1 - row) as f32 * cell_size);
 
                         match cell {
                             GridCell::Empty => {
@@ -49,7 +50,12 @@ pub fn render_grid(
                                 // Draw merged rectangle for multi-cell tile
                                 let tile_width = *width as f32 * cell_size;
                                 let tile_height = *height as f32 * cell_size;
-                                let rect = egui::Rect::from_min_size(cell_pos, egui::vec2(tile_width, tile_height));
+
+                                let visual_top = offset + egui::vec2(
+                                    col as f32 * cell_size,
+                                    (grid.height - row - height) as f32 * cell_size
+                                );
+                                let rect = egui::Rect::from_min_size(visual_top, egui::vec2(tile_width, tile_height));
 
                                 let color = tile_colors
                                     .get(pb_type)

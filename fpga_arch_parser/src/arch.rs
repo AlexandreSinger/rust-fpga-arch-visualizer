@@ -236,6 +236,71 @@ pub enum Layout {
     FixedLayout(FixedLayout),
 }
 
+pub enum CustomSwitchBlockType {
+    Unidir,
+    Bidir,
+}
+
+pub enum CustomSwitchBlockLocation {
+    Everywhere,
+    Perimeter,
+    Corner,
+    Fringe,
+    Core,
+    // FIXME: This is undocumented!
+    XYSpecified {
+        x: i32,
+        y: i32,
+    }
+}
+
+pub enum CustomSwitchFuncType {
+    LeftToTop,
+    LeftToRight,
+    LeftToBottom,
+    TopToRight,
+    TopToBottom,
+    TopToLeft,
+    RightToBottom,
+    RightToLeft,
+    RightToTop,
+    BottomToLeft,
+    BottomToTop,
+    BottomToRight,
+}
+
+pub struct CustomSwitchFunc {
+    pub func_type: CustomSwitchFuncType,
+    pub formula: String,
+}
+
+pub struct CustomSwitchBlockConnPoint {
+    pub segment_type: String,
+    pub switchpoint: Vec<i32>,
+}
+
+pub enum CustomSwitchBlockWireConnOrder {
+    Shuffled,
+    Fixed,
+}
+
+pub struct CustomSwitchWireConn {
+    pub num_conns: String,
+    pub from_points: Vec<CustomSwitchBlockConnPoint>,
+    pub to_points: Vec<CustomSwitchBlockConnPoint>,
+    pub from_order: CustomSwitchBlockWireConnOrder,
+    pub to_order: CustomSwitchBlockWireConnOrder,
+    pub switch_override: Option<String>,
+}
+
+pub struct CustomSwitchBlock {
+    pub name: String,
+    pub sb_type: CustomSwitchBlockType,
+    pub switchblock_location: CustomSwitchBlockLocation,
+    pub switch_funcs: Vec<CustomSwitchFunc>,
+    pub wireconns: Vec<CustomSwitchWireConn>,
+}
+
 pub enum SBType {
     Wilton,
     Subset,
@@ -508,6 +573,7 @@ pub struct FPGAArch {
     pub device: DeviceInfo,
     pub switch_list: Vec<Switch>,
     pub segment_list: Vec<Segment>,
+    pub custom_switch_blocks: Vec<CustomSwitchBlock>,
     pub direct_list: Vec<GlobalDirect>,
     pub complex_block_list: Vec<PBType>,
 }

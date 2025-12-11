@@ -14,6 +14,8 @@ use fpga_arch_parser::{
     SegmentType,
     SwitchType,
     SwitchBufSize,
+    CustomSwitchBlockType,
+    CustomSwitchBlockLocation,
 };
 
 #[test]
@@ -107,6 +109,9 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     assert!(matches!(res.segment_list[0].segment_type, SegmentType::Unidir));
     assert_eq!(res.segment_list[0].r_metal, 0.0);
     assert_eq!(res.segment_list[0].c_metal, 0.0);
+
+    // Check custom switch blocks.
+    assert_eq!(res.custom_switch_blocks.len(), 0);
 
     // Check direct list
     assert_eq!(res.direct_list.len(), 0);
@@ -298,6 +303,14 @@ fn test_z1000() -> Result<(), FPGAArchParseError> {
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 6);
+
+    // Check custom switch blocks
+    assert_eq!(res.custom_switch_blocks.len(), 400);
+    let custom_sb0 = &res.custom_switch_blocks[0];
+    assert_eq!(custom_sb0.name, "custom_switch_block_0_0");
+    assert!(matches!(custom_sb0.sb_type, CustomSwitchBlockType::Unidir));
+    assert!(matches!(custom_sb0.switchblock_location, CustomSwitchBlockLocation::XYSpecified { x: 0, y: 0}));
+    assert_eq!(custom_sb0.switch_funcs.len(), 12);
 
     Ok(())
 }

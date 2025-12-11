@@ -18,6 +18,7 @@ mod parse_device;
 mod parse_switch_list;
 mod parse_segment_list;
 mod parse_timing;
+mod parse_custom_switch_blocks;
 mod parse_direct_list;
 mod parse_complex_block_list;
 
@@ -30,6 +31,7 @@ use crate::parse_layouts::parse_layouts;
 use crate::parse_device::parse_device;
 use crate::parse_switch_list::parse_switch_list;
 use crate::parse_segment_list::parse_segment_list;
+use crate::parse_custom_switch_blocks::parse_switchblocklist;
 use crate::parse_direct_list::parse_direct_list;
 use crate::parse_complex_block_list::parse_complex_block_list;
 
@@ -47,6 +49,7 @@ fn parse_architecture(name: &OwnedName,
     let mut device: Option<DeviceInfo> = None;
     let mut switch_list: Option<Vec<Switch>> = None;
     let mut segment_list: Option<Vec<Segment>> = None;
+    let mut custom_switch_blocks: Option<Vec<CustomSwitchBlock>> = None;
     let mut direct_list: Option<Vec<GlobalDirect>> = None;
     let mut complex_block_list: Option<Vec<PBType>> = None;
 
@@ -91,9 +94,10 @@ fn parse_architecture(name: &OwnedName,
                         }
                     },
                     "switchblocklist" => {
-                        // TODO: Implement.
-                        // FIXME: Check that this is documented in VTR.
-                        let _ = parser.skip();
+                        custom_switch_blocks = match custom_switch_blocks {
+                            None => Some(parse_switchblocklist(&name, &attributes, parser)?),
+                            Some(_) => return Err(FPGAArchParseError::DuplicateTag(format!("<{name}>"), parser.position())),
+                        }
                     },
                     "directlist" => {
                         direct_list = match direct_list {
@@ -165,6 +169,7 @@ fn parse_architecture(name: &OwnedName,
         Some(c) => c,
         None => return Err(FPGAArchParseError::MissingRequiredTag("<complexblocklist>".to_string())),
     };
+    let custom_switch_blocks = custom_switch_blocks.unwrap_or_default();
     let direct_list = direct_list.unwrap_or_default();
 
     Ok(FPGAArch {
@@ -174,6 +179,7 @@ fn parse_architecture(name: &OwnedName,
         device,
         switch_list,
         segment_list,
+        custom_switch_blocks,
         direct_list,
         complex_block_list,
     })

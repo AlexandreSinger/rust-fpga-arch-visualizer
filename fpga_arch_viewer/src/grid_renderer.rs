@@ -68,17 +68,12 @@ pub fn render_grid(
 
                                             // Draw tile name in center (uppercase)
                                             let tile_name_upper = pb_type.to_uppercase();
-                                            let text_color = if dark_mode {
-                                                egui::Color32::WHITE
-                                            } else {
-                                                egui::Color32::BLACK
-                                            };
                                             painter.text(
                                                 rect.center(),
                                                 egui::Align2::CENTER_CENTER,
                                                 &tile_name_upper,
                                                 egui::FontId::proportional(cell_size * 0.2),
-                                                text_color,
+                                                egui::Color32::BLACK,
                                             );
                                         }
 

@@ -470,6 +470,8 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     } else {
         0.0
     };
+    // Extra right-side padding only for clock completes; does not shift children.
+    let clock_padding_right = if is_clock_complete { 140.0 } else { 0.0 };
 
     let interconnect_width = if !pb_type.modes.is_empty() || !pb_type.interconnects.is_empty() {
         if has_complete_interconnect {
@@ -485,7 +487,7 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         calculate_header_name_width(pb_type, !children.is_empty());
     let blif_model_width = calculate_blif_model_width(pb_type);
 
-    let w = (total_w + PADDING * 2.0 + interconnect_width)
+    let w = (total_w + PADDING * 2.0 + interconnect_width + clock_padding_right)
         .max(MIN_BLOCK_SIZE.x)
         .max(header_name_width_with_selector)
         .max(blif_model_width)
@@ -665,7 +667,7 @@ fn draw_pb_type(
         .interconnects
         .iter()
         .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
-    let is_clock_complete = pb_type.interconnects.iter().any(|i| {
+    let _is_clock_complete = pb_type.interconnects.iter().any(|i| {
         if let fpga_arch_parser::Interconnect::Complete(c) = i {
             c.input.to_lowercase().contains("clk") && c.output.to_lowercase().contains("clk")
         } else {
@@ -807,8 +809,9 @@ fn draw_pb_type(
     if has_children && is_expanded {
         let direction = get_layout_direction(children);
 
-        // If this block has a complete interconnect, push children rightward to
-        // create an intentional gutter for the crossbar and its wiring.
+        // If this block has a non-clock complete interconnect, push children
+        // rightward to create an intentional gutter. Clock completes keep
+        // children aligned; their space is handled on the right at measure time.
         let complete_spacing = if has_complete_interconnect {
             180.0
         } else {
@@ -867,10 +870,54 @@ fn draw_pb_type(
                 fpga_arch_parser::Interconnect::Direct(d) => {
                     let raw_sources = expand_port_list(&d.input);
                     let raw_sinks = expand_port_list(&d.output);
-                    let sources =
+                    let mut sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
-                    let sinks =
+                    let mut sinks =
                         resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+                    // Align buses by numeric index when both sides are indexed, so
+                    // fle[0] maps to O[0], fle[1] to O[1], etc. We try to parse an
+                    // outer index (before the dot) first, then an inner bit index.
+                    // If either side lacks indices or lengths differ, we keep order.
+                    let parse_indices = |s: &str| {
+                        // outer like "fle[3].out[0]"
+                        let outer = s.find('[').and_then(|start| {
+                            s[start + 1..]
+                                .find(']')
+                                .and_then(|e| s[start + 1..start + 1 + e].parse::<i32>().ok())
+                        });
+                        // inner like ".out[0]"
+                        let inner = s.rfind('[').and_then(|start| {
+                            s[start + 1..]
+                                .find(']')
+                                .and_then(|e| s[start + 1..start + 1 + e].parse::<i32>().ok())
+                        });
+                        (outer, inner)
+                    };
+
+                    let src_all_idx = sources.iter().all(|s| parse_indices(s).0.is_some());
+                    let dst_all_idx = sinks.iter().all(|s| parse_indices(s).0.is_some());
+
+                    if src_all_idx && dst_all_idx && sources.len() == sinks.len() {
+                        let mut src_with = sources
+                            .into_iter()
+                            .filter_map(|s| {
+                                let (o, i) = parse_indices(&s);
+                                Some(((o?, i.unwrap_or(0)), s))
+                            })
+                            .collect::<Vec<_>>();
+                        let mut dst_with = sinks
+                            .into_iter()
+                            .filter_map(|d| {
+                                let (o, i) = parse_indices(&d);
+                                Some(((o?, i.unwrap_or(0)), d))
+                            })
+                            .collect::<Vec<_>>();
+                        src_with.sort_by_key(|(k, _)| *k);
+                        dst_with.sort_by_key(|(k, _)| *k);
+                        sources = src_with.into_iter().map(|(_, s)| s).collect();
+                        sinks = dst_with.into_iter().map(|(_, d)| d).collect();
+                    }
 
                     for (i, src) in sources.iter().enumerate() {
                         if i < sinks.len() {

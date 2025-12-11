@@ -6,8 +6,8 @@ use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::{HashMap, HashSet};
 
-use crate::intra_block_drawing;
 use crate::color_scheme;
+use crate::intra_block_drawing;
 use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
@@ -452,8 +452,31 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     let max_pins = total_input_pins.max(total_output_pins) as f32;
     let min_port_height = (max_pins + 1.0) * MIN_PIN_SPACING;
 
+    let has_complete_interconnect = pb_type
+        .interconnects
+        .iter()
+        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+
+    let is_clock_complete = pb_type.interconnects.iter().any(|i| {
+        if let fpga_arch_parser::Interconnect::Complete(c) = i {
+            c.input.to_lowercase().contains("clk") && c.output.to_lowercase().contains("clk")
+        } else {
+            false
+        }
+    });
+
+    let complete_spacing = if has_complete_interconnect && !is_clock_complete {
+        180.0
+    } else {
+        0.0
+    };
+
     let interconnect_width = if !pb_type.modes.is_empty() || !pb_type.interconnects.is_empty() {
-        80.0
+        if has_complete_interconnect {
+            140.0
+        } else {
+            80.0
+        }
     } else {
         0.0
     };
@@ -465,7 +488,8 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     let w = (total_w + PADDING * 2.0 + interconnect_width)
         .max(MIN_BLOCK_SIZE.x)
         .max(header_name_width_with_selector)
-        .max(blif_model_width);
+        .max(blif_model_width)
+        .max(total_w + complete_spacing + PADDING * 2.0);
     let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
         .max(MIN_BLOCK_SIZE.y)
         .max(min_port_height);
@@ -637,6 +661,17 @@ fn draw_pb_type(
     let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
+    let has_complete_interconnect = pb_type
+        .interconnects
+        .iter()
+        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+    let is_clock_complete = pb_type.interconnects.iter().any(|i| {
+        if let fpga_arch_parser::Interconnect::Complete(c) = i {
+            c.input.to_lowercase().contains("clk") && c.output.to_lowercase().contains("clk")
+        } else {
+            false
+        }
+    });
     let is_expanded = state.expanded_blocks.contains(instance_path);
 
     // Draw header with expand/collapse indicator
@@ -772,7 +807,15 @@ fn draw_pb_type(
     if has_children && is_expanded {
         let direction = get_layout_direction(children);
 
-        let start_x = rect.min.x + PADDING;
+        // If this block has a complete interconnect, push children rightward to
+        // create an intentional gutter for the crossbar and its wiring.
+        let complete_spacing = if has_complete_interconnect {
+            180.0
+        } else {
+            0.0
+        };
+
+        let start_x = rect.min.x + PADDING + complete_spacing;
         let start_y = rect.min.y + HEADER_HEIGHT + PADDING;
 
         let mut cursor_x = start_x;
@@ -820,49 +863,76 @@ fn draw_pb_type(
         let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
-            let (input_str, output_str, kind) = match inter {
-                fpga_arch_parser::Interconnect::Direct(d) => (&d.input, &d.output, "direct"),
-                fpga_arch_parser::Interconnect::Mux(m) => (&m.input, &m.output, "mux"),
-                fpga_arch_parser::Interconnect::Complete(c) => (&c.input, &c.output, "complete"),
-            };
+            match inter {
+                fpga_arch_parser::Interconnect::Direct(d) => {
+                    let raw_sources = expand_port_list(&d.input);
+                    let raw_sinks = expand_port_list(&d.output);
+                    let sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
 
-            let raw_sources = expand_port_list(input_str);
-            let raw_sinks = expand_port_list(output_str);
-            let sources = resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
-            let sinks = resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
-
-            if kind == "direct" || kind == "complete" {
-                for (i, src) in sources.iter().enumerate() {
-                    if i < sinks.len() {
-                        let dst = &sinks[i];
-                        draw_direct_connection(
-                            painter,
-                            src,
-                            dst,
-                            pb_type,
-                            &my_ports,
-                            &children_ports,
-                            state,
-                            ui,
-                            rect,
-                            dark_mode,
-                        );
+                    for (i, src) in sources.iter().enumerate() {
+                        if i < sinks.len() {
+                            let dst = &sinks[i];
+                            draw_direct_connection(
+                                painter,
+                                src,
+                                dst,
+                                pb_type,
+                                &my_ports,
+                                &children_ports,
+                                state,
+                                ui,
+                                rect,
+                                dark_mode,
+                            );
+                        }
                     }
                 }
-            } else {
-                draw_interconnect_block(
-                    painter,
-                    kind,
-                    &sources,
-                    &sinks,
-                    pb_type,
-                    &my_ports,
-                    &children_ports,
-                    state,
-                    ui,
-                    rect,
-                    dark_mode,
-                );
+                fpga_arch_parser::Interconnect::Mux(m) => {
+                    let raw_sources = expand_port_list(&m.input);
+                    let raw_sinks = expand_port_list(&m.output);
+                    let sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+                    draw_interconnect_block(
+                        painter,
+                        "mux",
+                        &sources,
+                        &sinks,
+                        pb_type,
+                        &my_ports,
+                        &children_ports,
+                        state,
+                        ui,
+                        rect,
+                        dark_mode,
+                    );
+                }
+                fpga_arch_parser::Interconnect::Complete(c) => {
+                    let raw_sources = expand_port_list(&c.input);
+                    let raw_sinks = expand_port_list(&c.output);
+                    let sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+                    draw_complete_interconnect(
+                        painter,
+                        &sources,
+                        &sinks,
+                        pb_type,
+                        &my_ports,
+                        &children_ports,
+                        state,
+                        ui,
+                        rect,
+                        dark_mode,
+                    );
+                }
             }
         }
     }
@@ -1027,6 +1097,211 @@ fn draw_direct_connection(
             ui,
             is_clock,
         );
+    }
+}
+
+fn draw_complete_interconnect(
+    painter: &egui::Painter,
+    sources: &[String],
+    sinks: &[String],
+    current_pb: &PBType,
+    my_ports: &HashMap<String, egui::Pos2>,
+    children_ports: &HashMap<String, egui::Pos2>,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+    parent_rect: egui::Rect,
+    dark_mode: bool,
+) {
+    let mut resolved_sources = Vec::new();
+    for src in sources {
+        if let Some(pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
+            resolved_sources.push((src, pos));
+        }
+    }
+
+    let mut resolved_sinks = Vec::new();
+    for dst in sinks {
+        if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
+            resolved_sinks.push((dst, pos));
+        }
+    }
+
+    if resolved_sources.is_empty() || resolved_sinks.is_empty() {
+        return;
+    }
+
+    // Order endpoints top-to-bottom to reduce visual crossings
+    resolved_sources.sort_by(|a, b| {
+        a.1.y
+            .partial_cmp(&b.1.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    resolved_sinks.sort_by(|a, b| {
+        a.1.y
+            .partial_cmp(&b.1.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let all_y: Vec<f32> = resolved_sources
+        .iter()
+        .map(|(_, p)| p.y)
+        .chain(resolved_sinks.iter().map(|(_, p)| p.y))
+        .collect();
+    let avg_y = all_y.iter().sum::<f32>() / all_y.len() as f32;
+
+    let source_max_x = resolved_sources
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let sink_min_x = resolved_sinks
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::INFINITY, f32::min);
+    let sink_max_x = resolved_sinks
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    let rows = resolved_sources.len().max(resolved_sinks.len());
+    let row_spacing = 18.0;
+    let available_height = (parent_rect.height() - 20.0).max(60.0);
+    let height = ((rows as f32 + 1.0) * row_spacing)
+        .max(60.0)
+        .min(available_height);
+    let width = 55.0;
+
+    // Special-case clock crossbars: place them to the right of the sink cluster
+    // (e.g., to the right of the fle) so they don't overlap BLEs on the left.
+    let is_clock_block = resolved_sources
+        .iter()
+        .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"))
+        && resolved_sinks
+            .iter()
+            .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"));
+
+    let block_center_x = if is_clock_block {
+        let margin = 40.0;
+        let desired = sink_max_x + margin + width * 0.5;
+        desired
+            .max(parent_rect.min.x + width * 0.5 + 6.0)
+            .min(parent_rect.max.x - width * 0.5 - 6.0)
+    } else {
+        // Position the block based on the actual gap between sources and sinks.
+        let gap = sink_min_x - source_max_x;
+        let gap_is_usable = gap.is_finite() && gap > width + 20.0;
+
+        if gap_is_usable {
+            // Leave 1/3 of the free gap on each side of the crossbar
+            let side_margin = ((gap - width).max(0.0)) / 3.0;
+            let left_x = source_max_x + side_margin;
+            let right_x = sink_min_x - side_margin;
+            ((left_x + right_x) * 0.5).clamp(
+                parent_rect.min.x + width * 0.5 + 4.0,
+                parent_rect.max.x - width * 0.5 - 4.0,
+            )
+        } else {
+            // Gap too small: bias near sinks but keep a buffer from the parent edge
+            (sink_min_x - 20.0 - width * 0.5)
+                .max(parent_rect.min.x + width * 0.5 + 10.0)
+                .min(parent_rect.max.x - width * 0.5 - 10.0)
+        }
+    };
+
+    let rect =
+        egui::Rect::from_center_size(egui::pos2(block_center_x, avg_y), egui::vec2(width, height));
+
+    let block_hovered = ui.rect_contains_pointer(rect);
+    let is_block_highlighted = block_hovered
+        || state
+            .highlighted_positions_this_frame
+            .iter()
+            .any(|p| rect.contains(*p));
+
+    let stroke_color = if is_block_highlighted {
+        color_scheme::HIGHLIGHT_COLOR
+    } else {
+        color_scheme::theme_border_color(dark_mode)
+    };
+    let fill_color = color_scheme::theme_block_bg(dark_mode);
+    let stroke = egui::Stroke::new(1.5, stroke_color);
+
+    painter.rect(rect, 3.0, fill_color, stroke);
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "complete",
+        egui::FontId::proportional(11.0),
+        color_scheme::theme_text_color(dark_mode),
+    );
+
+    let source_step = rect.height() / (resolved_sources.len() as f32 + 1.0);
+    for (i, (src_name, src_pos)) in resolved_sources.iter().enumerate() {
+        let y = rect.min.y + source_step * (i as f32 + 1.0);
+        let target = egui::pos2(rect.min.x, y);
+
+        let wire_highlighted = is_block_highlighted
+            || state
+                .highlighted_positions_this_frame
+                .iter()
+                .any(|p| p.distance(*src_pos) < 1.0);
+        let wire_color = if wire_highlighted {
+            color_scheme::HIGHLIGHT_COLOR
+        } else {
+            color_scheme::theme_interconnect_bg(dark_mode)
+        };
+        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+
+        let is_clock =
+            src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
+        draw_wire_segment(
+            painter,
+            *src_pos,
+            target,
+            wire_stroke,
+            parent_rect,
+            state,
+            ui,
+            is_clock,
+        );
+
+        if block_hovered {
+            state.highlighted_positions_next_frame.push(*src_pos);
+        }
+    }
+
+    let sink_step = rect.height() / (resolved_sinks.len() as f32 + 1.0);
+    for (i, (dst_name, dst_pos)) in resolved_sinks.iter().enumerate() {
+        let y = rect.min.y + sink_step * (i as f32 + 1.0);
+        let start = egui::pos2(rect.max.x, y);
+
+        let wire_highlighted = is_block_highlighted
+            || state
+                .highlighted_positions_this_frame
+                .iter()
+                .any(|p| p.distance(*dst_pos) < 1.0);
+        let wire_color = if wire_highlighted {
+            color_scheme::HIGHLIGHT_COLOR
+        } else {
+            color_scheme::theme_interconnect_bg(dark_mode)
+        };
+        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+
+        let is_clock =
+            dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
+        draw_wire_segment(
+            painter,
+            start,
+            *dst_pos,
+            wire_stroke,
+            parent_rect,
+            state,
+            ui,
+            is_clock,
+        );
+
+        if block_hovered {
+            state.highlighted_positions_next_frame.push(*dst_pos);
+        }
     }
 }
 

@@ -178,7 +178,7 @@
       </pb_type>
       <interconnect>
         <!-- We use a full crossbar to get logical equivalence at inputs of CLB  -->
-        <complete name="crossbar" input="clb.I " output="fle[3:0].in">
+        <complete name="crossbar" input="clb.I fle[3:0].out" output="fle[3:0].in">
           <delay_constant max="5.735000e-11" in_port="clb.I" out_port="fle[3:0].in"/>
           <delay_constant max="5.428000e-11" in_port="fle[3:0].out" out_port="fle[3:0].in"/>
         </complete>

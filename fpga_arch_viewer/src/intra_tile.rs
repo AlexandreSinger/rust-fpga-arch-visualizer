@@ -1102,6 +1102,90 @@ fn draw_wire_segment(
     painter.add(egui::Shape::line(points, stroke));
 }
 
+fn pb_name_from_port(port: &str) -> Option<&str> {
+    port.split('.').next()
+}
+
+fn find_pb_rect<'a>(state: &'a IntraTileState, pb_name: &str) -> Option<&'a egui::Rect> {
+    state
+        .pb_rects
+        .iter()
+        .find(|(k, _)| k.ends_with(pb_name))
+        .map(|(_, r)| r)
+}
+
+fn clock_channel_y_between(
+    state: &IntraTileState,
+    src_pb: &str,
+    dst_pb: &str,
+    default: f32,
+) -> f32 {
+    let src_rect = find_pb_rect(state, src_pb);
+    let dst_rect = find_pb_rect(state, dst_pb);
+
+    match (src_rect, dst_rect) {
+        (Some(sr), Some(dr)) => {
+            // Prefer horizontal routing through overlapping vertical band if available.
+            let overlap_top = sr.min.y.max(dr.min.y);
+            let overlap_bot = sr.max.y.min(dr.max.y);
+            if overlap_bot > overlap_top {
+                (overlap_top + overlap_bot) * 0.5
+            } else {
+                // No overlap; route midway between the two rects vertically.
+                (sr.max.y + dr.min.y) * 0.5
+            }
+        }
+        _ => default,
+    }
+}
+
+fn draw_clock_wire_segment(
+    painter: &egui::Painter,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    stroke: egui::Stroke,
+    parent_rect: egui::Rect,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+    channel_y: f32,
+) {
+    let _ = parent_rect;
+    let mut points = Vec::new();
+    points.push(start);
+    points.push(egui::pos2(start.x, channel_y));
+    points.push(egui::pos2(end.x, channel_y));
+    points.push(end);
+
+    // Minimal hover highlight reuse from draw_wire_segment
+    if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
+        let mut hovered = false;
+        for i in 0..points.len() - 1 {
+            let p1 = points[i];
+            let p2 = points[i + 1];
+            let min_x = p1.x.min(p2.x) - 5.0;
+            let max_x = p1.x.max(p2.x) + 5.0;
+            let min_y = p1.y.min(p2.y) - 5.0;
+            let max_y = p1.y.max(p2.y) + 5.0;
+
+            if pointer_pos.x >= min_x
+                && pointer_pos.x <= max_x
+                && pointer_pos.y >= min_y
+                && pointer_pos.y <= max_y
+            {
+                hovered = true;
+                break;
+            }
+        }
+
+        if hovered {
+            state.highlighted_positions_next_frame.push(start);
+            state.highlighted_positions_next_frame.push(end);
+        }
+    }
+
+    painter.add(egui::Shape::line(points, stroke));
+}
+
 fn draw_direct_connection(
     painter: &egui::Painter,
     src: &str,
@@ -1141,6 +1225,9 @@ fn draw_direct_connection(
             || src.to_lowercase().contains("clock")
             || dst.to_lowercase().contains("clk")
             || dst.to_lowercase().contains("clock");
+
+        // For direct clock links (e.g., ff clk -> ble clk), keep a simple route
+        // using the generic wire segment to avoid long detours.
         draw_wire_segment(
             painter,
             start,
@@ -1241,18 +1328,15 @@ fn draw_complete_interconnect(
             .filter_map(|(s, _)| s.rsplit('.').nth(1).map(|p| p.to_string()))
             .collect();
 
-        let mut sink_rect_min = f32::INFINITY;
         let mut sink_rect_max = f32::NEG_INFINITY;
         for (path, rect) in state.pb_rects.iter() {
             if sink_pb_names.iter().any(|n| path.ends_with(n)) {
-                sink_rect_min = sink_rect_min.min(rect.min.x);
                 sink_rect_max = sink_rect_max.max(rect.max.x);
             }
         }
 
         // Fallback to pin-based span if we couldn't find rects.
-        if !sink_rect_min.is_finite() || !sink_rect_max.is_finite() {
-            sink_rect_min = sink_min_x;
+        if !sink_rect_max.is_finite() {
             sink_rect_max = sink_max_x;
         }
 
@@ -1301,12 +1385,15 @@ fn draw_complete_interconnect(
     let stroke = egui::Stroke::new(1.5, stroke_color);
 
     painter.rect(rect, 3.0, fill_color, stroke);
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "complete",
-        egui::FontId::proportional(11.0),
-        color_scheme::theme_text_color(dark_mode),
+    // Draw a large X across the block instead of text.
+    let x_stroke = egui::Stroke::new(2.0, stroke_color);
+    painter.line_segment([rect.min, rect.max], x_stroke);
+    painter.line_segment(
+        [
+            egui::pos2(rect.min.x, rect.max.y),
+            egui::pos2(rect.max.x, rect.min.y),
+        ],
+        x_stroke,
     );
 
     let source_step = rect.height() / (resolved_sources.len() as f32 + 1.0);
@@ -1328,16 +1415,28 @@ fn draw_complete_interconnect(
 
         let is_clock =
             src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            *src_pos,
-            target,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        if is_clock {
+            // Approach from the left with an extra turn: left offset, then up to target y, then into block.
+            let offset_x = rect.min.x - 10.0;
+            let path = vec![
+                *src_pos,
+                egui::pos2(offset_x, src_pos.y),
+                egui::pos2(offset_x, target.y),
+                target,
+            ];
+            painter.add(egui::Shape::line(path, wire_stroke));
+        } else {
+            draw_wire_segment(
+                painter,
+                *src_pos,
+                target,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if block_hovered {
             state.highlighted_positions_next_frame.push(*src_pos);
@@ -1363,16 +1462,30 @@ fn draw_complete_interconnect(
 
         let is_clock =
             dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            start,
-            *dst_pos,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        if is_clock {
+            let channel_y = dst_pos.y + 5.0;
+            // Add a right-hand offset before heading toward the sink.
+            let offset_x = rect.max.x + 10.0;
+            let path = vec![
+                start,
+                egui::pos2(offset_x, start.y),
+                egui::pos2(offset_x, channel_y),
+                egui::pos2(dst_pos.x, channel_y),
+                *dst_pos,
+            ];
+            painter.add(egui::Shape::line(path, wire_stroke));
+        } else {
+            draw_wire_segment(
+                painter,
+                start,
+                *dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if block_hovered {
             state.highlighted_positions_next_frame.push(*dst_pos);
@@ -1511,16 +1624,34 @@ fn draw_interconnect_block(
         // Check if this is a clock connection by examining source port name
         let is_clock =
             src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            *src_pos,
-            target,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        if is_clock {
+            let default_mid = src_pos.y + (target.y - src_pos.y) * 0.5;
+            let channel_y = match (pb_name_from_port(src_name), Some(current_pb.name.as_str())) {
+                (Some(spb), Some(dpb)) => clock_channel_y_between(state, spb, dpb, default_mid),
+                _ => default_mid,
+            };
+            draw_clock_wire_segment(
+                painter,
+                *src_pos,
+                target,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                channel_y,
+            );
+        } else {
+            draw_wire_segment(
+                painter,
+                *src_pos,
+                target,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(*src_pos);
@@ -1545,16 +1676,34 @@ fn draw_interconnect_block(
         // Check if this is a clock connection by examining sink port name
         let is_clock =
             dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            start,
-            dst_pos,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        if is_clock {
+            let default_mid = start.y + (dst_pos.y - start.y) * 0.5;
+            let channel_y = match (pb_name_from_port(dst_name), Some(current_pb.name.as_str())) {
+                (Some(dpb), Some(spb)) => clock_channel_y_between(state, spb, dpb, default_mid),
+                _ => default_mid,
+            };
+            draw_clock_wire_segment(
+                painter,
+                start,
+                dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                channel_y,
+            );
+        } else {
+            draw_wire_segment(
+                painter,
+                start,
+                dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(dst_pos);

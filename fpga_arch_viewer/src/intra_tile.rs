@@ -1259,21 +1259,6 @@ fn draw_complete_interconnect(
         let center = ((sink_rect_max + parent_rect.max.x) * 0.5)
             .max(parent_rect.min.x + width * 0.5 + 6.0)
             .min(parent_rect.max.x - width * 0.5 - 6.0);
-        // Log which interconnect we are placing plus bounds for troubleshooting.
-        eprintln!(
-            "[clk-complete-debug] pb={} name=clock-complete sources={:?} sinks={:?} source_max_x={:.1} sink_min_x={:.1} sink_max_x={:.1} sink_rect_min={:.1} sink_rect_max={:.1} parent_min_x={:.1} parent_max_x={:.1} chosen_center={:.1}",
-            current_pb.name,
-            sources,
-            sinks,
-            source_max_x,
-            sink_min_x,
-            sink_max_x,
-            sink_rect_min,
-            sink_rect_max,
-            parent_rect.min.x,
-            parent_rect.max.x,
-            center
-        );
         center
     } else {
         // Position the block based on the actual gap between sources and sinks.

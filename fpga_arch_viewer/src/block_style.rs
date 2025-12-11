@@ -63,7 +63,7 @@ pub fn get_default_color_palette() -> Vec<Color32> {
     ]
 }
 
-pub fn get_tile_color(tile_name: &str, tile_index: usize) -> Color32 {
+pub fn get_tile_color(_tile_name: &str, tile_index: usize) -> Color32 {
     let palette = get_default_color_palette();
     palette[tile_index % palette.len()]
 }
@@ -126,10 +126,6 @@ impl DefaultBlockStyles {
         self.lb.color = color_scheme::grid_lb_color(dark_mode);
         self.sb.color = color_scheme::grid_sb_color(dark_mode);
         self.cb.color = color_scheme::grid_cb_color(dark_mode);
-    }
-
-    pub fn all_styles(&self) -> Vec<&BlockStyle> {
-        vec![&self.io, &self.lb, &self.sb, &self.cb]
     }
 }
 

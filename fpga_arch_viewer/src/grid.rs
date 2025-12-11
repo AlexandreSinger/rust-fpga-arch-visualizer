@@ -30,6 +30,7 @@ pub struct DeviceGrid {
 }
 
 impl DeviceGrid {
+    #[allow(dead_code)]
     pub fn new(width: usize, height: usize) -> Self {
         let cells = vec![vec![GridCell::Empty; width]; height];
         Self {
@@ -51,6 +52,7 @@ impl DeviceGrid {
         tile_sizes
     }
 
+    #[allow(dead_code)]
     pub fn from_auto_layout(arch: &FPGAArch, default_size: usize) -> Self {
         let auto_layout = match arch.layouts.first() {
             Some(fpga_arch_parser::Layout::AutoLayout(al)) => al,
@@ -116,6 +118,7 @@ impl DeviceGrid {
         grid
     }
 
+    #[allow(dead_code)]
     fn calculate_dimensions(auto_layout: &AutoLayout, default_size: usize) -> (usize, usize) {
         let aspect_ratio = auto_layout.aspect_ratio;
 

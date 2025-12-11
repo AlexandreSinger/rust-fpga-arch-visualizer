@@ -7,6 +7,7 @@ use crate::grid::DeviceGrid;
 use crate::grid_renderer;
 use crate::intra_tile::IntraTileState;
 use crate::settings;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ViewMode {
@@ -37,6 +38,8 @@ pub struct FpgaViewer {
     aspect_ratio: f32,
     // Currently loaded architecture file path
     loaded_file_path: Option<std::path::PathBuf>,
+    // Tile name to color mapping
+    tile_colors: HashMap<String, egui::Color32>,
     // Parsed architecture (needed for intra-tile view)
     architecture: Option<FPGAArch>,
     // Selected tile for intra-tile view
@@ -50,6 +53,8 @@ pub struct FpgaViewer {
     all_blocks_expanded: bool,
     // Theme setting
     dark_mode: bool,
+    // Selected layout index (for switching between auto/fixed layouts)
+    selected_layout_index: usize,
 }
 
 impl FpgaViewer {
@@ -67,6 +72,7 @@ impl FpgaViewer {
             grid_height: 10,
             aspect_ratio: 1.0,
             loaded_file_path: None,
+            tile_colors: HashMap::new(),
             architecture: None,
             selected_tile_name: None,
             selected_sub_tile_index: 0,
@@ -74,6 +80,7 @@ impl FpgaViewer {
             intra_tile_state: IntraTileState::default(),
             all_blocks_expanded: false,
             dark_mode: false,
+            selected_layout_index: 0,
         }
     }
 
@@ -109,29 +116,51 @@ impl FpgaViewer {
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
             Ok(parsed) => {
-                // Store the parsed architecture for intra-tile view
                 self.architecture = Some(parsed);
+                self.selected_layout_index = 0; // Default to first layout
 
+                // Build tile color mapping and create grid
                 if let Some(arch) = &self.architecture {
-                    if let Some(layout) = arch.layouts.first() {
-                        match layout {
-                            fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                                let default_size = 10;
-                                let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
-                                self.grid_width = grid.width;
-                                self.grid_height = grid.height;
-                                self.aspect_ratio = auto_layout.aspect_ratio;
-                                self.device_grid = Some(grid);
-                                self.loaded_file_path = Some(file_path);
-                                println!("Successfully loaded architecture file");
-                            }
-                            fpga_arch_parser::Layout::FixedLayout(_fixed_layout) => {
-                                eprintln!("FixedLayout not yet supported");
+                    // Collect all tile names from all layouts
+                    let mut tile_names = std::collections::HashSet::new();
+                    let num_layouts = arch.layouts.len();
+                    for layout in &arch.layouts {
+                        let grid_locations = match layout {
+                            fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
+                            fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
+                        };
+
+                        for location in grid_locations {
+                            let pb_type = match location {
+                                fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
+                                fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
+                                fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
+                                fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
+                                fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
+                                fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
+                                fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
+                            };
+                            if pb_type != "EMPTY" {
+                                tile_names.insert(pb_type.clone());
                             }
                         }
-                    } else {
-                        eprintln!("No layouts found in architecture file");
                     }
+
+                    // Assign colors to tiles
+                    self.tile_colors.clear();
+                    let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
+                    sorted_tiles.sort(); // Sort for consistent ordering
+                    let num_tiles = sorted_tiles.len();
+                    for (i, tile_name) in sorted_tiles.iter().enumerate() {
+                        let color = crate::block_style::get_tile_color(tile_name, i);
+                        self.tile_colors.insert(tile_name.clone(), color);
+                    }
+
+                    // Create the grid based on first layout
+                    self.rebuild_grid();
+                    self.loaded_file_path = Some(file_path);
+                    println!("Successfully loaded architecture file with {} tile types and {} layouts",
+                             num_tiles, num_layouts);
                 }
             }
             Err(e) => {
@@ -150,22 +179,28 @@ impl FpgaViewer {
         }
     }
 
-    // Rebuild the grid with new dimensions based on current architecture
+    // Rebuild the grid with new dimensions based on current architecture and selected layout
     fn rebuild_grid(&mut self) {
-        if let Some(file_path) = &self.loaded_file_path.clone() {
-            if let Ok(parsed) = fpga_arch_parser::parse(file_path) {
-                if let Some(layout) = parsed.layouts.first() {
-                    match layout {
-                        fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                            // Calculate default_size based on which dimension user is controlling
-                            // Use the larger dimension as the default_size
-                            let default_size = self.grid_width.max(self.grid_height);
-                            let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
-                            self.device_grid = Some(grid);
-                        }
-                        _ => {}
+        if let Some(arch) = &self.architecture {
+            if let Some(layout) = arch.layouts.get(self.selected_layout_index) {
+                let grid = match layout {
+                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                        // For AutoLayout, use user-specified dimensions
+                        self.aspect_ratio = auto_layout.aspect_ratio;
+                        DeviceGrid::from_auto_layout_with_dimensions(
+                            arch,
+                            self.grid_width,
+                            self.grid_height,
+                        )
                     }
-                }
+                    fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
+                        // For FixedLayout, use layout's fixed dimensions
+                        self.grid_width = fixed_layout.width as usize;
+                        self.grid_height = fixed_layout.height as usize;
+                        DeviceGrid::from_fixed_layout(arch, self.selected_layout_index)
+                    }
+                };
+                self.device_grid = Some(grid);
             }
         }
     }
@@ -254,6 +289,18 @@ impl FpgaViewer {
         self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
             .round()
             .max(1.0) as usize;
+    }
+
+    fn get_layout_name(&self) -> String {
+        if let Some(arch) = &self.architecture {
+            if let Some(layout) = arch.layouts.get(self.selected_layout_index) {
+                return match layout {
+                    fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
+                    fpga_arch_parser::Layout::FixedLayout(fl) => format!("Fixed: {}", fl.name),
+                };
+            }
+        }
+        "No Layout".to_string()
     }
 }
 
@@ -413,7 +460,44 @@ impl eframe::App for FpgaViewer {
                     ui.heading("Grid Settings");
                     ui.add_space(10.0);
 
-                    ui.label("Adjust dimensions while maintaining aspect ratio:");
+                    // Layout selection dropdown
+                    if let Some(arch) = &self.architecture {
+                        if arch.layouts.len() > 1 {
+                            ui.label("Layout:");
+                            let mut layout_changed = false;
+                            egui::ComboBox::from_id_source("layout_selector")
+                                .selected_text(self.get_layout_name())
+                                .show_ui(ui, |ui| {
+                                    for (idx, layout) in arch.layouts.iter().enumerate() {
+                                        let layout_name = match layout {
+                                            fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
+                                            fpga_arch_parser::Layout::FixedLayout(fl) => format!("Fixed: {}", fl.name),
+                                        };
+                                        if ui.selectable_value(&mut self.selected_layout_index, idx, layout_name).clicked() {
+                                            layout_changed = true;
+                                        }
+                                    }
+                                });
+
+                            if layout_changed {
+                                self.rebuild_grid();
+                            }
+                            ui.add_space(10.0);
+                        }
+                    }
+
+                    // Check if current layout is fixed
+                    let is_fixed_layout = if let Some(arch) = &self.architecture {
+                        matches!(arch.layouts.get(self.selected_layout_index), Some(fpga_arch_parser::Layout::FixedLayout(_)))
+                    } else {
+                        false
+                    };
+
+                    ui.label(if is_fixed_layout {
+                        "Dimensions (Fixed by layout):"
+                    } else {
+                        "Adjust dimensions while maintaining aspect ratio:"
+                    });
                     ui.add_space(10.0);
 
                     let mut grid_changed = false;
@@ -421,41 +505,45 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("Width:");
                         let mut temp_width = self.grid_width as f64;
-                        if ui
-                            .add(
-                                egui::Slider::new(&mut temp_width, 1.0..=100.0)
-                                    .step_by(1.0)
-                                    .show_value(false),
-                            )
-                            .changed()
-                        {
-                            let new_width = temp_width.round() as usize;
-                            if new_width != self.grid_width && new_width >= 1 {
-                                self.grid_width = new_width;
-                                self.update_grid_height_from_width();
-                                grid_changed = true;
-                            }
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("       ");
-                        let mut width_text = self.grid_width.to_string();
-                        if ui
-                            .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
-                            .changed()
-                        {
-                            if let Ok(new_width) = width_text.parse::<usize>() {
-                                if new_width >= 1
-                                    && new_width <= 100
-                                    && new_width != self.grid_width
-                                {
+                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut temp_width, 1.0..=100.0)
+                                        .step_by(1.0)
+                                        .show_value(false),
+                                )
+                                .changed()
+                            {
+                                let new_width = temp_width.round() as usize;
+                                if new_width != self.grid_width && new_width >= 1 {
                                     self.grid_width = new_width;
                                     self.update_grid_height_from_width();
                                     grid_changed = true;
                                 }
                             }
-                        }
+                        });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("       ");
+                        let mut width_text = self.grid_width.to_string();
+                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
+                            if ui
+                                .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
+                                .changed()
+                            {
+                                if let Ok(new_width) = width_text.parse::<usize>() {
+                                    if new_width >= 1
+                                        && new_width <= 100
+                                        && new_width != self.grid_width
+                                    {
+                                        self.grid_width = new_width;
+                                        self.update_grid_height_from_width();
+                                        grid_changed = true;
+                                    }
+                                }
+                            }
+                        });
                     });
 
                     ui.add_space(10.0);
@@ -463,41 +551,45 @@ impl eframe::App for FpgaViewer {
                     ui.horizontal(|ui| {
                         ui.label("Height:");
                         let mut temp_height = self.grid_height as f64;
-                        if ui
-                            .add(
-                                egui::Slider::new(&mut temp_height, 1.0..=100.0)
-                                    .step_by(1.0)
-                                    .show_value(false),
-                            )
-                            .changed()
-                        {
-                            let new_height = temp_height.round() as usize;
-                            if new_height != self.grid_height && new_height >= 1 {
-                                self.grid_height = new_height;
-                                self.update_grid_width_from_height();
-                                grid_changed = true;
-                            }
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("       ");
-                        let mut height_text = self.grid_height.to_string();
-                        if ui
-                            .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
-                            .changed()
-                        {
-                            if let Ok(new_height) = height_text.parse::<usize>() {
-                                if new_height >= 1
-                                    && new_height <= 100
-                                    && new_height != self.grid_height
-                                {
+                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut temp_height, 1.0..=100.0)
+                                        .step_by(1.0)
+                                        .show_value(false),
+                                )
+                                .changed()
+                            {
+                                let new_height = temp_height.round() as usize;
+                                if new_height != self.grid_height && new_height >= 1 {
                                     self.grid_height = new_height;
                                     self.update_grid_width_from_height();
                                     grid_changed = true;
                                 }
                             }
-                        }
+                        });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("       ");
+                        let mut height_text = self.grid_height.to_string();
+                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
+                            if ui
+                                .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
+                                .changed()
+                            {
+                                if let Ok(new_height) = height_text.parse::<usize>() {
+                                    if new_height >= 1
+                                        && new_height <= 100
+                                        && new_height != self.grid_height
+                                    {
+                                        self.grid_height = new_height;
+                                        self.update_grid_width_from_height();
+                                        grid_changed = true;
+                                    }
+                                }
+                            }
+                        });
                     });
 
                     ui.add_space(15.0);
@@ -589,7 +681,7 @@ impl eframe::App for FpgaViewer {
                         ViewMode::InterTile => {
                             if let Some(grid) = &self.device_grid {
                                 // Check if a tile was clicked
-                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles, self.dark_mode) {
+                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles, &self.tile_colors, self.dark_mode) {
                                     self.selected_tile_name = Some(clicked_tile);
                                     self.selected_sub_tile_index = 0;
                                     self.view_mode = ViewMode::IntraTile;

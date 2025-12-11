@@ -28,6 +28,7 @@ pub struct IntraTileState {
     pub highlighted_positions_next_frame: Vec<egui::Pos2>,
     pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
+    pub pb_rects: HashMap<String, egui::Rect>,
 }
 
 fn render_hierarchy_tree_panel(
@@ -159,6 +160,9 @@ pub fn render_intra_tile_view(
     expand_all: bool,
     dark_mode: bool,
 ) {
+    // Clear per-frame PB rects before drawing
+    state.pb_rects.clear();
+
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
     ui.heading(format!("Tile: {}", tile.name));
@@ -658,6 +662,9 @@ fn draw_pb_type(
 ) -> HashMap<String, egui::Pos2> {
     let size = measure_pb_type(pb_type, state, instance_path);
     let rect = egui::Rect::from_min_size(pos, size);
+
+    // Record this PB's rect for downstream placement (e.g., interconnect boxes)
+    state.pb_rects.insert(instance_path.to_string(), rect);
 
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
     let children = get_children_for_mode(pb_type, mode_index);
@@ -1217,8 +1224,9 @@ fn draw_complete_interconnect(
         .min(available_height);
     let width = 55.0;
 
-    // Special-case clock crossbars: place them to the right of the sink cluster
-    // (e.g., to the right of the fle) so they don't overlap BLEs on the left.
+    // Special-case clock crossbars: place them in the gap between the source
+    // cluster (clb clk pins) and the sink cluster (fle clk pins), based on
+    // their bounding edges rather than a fixed offset.
     let is_clock_block = resolved_sources
         .iter()
         .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"))
@@ -1227,11 +1235,46 @@ fn draw_complete_interconnect(
             .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"));
 
     let block_center_x = if is_clock_block {
-        let margin = 40.0;
-        let desired = sink_max_x + margin + width * 0.5;
-        desired
+        // Try to derive the sink PB bounds from recorded rects.
+        let sink_pb_names: Vec<String> = resolved_sinks
+            .iter()
+            .filter_map(|(s, _)| s.rsplit('.').nth(1).map(|p| p.to_string()))
+            .collect();
+
+        let mut sink_rect_min = f32::INFINITY;
+        let mut sink_rect_max = f32::NEG_INFINITY;
+        for (path, rect) in state.pb_rects.iter() {
+            if sink_pb_names.iter().any(|n| path.ends_with(n)) {
+                sink_rect_min = sink_rect_min.min(rect.min.x);
+                sink_rect_max = sink_rect_max.max(rect.max.x);
+            }
+        }
+
+        // Fallback to pin-based span if we couldn't find rects.
+        if !sink_rect_min.is_finite() || !sink_rect_max.is_finite() {
+            sink_rect_min = sink_min_x;
+            sink_rect_max = sink_max_x;
+        }
+
+        let center = ((sink_rect_max + parent_rect.max.x) * 0.5)
             .max(parent_rect.min.x + width * 0.5 + 6.0)
-            .min(parent_rect.max.x - width * 0.5 - 6.0)
+            .min(parent_rect.max.x - width * 0.5 - 6.0);
+        // Log which interconnect we are placing plus bounds for troubleshooting.
+        eprintln!(
+            "[clk-complete-debug] pb={} name=clock-complete sources={:?} sinks={:?} source_max_x={:.1} sink_min_x={:.1} sink_max_x={:.1} sink_rect_min={:.1} sink_rect_max={:.1} parent_min_x={:.1} parent_max_x={:.1} chosen_center={:.1}",
+            current_pb.name,
+            sources,
+            sinks,
+            source_max_x,
+            sink_min_x,
+            sink_max_x,
+            sink_rect_min,
+            sink_rect_max,
+            parent_rect.min.x,
+            parent_rect.max.x,
+            center
+        );
+        center
     } else {
         // Position the block based on the actual gap between sources and sinks.
         let gap = sink_min_x - source_max_x;

@@ -149,7 +149,7 @@ impl FpgaViewer {
 
                                 // Create the grid
                                 let default_size = 10;
-                                let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
+                                let grid = DeviceGrid::from_auto_layout(arch, default_size);
                                 self.grid_width = grid.width;
                                 self.grid_height = grid.height;
                                 self.aspect_ratio = auto_layout.aspect_ratio;
@@ -184,21 +184,15 @@ impl FpgaViewer {
 
     // Rebuild the grid with new dimensions based on current architecture
     fn rebuild_grid(&mut self) {
-        if let Some(file_path) = &self.loaded_file_path.clone() {
-            if let Ok(parsed) = fpga_arch_parser::parse(file_path) {
-                if let Some(layout) = parsed.layouts.first() {
-                    match layout {
-                        fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                            // Calculate default_size based on which dimension user is controlling
-                            // Use the larger dimension as the default_size
-                            let default_size = self.grid_width.max(self.grid_height);
-                            let grid = DeviceGrid::from_auto_layout(auto_layout, default_size);
-                            self.device_grid = Some(grid);
-                        }
-                        _ => {}
-                    }
-                }
-            }
+        // Use the stored architecture instead of re-parsing
+        if let Some(arch) = &self.architecture {
+            // Create grid with user's explicit width and height
+            let grid = DeviceGrid::from_auto_layout_with_dimensions(
+                arch,
+                self.grid_width,
+                self.grid_height,
+            );
+            self.device_grid = Some(grid);
         }
     }
 

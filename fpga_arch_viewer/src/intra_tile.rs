@@ -17,6 +17,12 @@ const PADDING: f32 = 50.0;
 const HEADER_HEIGHT: f32 = 35.0;
 const MIN_BLOCK_SIZE: egui::Vec2 = egui::vec2(80.0, 120.0);
 const MIN_PIN_SPACING: f32 = 25.0;
+// Extra gutter between a parent PB and its children when mux blocks are present.
+// This gives muxes space to sit without crowding child pins (notably in z1010 CLBs).
+const MUX_GUTTER: f32 = 70.0;
+// Only enable the mux gutter for "dense" mux regions; a single mux (e.g. k4_N4 mux1)
+// shouldn't push children around and change local routing aesthetics.
+const MUX_GUTTER_MIN_MUXES: usize = 4;
 
 // ------------------------------------------------------------
 // Intra Tile Drawing Entry Point
@@ -624,6 +630,16 @@ fn measure_pb_type(
         .iter()
         .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
 
+    let mux_count = get_interconnects_for_mode(pb_type, mode_index)
+        .iter()
+        .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+        .count();
+    let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
+        MUX_GUTTER * zoom
+    } else {
+        0.0
+    };
+
     let complete_spacing = if has_complete_interconnect && !is_clock_complete {
         180.0 * zoom
     } else {
@@ -650,7 +666,8 @@ fn measure_pb_type(
         .max(MIN_BLOCK_SIZE.x * zoom)
         .max(header_name_width_with_selector)
         .max(blif_model_width)
-        .max(total_w + complete_spacing + (PADDING * zoom) * 2.0);
+        .max(total_w + complete_spacing + mux_gutter + (PADDING * zoom) * 2.0)
+        .max(total_w + mux_gutter + (PADDING * zoom) * 2.0);
     let h = ((HEADER_HEIGHT * zoom) + (PADDING * zoom) + total_h + (PADDING * zoom))
         .max(MIN_BLOCK_SIZE.y * zoom)
         .max(min_port_height);
@@ -1165,7 +1182,17 @@ fn draw_pb_type(
             0.0
         };
 
-        let start_x = rect.min.x + (PADDING * zoom) + complete_spacing;
+        let mux_count = get_interconnects_for_mode(pb_type, mode_index)
+            .iter()
+            .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+            .count();
+        let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
+            MUX_GUTTER * zoom
+        } else {
+            0.0
+        };
+
+        let start_x = rect.min.x + (PADDING * zoom) + mux_gutter + complete_spacing;
         let start_y = rect.min.y + (HEADER_HEIGHT * zoom) + (PADDING * zoom);
 
         let mut cursor_x = start_x;
@@ -1901,6 +1928,7 @@ fn draw_interconnect_block(
     dark_mode: bool,
 ) {
     let zoom = state.zoom_clamped();
+
     let mut valid_sinks = Vec::new();
     for dst in sinks {
         if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
@@ -1937,8 +1965,36 @@ fn draw_interconnect_block(
     let spread = sink_spread.max(input_spread);
     let height = (spread + 20.0 * zoom).max(40.0 * zoom).min(150.0 * zoom);
 
-    let block_center = egui::pos2(min_x - 50.0 * zoom, avg_y);
+    // Place the interconnect block slightly left of its sink pins, but clamp it
+    // within the parent PB rect so it never gets clipped by the canvas/painter.
+    let desired_center_x = min_x - 50.0 * zoom;
+    let center_x = desired_center_x.clamp(
+        parent_rect.min.x + width * 0.5 + 4.0 * zoom,
+        parent_rect.max.x - width * 0.5 - 4.0 * zoom,
+    );
+    let block_center = egui::pos2(center_x, avg_y);
     let rect = egui::Rect::from_center_size(block_center, egui::vec2(width, height));
+
+    // For sources that sit to the right of this interconnect block (very common in z1010),
+    // route them via a top rail to avoid long horizontal segments cutting across many blocks.
+    let top_rail_y = {
+        let mut min_child_y = f32::INFINITY;
+        for (_, r) in state.pb_rects.iter() {
+            // Only consider children that are inside this parent PB rect.
+            if parent_rect.contains(r.center()) {
+                min_child_y = min_child_y.min(r.min.y);
+            }
+        }
+        let padding = 10.0 * zoom;
+        let mut y = if min_child_y.is_finite() {
+            min_child_y - padding
+        } else {
+            // Fallback: just above the interconnect block.
+            rect.min.y - padding
+        };
+        y = y.max(parent_rect.min.y + 2.0 * zoom);
+        y
+    };
 
     let mut block_hovered = false;
     if ui.rect_contains_pointer(rect) {
@@ -2035,16 +2091,30 @@ fn draw_interconnect_block(
                 channel_y,
             );
         } else {
-            draw_wire_segment(
-                painter,
-                *src_pos,
-                target,
-                wire_stroke,
-                parent_rect,
-                state,
-                ui,
-                is_clock,
-            );
+            // If the source is to the right of the mux/X block, avoid a mid-y horizontal
+            // run across the whole cluster by routing via a top rail.
+            if src_pos.x > rect.min.x {
+                let offset_x = rect.min.x - 10.0 * zoom;
+                let path = vec![
+                    *src_pos,
+                    egui::pos2(src_pos.x, top_rail_y),
+                    egui::pos2(offset_x, top_rail_y),
+                    egui::pos2(offset_x, target.y),
+                    target,
+                ];
+                painter.add(egui::Shape::line(path, wire_stroke));
+            } else {
+                draw_wire_segment(
+                    painter,
+                    *src_pos,
+                    target,
+                    wire_stroke,
+                    parent_rect,
+                    state,
+                    ui,
+                    is_clock,
+                );
+            }
         }
 
         if ui.rect_contains_pointer(rect) {

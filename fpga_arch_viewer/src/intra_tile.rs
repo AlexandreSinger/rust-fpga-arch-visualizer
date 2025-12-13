@@ -168,6 +168,7 @@ fn render_visual_layout_canvas(
     state: &mut IntraTileState,
     sub_tile_index: usize,
     expand_all: bool,
+    draw_interconnects: bool,
     dark_mode: bool,
 ) {
     egui::ScrollArea::both()
@@ -242,6 +243,7 @@ fn render_visual_layout_canvas(
                             &root_pb.name,
                             ui,
                             expand_all,
+                            draw_interconnects,
                             dark_mode,
                         );
                     } else {
@@ -280,6 +282,7 @@ pub fn render_intra_tile_view(
     show_hierarchy_tree: bool,
     sub_tile_index: usize,
     expand_all: bool,
+    draw_interconnects: bool,
     dark_mode: bool,
 ) {
     // Clear per-frame PB rects before drawing
@@ -319,6 +322,7 @@ pub fn render_intra_tile_view(
                 state,
                 sub_tile_index,
                 expand_all,
+                draw_interconnects,
                 dark_mode,
             );
         });
@@ -326,7 +330,7 @@ pub fn render_intra_tile_view(
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
         render_visual_layout_controls(ui, state);
-        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, dark_mode);
+        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, draw_interconnects, dark_mode);
     }
 }
 
@@ -1004,6 +1008,7 @@ fn draw_pb_type(
     instance_path: &str,
     ui: &mut egui::Ui,
     expand_all: bool,
+    draw_interconnects: bool,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
     let zoom = state.zoom_clamped();
@@ -1012,7 +1017,6 @@ fn draw_pb_type(
 
     // Record this PB's rect for downstream placement (e.g., interconnect boxes)
     state.pb_rects.insert(instance_path.to_string(), rect);
-
     let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
     mode_index = validate_mode_index(pb_type, mode_index);
     // Update state with validated mode index if it was corrected
@@ -1216,6 +1220,7 @@ fn draw_pb_type(
                     &child_path,
                     ui,
                     expand_all,
+                    draw_interconnects,
                     dark_mode,
                 );
 
@@ -1236,7 +1241,7 @@ fn draw_pb_type(
         }
     }
 
-    if has_children && is_expanded {
+    if draw_interconnects && has_children && is_expanded {
         let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
@@ -1654,7 +1659,6 @@ fn draw_complete_interconnect(
         return;
     }
 
-    // Combine for calculations that need all sources
     let resolved_sources: Vec<_> = source_groups[0].clone();
 
     if resolved_sources.is_empty() || resolved_sinks.is_empty() {

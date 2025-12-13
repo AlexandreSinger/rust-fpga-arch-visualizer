@@ -1253,12 +1253,51 @@ fn draw_complete_interconnect(
     parent_rect: egui::Rect,
     dark_mode: bool,
 ) {
-    let mut resolved_sources = Vec::new();
+    // Resolve sources and group by prefix (e.g., "clb", "fle")
+    let mut source_groups: Vec<Vec<(String, egui::Pos2)>> = Vec::new();
+    let mut current_group: Option<(String, Vec<(String, egui::Pos2)>)> = None;
+
     for src in sources {
         if let Some(pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
-            resolved_sources.push((src, pos));
+            // Extract prefix: everything before first '.' or '['
+            let prefix = src
+                .split(|c| c == '.' || c == '[')
+                .next()
+                .unwrap_or(src)
+                .to_string();
+
+            match current_group.as_mut() {
+                Some((last_prefix, group)) if *last_prefix == prefix => {
+                    // Same prefix, add to current group
+                    group.push((src.clone(), pos));
+                }
+                _ => {
+                    // New prefix, start a new group
+                    if let Some((_, group)) = current_group.take() {
+                        source_groups.push(group);
+                    }
+                    current_group = Some((prefix.clone(), vec![(src.clone(), pos)]));
+                }
+            }
         }
     }
+    // Push the last group
+    if let Some((_, group)) = current_group {
+        source_groups.push(group);
+    }
+
+    // // Extract clb and fle groups for backward compatibility
+    // let mut clb_sources = source_groups[0].clone();
+    // let mut fle_sources = Vec::new();
+    // for group in &source_groups {
+    //     if let Some((first_name, _)) = group.first() {
+    //         if first_name.starts_with("clb") {
+    //             clb_sources = group.clone();
+    //         } else if first_name.starts_with("fle") {
+    //             fle_sources = group.clone();
+    //         }
+    //     }
+    // }
 
     let mut resolved_sinks = Vec::new();
     for dst in sinks {
@@ -1267,16 +1306,21 @@ fn draw_complete_interconnect(
         }
     }
 
+    // Combine for calculations that need all sources
+    let resolved_sources: Vec<_> = source_groups[0].clone();
+
     if resolved_sources.is_empty() || resolved_sinks.is_empty() {
         return;
     }
 
-    // Order endpoints top-to-bottom to reduce visual crossings
-    resolved_sources.sort_by(|a, b| {
-        a.1.y
-            .partial_cmp(&b.1.y)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    for group in &mut source_groups {
+        group.sort_by(|a, b| {
+            a.1.y
+                .partial_cmp(&b.1.y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
     resolved_sinks.sort_by(|a, b| {
         a.1.y
             .partial_cmp(&b.1.y)
@@ -1396,53 +1440,87 @@ fn draw_complete_interconnect(
         x_stroke,
     );
 
-    let source_step = rect.height() / (resolved_sources.len() as f32 + 1.0);
-    for (i, (src_name, src_pos)) in resolved_sources.iter().enumerate() {
-        let y = rect.min.y + source_step * (i as f32 + 1.0);
-        let target = egui::pos2(rect.min.x, y);
-
-        let wire_highlighted = is_block_highlighted
-            || state
-                .highlighted_positions_this_frame
-                .iter()
-                .any(|p| p.distance(*src_pos) < 1.0);
-        let wire_color = if wire_highlighted {
-            color_scheme::HIGHLIGHT_COLOR
+    for group in &mut source_groups {
+        let clb_step = if group.is_empty() {
+            rect.height()
         } else {
-            color_scheme::theme_interconnect_bg(dark_mode)
+            (rect.height() / (group.len() as f32 + 1.0)).max(20.0)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
-        let is_clock =
-            src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
-        if is_clock {
-            // Approach from the left with an extra turn: left offset, then up to target y, then into block.
-            let offset_x = rect.min.x - 10.0;
-            let path = vec![
-                *src_pos,
-                egui::pos2(offset_x, src_pos.y),
-                egui::pos2(offset_x, target.y),
-                target,
-            ];
-            painter.add(egui::Shape::line(path, wire_stroke));
-        } else {
-            draw_wire_segment(
-                painter,
-                *src_pos,
-                target,
-                wire_stroke,
-                parent_rect,
-                state,
-                ui,
-                is_clock,
-            );
-        }
+        for (i, (src_name, src_pos)) in group.iter().enumerate() {
+            let y = rect.min.y + clb_step * (i as f32 + 1.0);
+            let target = egui::pos2(rect.min.x, y);
 
-        if block_hovered {
-            state.highlighted_positions_next_frame.push(*src_pos);
+            let wire_highlighted = is_block_highlighted
+                || state
+                    .highlighted_positions_this_frame
+                    .iter()
+                    .any(|p| p.distance(*src_pos) < 1.0);
+            let wire_color = if wire_highlighted {
+                color_scheme::HIGHLIGHT_COLOR
+            } else {
+                color_scheme::theme_interconnect_bg(dark_mode)
+            };
+            let wire_stroke = egui::Stroke::new(1.5, wire_color);
+
+            let is_clock = src_name.to_lowercase().contains("clk")
+                || src_name.to_lowercase().contains("clock");
+            if is_clock {
+                // Approach from the left with an extra turn: left offset, then up to target y, then into block.
+                let offset_x = rect.min.x - 10.0;
+                let path = vec![
+                    *src_pos,
+                    egui::pos2(offset_x, src_pos.y),
+                    egui::pos2(offset_x, target.y),
+                    target,
+                ];
+                painter.add(egui::Shape::line(path, wire_stroke));
+            } else {
+                // Special-case only when the source sits to the right of the interconnect:
+                // route via a top rail (using fle top minus padding) to avoid cutting across the block.
+                if src_pos.x > rect.min.x {
+                    // Route: up to top rail, left, down, then right horizontally to interconnect edge
+                    let mut fle_top = f32::INFINITY;
+                    for (path, r) in state.pb_rects.iter() {
+                        if path.contains(".fle[") || path.ends_with("fle") {
+                            fle_top = fle_top.min(r.min.y);
+                        }
+                    }
+                    let padding = 10.0;
+                    let mut top_y = fle_top - padding;
+                    if !top_y.is_finite() {
+                        top_y = rect.min.y - padding; // fallback
+                    }
+                    top_y = top_y.max(parent_rect.min.y + 2.0);
+
+                    let offset_x = rect.min.x - 10.0;
+                    let path = vec![
+                        *src_pos,
+                        egui::pos2(src_pos.x, top_y),
+                        egui::pos2(offset_x, top_y),
+                        egui::pos2(offset_x, target.y),
+                        target,
+                    ];
+                    painter.add(egui::Shape::line(path, wire_stroke));
+                } else {
+                    draw_wire_segment(
+                        painter,
+                        *src_pos,
+                        target,
+                        wire_stroke,
+                        parent_rect,
+                        state,
+                        ui,
+                        is_clock,
+                    );
+                }
+            }
+
+            if block_hovered {
+                state.highlighted_positions_next_frame.push(*src_pos);
+            }
         }
     }
-
     let sink_step = rect.height() / (resolved_sinks.len() as f32 + 1.0);
     for (i, (dst_name, dst_pos)) in resolved_sinks.iter().enumerate() {
         let y = rect.min.y + sink_step * (i as f32 + 1.0);

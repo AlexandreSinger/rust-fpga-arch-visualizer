@@ -38,6 +38,8 @@ pub struct FpgaViewer {
     aspect_ratio: f32,
     // Currently loaded architecture file path
     loaded_file_path: Option<std::path::PathBuf>,
+    // Cache the last window title we set.
+    window_title: String,
     // Tile name to color mapping
     tile_colors: HashMap<String, egui::Color32>,
     // Parsed architecture (needed for intra-tile view)
@@ -72,6 +74,7 @@ impl FpgaViewer {
             grid_height: 10,
             aspect_ratio: 1.0,
             loaded_file_path: None,
+            window_title: "FPGA Architecture Visualizer".to_string(),
             tile_colors: HashMap::new(),
             architecture: None,
             selected_tile_name: None,
@@ -81,6 +84,20 @@ impl FpgaViewer {
             all_blocks_expanded: false,
             dark_mode: false,
             selected_layout_index: 0,
+        }
+    }
+
+    fn loaded_arch_filename(&self) -> Option<String> {
+        self.loaded_file_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|s| s.to_string_lossy().to_string())
+    }
+
+    fn desired_window_title(&self) -> String {
+        match self.loaded_arch_filename() {
+            Some(name) if !name.is_empty() => format!("FPGA Architecture Visualizer - {name}"),
+            _ => "FPGA Architecture Visualizer".to_string(),
         }
     }
 
@@ -159,8 +176,10 @@ impl FpgaViewer {
                     // Create the grid based on first layout
                     self.rebuild_grid();
                     self.loaded_file_path = Some(file_path);
-                    println!("Successfully loaded architecture file with {} tile types and {} layouts",
-                             num_tiles, num_layouts);
+                    println!(
+                        "Successfully loaded architecture file with {} tile types and {} layouts",
+                        num_tiles, num_layouts
+                    );
                 }
             }
             Err(e) => {
@@ -313,6 +332,13 @@ impl eframe::App for FpgaViewer {
             ctx.set_visuals(egui::Visuals::light());
         }
 
+        // Keep the window title in sync with the loaded architecture file.
+        let desired_title = self.desired_window_title();
+        if desired_title != self.window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(desired_title.clone()));
+            self.window_title = desired_title;
+        }
+
         self.block_styles.update_colors(self.dark_mode);
 
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -343,6 +369,15 @@ impl eframe::App for FpgaViewer {
                     if ui.button("About").clicked() {
                         self.show_about = true;
                         ui.close_menu();
+                    }
+                });
+
+                // Show loaded architecture filename on the far right.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(name) = self.loaded_arch_filename() {
+                        ui.label(egui::RichText::new(name).strong());
+                    } else {
+                        ui.label(egui::RichText::new("No file loaded").weak());
                     }
                 });
             });
@@ -470,10 +505,21 @@ impl eframe::App for FpgaViewer {
                                 .show_ui(ui, |ui| {
                                     for (idx, layout) in arch.layouts.iter().enumerate() {
                                         let layout_name = match layout {
-                                            fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
-                                            fpga_arch_parser::Layout::FixedLayout(fl) => format!("Fixed: {}", fl.name),
+                                            fpga_arch_parser::Layout::AutoLayout(_) => {
+                                                "Auto Layout".to_string()
+                                            }
+                                            fpga_arch_parser::Layout::FixedLayout(fl) => {
+                                                format!("Fixed: {}", fl.name)
+                                            }
                                         };
-                                        if ui.selectable_value(&mut self.selected_layout_index, idx, layout_name).clicked() {
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.selected_layout_index,
+                                                idx,
+                                                layout_name,
+                                            )
+                                            .clicked()
+                                        {
                                             layout_changed = true;
                                         }
                                     }
@@ -488,7 +534,10 @@ impl eframe::App for FpgaViewer {
 
                     // Check if current layout is fixed
                     let is_fixed_layout = if let Some(arch) = &self.architecture {
-                        matches!(arch.layouts.get(self.selected_layout_index), Some(fpga_arch_parser::Layout::FixedLayout(_)))
+                        matches!(
+                            arch.layouts.get(self.selected_layout_index),
+                            Some(fpga_arch_parser::Layout::FixedLayout(_))
+                        )
                     } else {
                         false
                     };
@@ -529,7 +578,9 @@ impl eframe::App for FpgaViewer {
                         let mut width_text = self.grid_width.to_string();
                         ui.add_enabled_ui(!is_fixed_layout, |ui| {
                             if ui
-                                .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
+                                .add(
+                                    egui::TextEdit::singleline(&mut width_text).desired_width(60.0),
+                                )
                                 .changed()
                             {
                                 if let Ok(new_width) = width_text.parse::<usize>() {
@@ -575,7 +626,10 @@ impl eframe::App for FpgaViewer {
                         let mut height_text = self.grid_height.to_string();
                         ui.add_enabled_ui(!is_fixed_layout, |ui| {
                             if ui
-                                .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
+                                .add(
+                                    egui::TextEdit::singleline(&mut height_text)
+                                        .desired_width(60.0),
+                                )
                                 .changed()
                             {
                                 if let Ok(new_height) = height_text.parse::<usize>() {
@@ -753,7 +807,9 @@ impl eframe::App for FpgaViewer {
                         ui.add_space(10.0);
                         ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                         ui.add_space(10.0);
-                        ui.label("A Rust-based visualizer for VTR FPGA architecture description files.");
+                        ui.label(
+                            "A Rust-based visualizer for VTR FPGA architecture description files.",
+                        );
                         ui.add_space(10.0);
                         ui.label("All rights reserved?");
                         ui.add_space(20.0);

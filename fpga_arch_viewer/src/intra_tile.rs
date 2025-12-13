@@ -21,7 +21,6 @@ const MIN_PIN_SPACING: f32 = 25.0;
 // ------------------------------------------------------------
 // Intra Tile Drawing Entry Point
 // ------------------------------------------------------------
-#[derive(Default)]
 pub struct IntraTileState {
     pub selected_modes: HashMap<String, usize>,
     pub highlighted_positions_this_frame: Vec<egui::Pos2>,
@@ -29,8 +28,63 @@ pub struct IntraTileState {
     pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
     pub pb_rects: HashMap<String, egui::Rect>,
+    /// Zoom factor for the intra-tile canvas (1.0 = 100%).
+    pub zoom: f32,
     // Cache for PBType measurements: (instance_path, is_expanded, mode_index) -> size
     measurement_cache: HashMap<(String, bool, usize), egui::Vec2>,
+}
+
+impl Default for IntraTileState {
+    fn default() -> Self {
+        Self {
+            selected_modes: HashMap::new(),
+            highlighted_positions_this_frame: Vec::new(),
+            highlighted_positions_next_frame: Vec::new(),
+            hierarchy_tree_height: None,
+            expanded_blocks: HashSet::new(),
+            pb_rects: HashMap::new(),
+            zoom: 1.0,
+            measurement_cache: HashMap::new(),
+        }
+    }
+}
+
+impl IntraTileState {
+    pub(crate) fn zoom_clamped(&self) -> f32 {
+        self.zoom.clamp(0.2, 4.0)
+    }
+}
+
+fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::Style> {
+    let old = ui.style().clone(); // Arc<Style>
+    if (zoom - 1.0).abs() < f32::EPSILON {
+        return old;
+    }
+
+    let mut style: egui::Style = (*old).clone();
+
+    // Scale fonts used by widgets (ComboBox, labels, etc.) inside this UI scope.
+    style.text_styles = style
+        .text_styles
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                egui::FontId::new(v.size * zoom, v.family.clone()),
+            )
+        })
+        .collect();
+
+    // Scale a few key spacing values so the widget chrome scales too.
+    style.spacing.item_spacing = style.spacing.item_spacing * zoom;
+    style.spacing.button_padding = style.spacing.button_padding * zoom;
+    style.spacing.interact_size = style.spacing.interact_size * zoom;
+    style.spacing.icon_width *= zoom;
+    style.spacing.icon_width_inner *= zoom;
+    style.spacing.icon_spacing *= zoom;
+
+    ui.set_style(std::sync::Arc::new(style));
+    old
 }
 
 fn render_hierarchy_tree_panel(
@@ -113,7 +167,48 @@ fn render_visual_layout_canvas(
     egui::ScrollArea::both()
         .id_source("intra_tile_canvas")
         .auto_shrink([false, false])
+        // Enable "click + drag" panning within the canvas area.
+        // This remains confined to the ScrollArea viewport, so it won't overlap other UI panels.
+        .drag_to_scroll(true)
         .show(ui, |ui| {
+            // Canvas-local zoom controls (only active when pointer is over this viewport):
+            // - Ctrl/Cmd + mouse wheel
+            // - Trackpad pinch zoom
+            let zoom_viewport = ui.clip_rect();
+            let pointer_pos = ui.ctx().pointer_latest_pos();
+            let pointer_over_canvas = pointer_pos
+                .map(|p| zoom_viewport.contains(p))
+                .unwrap_or(false);
+
+            let (cmd_or_ctrl, scroll_y, pinch_zoom) = ui.input(|i| {
+                let cmd_or_ctrl = i.modifiers.command || i.modifiers.ctrl;
+                let scroll_y = i.raw_scroll_delta.y;
+                let pinch_zoom = i.zoom_delta();
+                (cmd_or_ctrl, scroll_y, pinch_zoom)
+            });
+
+            if pointer_over_canvas {
+                let mut z = state.zoom_clamped();
+                let mut changed = false;
+
+                // Ctrl/Cmd + wheel: treat scroll as zoom steps.
+                if cmd_or_ctrl && scroll_y.abs() > 0.0 {
+                    let steps = (scroll_y / 200.0).clamp(-5.0, 5.0);
+                    z = (z * 1.1_f32.powf(steps)).clamp(0.2, 4.0);
+                    changed = true;
+                }
+
+                // Trackpad pinch zoom.
+                if pinch_zoom != 1.0 {
+                    z = (z * pinch_zoom).clamp(0.2, 4.0);
+                    changed = true;
+                }
+
+                if changed {
+                    state.zoom = z;
+                }
+            }
+
             if sub_tile_index < tile.sub_tiles.len() {
                 let sub_tile = &tile.sub_tiles[sub_tile_index];
                 if let Some(site) = sub_tile.equivalent_sites.first() {
@@ -123,12 +218,15 @@ fn render_visual_layout_canvas(
                         .find(|pb| pb.name == site.pb_type)
                     {
                         // Draw pbtype here
+                        let zoom = state.zoom_clamped();
                         let total_size = measure_pb_type(root_pb, state, &root_pb.name);
                         let (response, painter) = ui.allocate_painter(
-                            total_size + egui::vec2(40.0, 40.0),
-                            egui::Sense::drag(),
+                            total_size + egui::vec2(40.0, 40.0) * zoom,
+                            // Important: don't capture drags here, otherwise it prevents the
+                            // ScrollArea from receiving drag-to-pan gestures.
+                            egui::Sense::hover(),
                         );
-                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
 
                         let _ = draw_pb_type(
                             &painter,
@@ -150,6 +248,22 @@ fn render_visual_layout_canvas(
                 ui.label("Invalid sub_tile index");
             }
         });
+}
+
+fn render_visual_layout_controls(ui: &mut egui::Ui, state: &mut IntraTileState) {
+    ui.horizontal(|ui| {
+        ui.label("Zoom:");
+        if ui.small_button("−").clicked() {
+            state.zoom = (state.zoom_clamped() / 1.1).max(0.2);
+        }
+        ui.label(format!("{:.0}%", state.zoom_clamped() * 100.0));
+        if ui.small_button("+").clicked() {
+            state.zoom = (state.zoom_clamped() * 1.1).min(4.0);
+        }
+        if ui.small_button("Reset").clicked() {
+            state.zoom = 1.0;
+        }
+    });
 }
 
 pub fn render_intra_tile_view(
@@ -191,6 +305,7 @@ pub fn render_intra_tile_view(
         ui.allocate_ui_at_rect(layout_rect, |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
+            render_visual_layout_controls(ui, state);
             render_visual_layout_canvas(
                 ui,
                 arch,
@@ -204,6 +319,7 @@ pub fn render_intra_tile_view(
     } else {
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
+        render_visual_layout_controls(ui, state);
         render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, dark_mode);
     }
 }
@@ -284,28 +400,28 @@ fn count_pins(pb_type: &PBType, port_type: PortType) -> i32 {
 }
 
 /// Calculates the header name width
-fn calculate_header_name_width(pb_type: &PBType, has_children: bool) -> f32 {
-    let font = egui::FontId::proportional(14.0);
+fn calculate_header_name_width(pb_type: &PBType, has_children: bool, zoom: f32) -> f32 {
+    let font = egui::FontId::proportional(14.0 * zoom);
     let name_width = estimate_text_width(&font, &pb_type.name);
     let header_name_width = if has_children {
-        name_width + 25.0 // Expand indicator space
+        name_width + 25.0 * zoom // Expand indicator space
     } else {
-        name_width + 5.0 // Just margin
+        name_width + 5.0 * zoom // Just margin
     };
     if !pb_type.modes.is_empty() {
-        header_name_width + 130.0 // Mode selector space
+        header_name_width + 130.0 * zoom // Mode selector space
     } else {
         header_name_width
     }
 }
 
 /// Calculates the width needed for blif_model name.
-fn calculate_blif_model_width(pb_type: &PBType) -> f32 {
+fn calculate_blif_model_width(pb_type: &PBType, zoom: f32) -> f32 {
     match pb_type.class {
         PBTypeClass::None => {
             if let Some(blif_model) = &pb_type.blif_model {
-                let blif_font = egui::FontId::monospace(14.0);
-                estimate_text_width(&blif_font, blif_model) + 20.0
+                let blif_font = egui::FontId::monospace(14.0 * zoom);
+                estimate_text_width(&blif_font, blif_model) + 20.0 * zoom
             } else {
                 0.0
             }
@@ -366,6 +482,7 @@ fn measure_pb_type(
     state: &mut IntraTileState,
     instance_path: &str,
 ) -> egui::Vec2 {
+    let zoom = state.zoom_clamped();
     let is_expanded = state.expanded_blocks.contains(instance_path);
     let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
     mode_index = validate_mode_index(pb_type, mode_index);
@@ -385,14 +502,13 @@ fn measure_pb_type(
     let children = get_children_for_mode(pb_type, mode_index);
 
     if !is_expanded && !children.is_empty() {
-        let header_name_width_with_selector = calculate_header_name_width(pb_type, true);
-        let blif_model_width = calculate_blif_model_width(pb_type);
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, true, zoom);
+        let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-        let min_width = MIN_BLOCK_SIZE
-            .x
+        let min_width = (MIN_BLOCK_SIZE.x * zoom)
             .max(header_name_width_with_selector)
             .max(blif_model_width);
-        return egui::vec2(min_width, HEADER_HEIGHT);
+        return egui::vec2(min_width, HEADER_HEIGHT * zoom);
     }
 
     if children.is_empty() {
@@ -402,23 +518,24 @@ fn measure_pb_type(
 
         let max_side_pins = total_input_pins.max(total_output_pins) as f32;
         let min_height_for_pins = if max_side_pins > 0.0 {
-            (max_side_pins + 1.0) * MIN_PIN_SPACING
+            (max_side_pins + 1.0) * (MIN_PIN_SPACING * zoom)
         } else {
             0.0
         };
 
         let min_width_for_clock = if total_clock_pins > 0 {
-            (total_clock_pins as f32 + 1.0) * MIN_PIN_SPACING
+            (total_clock_pins as f32 + 1.0) * (MIN_PIN_SPACING * zoom)
         } else {
             0.0
         };
 
-        let header_name_width_with_selector = calculate_header_name_width(pb_type, false);
-        let blif_model_width = calculate_blif_model_width(pb_type);
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, false, zoom);
+        let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-        let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
+        let required_height =
+            ((HEADER_HEIGHT * zoom) + min_height_for_pins).max(MIN_BLOCK_SIZE.y * zoom);
         let required_width = min_width_for_clock
-            .max(MIN_BLOCK_SIZE.x)
+            .max(MIN_BLOCK_SIZE.x * zoom)
             .max(header_name_width_with_selector)
             .max(blif_model_width);
 
@@ -448,13 +565,13 @@ fn measure_pb_type(
                     max_instance_size = max_instance_size.max(s);
                 }
 
-                let total_instances_h = max_instance_size.y * num + PADDING * gaps;
+                let total_instances_h = max_instance_size.y * num + (PADDING * zoom) * gaps;
 
                 max_child_w = max_child_w.max(max_instance_size.x);
-                current_h += total_instances_h + PADDING;
+                current_h += total_instances_h + (PADDING * zoom);
             }
             if !children.is_empty() {
-                current_h -= PADDING;
+                current_h -= PADDING * zoom;
             }
 
             total_w = max_child_w;
@@ -476,15 +593,15 @@ fn measure_pb_type(
                     max_instance_size = max_instance_size.max(s);
                 }
 
-                let child_instances_h = max_instance_size.y * num + PADDING * gaps;
+                let child_instances_h = max_instance_size.y * num + (PADDING * zoom) * gaps;
                 let child_instances_w = max_instance_size.x;
 
                 max_child_h = max_child_h.max(child_instances_h);
-                current_w += child_instances_w + PADDING;
+                current_w += child_instances_w + (PADDING * zoom);
             }
 
             if !children.is_empty() {
-                current_w -= PADDING;
+                current_w -= PADDING * zoom;
             }
 
             total_w = current_w;
@@ -495,7 +612,7 @@ fn measure_pb_type(
     let total_input_pins = count_pins(pb_type, PortType::Input);
     let total_output_pins = count_pins(pb_type, PortType::Output);
     let max_pins = total_input_pins.max(total_output_pins) as f32;
-    let min_port_height = (max_pins + 1.0) * MIN_PIN_SPACING;
+    let min_port_height = (max_pins + 1.0) * (MIN_PIN_SPACING * zoom);
 
     let has_complete_interconnect = pb_type
         .interconnects
@@ -508,34 +625,34 @@ fn measure_pb_type(
         .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
 
     let complete_spacing = if has_complete_interconnect && !is_clock_complete {
-        180.0
+        180.0 * zoom
     } else {
         0.0
     };
     // Extra right-side padding only for clock completes; does not shift children.
-    let clock_padding_right = if is_clock_complete { 140.0 } else { 0.0 };
+    let clock_padding_right = if is_clock_complete { 140.0 * zoom } else { 0.0 };
 
     let interconnect_width = if !pb_type.modes.is_empty() || !pb_type.interconnects.is_empty() {
         if has_complete_interconnect {
-            140.0
+            140.0 * zoom
         } else {
-            80.0
+            80.0 * zoom
         }
     } else {
         0.0
     };
 
     let header_name_width_with_selector =
-        calculate_header_name_width(pb_type, !children.is_empty());
-    let blif_model_width = calculate_blif_model_width(pb_type);
+        calculate_header_name_width(pb_type, !children.is_empty(), zoom);
+    let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-    let w = (total_w + PADDING * 2.0 + interconnect_width + clock_padding_right)
-        .max(MIN_BLOCK_SIZE.x)
+    let w = (total_w + (PADDING * zoom) * 2.0 + interconnect_width + clock_padding_right)
+        .max(MIN_BLOCK_SIZE.x * zoom)
         .max(header_name_width_with_selector)
         .max(blif_model_width)
-        .max(total_w + complete_spacing + PADDING * 2.0);
-    let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
-        .max(MIN_BLOCK_SIZE.y)
+        .max(total_w + complete_spacing + (PADDING * zoom) * 2.0);
+    let h = ((HEADER_HEIGHT * zoom) + (PADDING * zoom) + total_h + (PADDING * zoom))
+        .max(MIN_BLOCK_SIZE.y * zoom)
         .max(min_port_height);
     let size = egui::vec2(w, h);
 
@@ -549,14 +666,19 @@ fn measure_pb_type(
 // ------------------------------------------------------------
 
 /// Draws the expand indicator (▶) in the header.
-fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect, dark_mode: bool) {
-    let indicator_x = header_rect.min.x + 8.0;
+fn draw_expand_indicator(
+    painter: &egui::Painter,
+    header_rect: egui::Rect,
+    zoom: f32,
+    dark_mode: bool,
+) {
+    let indicator_x = header_rect.min.x + 8.0 * zoom;
     let indicator_y = header_rect.center().y;
     painter.text(
         egui::pos2(indicator_x, indicator_y),
         egui::Align2::LEFT_CENTER,
         "▶",
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(12.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 }
@@ -867,6 +989,7 @@ fn draw_pb_type(
     expand_all: bool,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let size = measure_pb_type(pb_type, state, instance_path);
     let rect = egui::Rect::from_min_size(pos, size);
 
@@ -895,7 +1018,8 @@ fn draw_pb_type(
     let is_expanded = state.expanded_blocks.contains(instance_path);
 
     // Draw header with expand/collapse indicator
-    let header_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+    let header_rect =
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
 
     // Make header clickable if it has children
     if has_children {
@@ -924,11 +1048,11 @@ fn draw_pb_type(
 
         // Draw block name in header
         let name_x = if has_children {
-            header_rect.min.x + 25.0
+            header_rect.min.x + 25.0 * zoom
         } else {
-            header_rect.min.x + 5.0
+            header_rect.min.x + 5.0 * zoom
         };
-        let font = egui::FontId::proportional(14.0);
+        let font = egui::FontId::proportional(14.0 * zoom);
         painter.text(
             egui::pos2(name_x, header_rect.center().y),
             egui::Align2::LEFT_CENTER,
@@ -939,7 +1063,7 @@ fn draw_pb_type(
 
         // Draw expand/collapse indicator on top
         if has_children {
-            draw_expand_indicator(painter, header_rect, dark_mode);
+            draw_expand_indicator(painter, header_rect, zoom, dark_mode);
         }
 
         return HashMap::new();
@@ -979,25 +1103,26 @@ fn draw_pb_type(
         let mode_name = &pb_type.modes[mode_idx].name;
 
         // Truncate mode name if it's too long
-        let selector_width = (120.0_f32).min(rect.width() * 0.4);
+        let selector_width = (120.0_f32 * zoom).min(rect.width() * 0.4);
         let display_name = if mode_name.len() > 15 {
             format!("{}...", &mode_name[..12])
         } else {
             mode_name.clone()
         };
 
-        let selector_height = 18.0;
-        let margin = 5.0;
+        let selector_height = 18.0 * zoom;
+        let margin = 5.0 * zoom;
         let selector_rect = egui::Rect::from_min_size(
-            rect.min + egui::vec2(rect.width() - selector_width - margin, 2.0),
+            rect.min + egui::vec2(rect.width() - selector_width - margin, 2.0 * zoom),
             egui::vec2(selector_width, selector_height),
         );
 
         let mut selected_mode = mode_idx;
 
         ui.put(selector_rect, |ui: &mut egui::Ui| {
+            let old_style = apply_local_zoom_style(ui, zoom);
             ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 0.0);
-            egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
+            let response = egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
                 .width(selector_width)
                 .selected_text(&display_name)
                 .show_ui(ui, |ui| {
@@ -1010,7 +1135,9 @@ fn draw_pb_type(
                         ui.selectable_value(&mut selected_mode, i, &item_text);
                     }
                 })
-                .response
+                .response;
+            ui.set_style(old_style);
+            response
         });
 
         if selected_mode != mode_idx {
@@ -1033,13 +1160,13 @@ fn draw_pb_type(
         // rightward to create an intentional gutter. Clock completes keep
         // children aligned; their space is handled on the right at measure time.
         let complete_spacing = if has_complete_interconnect {
-            180.0
+            180.0 * zoom
         } else {
             0.0
         };
 
-        let start_x = rect.min.x + PADDING + complete_spacing;
-        let start_y = rect.min.y + HEADER_HEIGHT + PADDING;
+        let start_x = rect.min.x + (PADDING * zoom) + complete_spacing;
+        let start_y = rect.min.y + (HEADER_HEIGHT * zoom) + (PADDING * zoom);
 
         let mut cursor_x = start_x;
         let mut cursor_y = start_y;
@@ -1069,13 +1196,13 @@ fn draw_pb_type(
                     children_ports.insert(format!("{}.{}", instance_name, port_name), p);
                 }
 
-                cursor_y += child_single_size.y + PADDING;
+                cursor_y += child_single_size.y + (PADDING * zoom);
             }
 
             match direction {
                 LayoutDirection::Vertical => {}
                 LayoutDirection::Horizontal => {
-                    cursor_x += max_col_width + PADDING;
+                    cursor_x += max_col_width + (PADDING * zoom);
                     cursor_y = start_y;
                 }
             }
@@ -1223,6 +1350,7 @@ fn draw_wire_segment(
     ui: &mut egui::Ui,
     is_clock: bool,
 ) {
+    let zoom = state.zoom_clamped();
     let mut points = Vec::new();
     points.push(start);
 
@@ -1240,12 +1368,14 @@ fn draw_wire_segment(
         }
     } else if start.x < end.x {
         let dist = end.x - start.x;
-        let is_parent_output = end.x >= parent_rect.max.x - 20.0;
+        let is_parent_output = end.x >= parent_rect.max.x - 20.0 * zoom;
 
-        if dist > 100.0 && !is_parent_output {
-            let channel_x_start = start.x + 10.0;
-            let channel_x_end = end.x - 10.0;
-            let route_y = parent_rect.min.y + 40.0;
+        // Scale these thresholds/offsets with zoom so detours remain "above"
+        // the same relative region when zooming.
+        if dist > 100.0 * zoom && !is_parent_output {
+            let channel_x_start = start.x + 10.0 * zoom;
+            let channel_x_end = end.x - 10.0 * zoom;
+            let route_y = parent_rect.min.y + 40.0 * zoom;
 
             points.push(egui::pos2(channel_x_start, start.y));
             points.push(egui::pos2(channel_x_start, route_y));
@@ -1257,8 +1387,8 @@ fn draw_wire_segment(
             points.push(egui::pos2(mid_x, end.y));
         }
     } else {
-        let channel_out = start.x + 10.0;
-        let channel_in = end.x - 10.0;
+        let channel_out = start.x + 10.0 * zoom;
+        let channel_in = end.x - 10.0 * zoom;
         let mid_y = start.y + (end.y - start.y) / 2.0;
 
         points.push(egui::pos2(channel_out, start.y));
@@ -1276,10 +1406,11 @@ fn draw_wire_segment(
         for i in 0..points.len() - 1 {
             let p1 = points[i];
             let p2 = points[i + 1];
-            let min_x = p1.x.min(p2.x) - 5.0;
-            let max_x = p1.x.max(p2.x) + 5.0;
-            let min_y = p1.y.min(p2.y) - 5.0;
-            let max_y = p1.y.max(p2.y) + 5.0;
+            let pad = 5.0 * zoom;
+            let min_x = p1.x.min(p2.x) - pad;
+            let max_x = p1.x.max(p2.x) + pad;
+            let min_y = p1.y.min(p2.y) - pad;
+            let max_y = p1.y.max(p2.y) + pad;
 
             if pointer_pos.x >= min_x
                 && pointer_pos.x <= max_x
@@ -1451,6 +1582,7 @@ fn draw_complete_interconnect(
     parent_rect: egui::Rect,
     dark_mode: bool,
 ) {
+    let zoom = state.zoom_clamped();
     // Resolve sources and group by prefix (e.g., "clb", "fle")
     let mut source_groups: Vec<Vec<(String, egui::Pos2)>> = Vec::new();
     let mut current_group: Option<(String, Vec<(String, egui::Pos2)>)> = None;
@@ -1533,12 +1665,12 @@ fn draw_complete_interconnect(
         .fold(f32::NEG_INFINITY, f32::max);
 
     let rows = resolved_sources.len().max(resolved_sinks.len());
-    let row_spacing = 18.0;
-    let available_height = (parent_rect.height() - 20.0).max(60.0);
+    let row_spacing = 18.0 * zoom;
+    let available_height = (parent_rect.height() - 20.0 * zoom).max(60.0 * zoom);
     let height = ((rows as f32 + 1.0) * row_spacing)
-        .max(60.0)
+        .max(60.0 * zoom)
         .min(available_height);
-    let width = 55.0;
+    let width = 55.0 * zoom;
 
     // Special-case clock crossbars: place them in the gap between the source
     // cluster (clb clk pins) and the sink cluster (fle clk pins), based on
@@ -1570,13 +1702,13 @@ fn draw_complete_interconnect(
         }
 
         let center = ((sink_rect_max + parent_rect.max.x) * 0.5)
-            .max(parent_rect.min.x + width * 0.5 + 6.0)
-            .min(parent_rect.max.x - width * 0.5 - 6.0);
+            .max(parent_rect.min.x + width * 0.5 + 6.0 * zoom)
+            .min(parent_rect.max.x - width * 0.5 - 6.0 * zoom);
         center
     } else {
         // Position the block based on the actual gap between sources and sinks.
         let gap = sink_min_x - source_max_x;
-        let gap_is_usable = gap.is_finite() && gap > width + 20.0;
+        let gap_is_usable = gap.is_finite() && gap > width + 20.0 * zoom;
 
         if gap_is_usable {
             // Leave 1/3 of the free gap on each side of the crossbar
@@ -1584,14 +1716,14 @@ fn draw_complete_interconnect(
             let left_x = source_max_x + side_margin;
             let right_x = sink_min_x - side_margin;
             ((left_x + right_x) * 0.5).clamp(
-                parent_rect.min.x + width * 0.5 + 4.0,
-                parent_rect.max.x - width * 0.5 - 4.0,
+                parent_rect.min.x + width * 0.5 + 4.0 * zoom,
+                parent_rect.max.x - width * 0.5 - 4.0 * zoom,
             )
         } else {
             // Gap too small: bias near sinks but keep a buffer from the parent edge
-            (sink_min_x - 20.0 - width * 0.5)
-                .max(parent_rect.min.x + width * 0.5 + 10.0)
-                .min(parent_rect.max.x - width * 0.5 - 10.0)
+            (sink_min_x - 20.0 * zoom - width * 0.5)
+                .max(parent_rect.min.x + width * 0.5 + 10.0 * zoom)
+                .min(parent_rect.max.x - width * 0.5 - 10.0 * zoom)
         }
     };
 
@@ -1611,11 +1743,11 @@ fn draw_complete_interconnect(
         color_scheme::theme_border_color(dark_mode)
     };
     let fill_color = color_scheme::theme_block_bg(dark_mode);
-    let stroke = egui::Stroke::new(1.5, stroke_color);
+    let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
 
-    painter.rect(rect, 3.0, fill_color, stroke);
+    painter.rect(rect, 3.0 * zoom, fill_color, stroke);
     // Draw a large X across the block instead of text.
-    let x_stroke = egui::Stroke::new(2.0, stroke_color);
+    let x_stroke = egui::Stroke::new(2.0 * zoom, stroke_color);
     painter.line_segment([rect.min, rect.max], x_stroke);
     painter.line_segment(
         [
@@ -1629,7 +1761,7 @@ fn draw_complete_interconnect(
         let clb_step = if group.is_empty() {
             rect.height()
         } else {
-            (rect.height() / (group.len() as f32 + 1.0)).max(20.0)
+            (rect.height() / (group.len() as f32 + 1.0)).max(20.0 * zoom)
         };
 
         for (i, (src_name, src_pos)) in group.iter().enumerate() {
@@ -1646,12 +1778,12 @@ fn draw_complete_interconnect(
             } else {
                 color_scheme::theme_interconnect_bg(dark_mode)
             };
-            let wire_stroke = egui::Stroke::new(1.5, wire_color);
+            let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
             let is_clock = is_clock_port(src_name, current_pb, children);
             if is_clock {
                 // Approach from the left with an extra turn: left offset, then up to target y, then into block.
-                let offset_x = rect.min.x - 10.0;
+                let offset_x = rect.min.x - 10.0 * zoom;
                 let path = vec![
                     *src_pos,
                     egui::pos2(offset_x, src_pos.y),
@@ -1670,14 +1802,14 @@ fn draw_complete_interconnect(
                             fle_top = fle_top.min(r.min.y);
                         }
                     }
-                    let padding = 10.0;
+                    let padding = 10.0 * zoom;
                     let mut top_y = fle_top - padding;
                     if !top_y.is_finite() {
                         top_y = rect.min.y - padding; // fallback
                     }
-                    top_y = top_y.max(parent_rect.min.y + 2.0);
+                    top_y = top_y.max(parent_rect.min.y + 2.0 * zoom);
 
-                    let offset_x = rect.min.x - 10.0;
+                    let offset_x = rect.min.x - 10.0 * zoom;
                     let path = vec![
                         *src_pos,
                         egui::pos2(src_pos.x, top_y),
@@ -1720,13 +1852,13 @@ fn draw_complete_interconnect(
         } else {
             color_scheme::theme_interconnect_bg(dark_mode)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
         let is_clock = is_clock_port(dst_name, current_pb, children);
         if is_clock {
-            let channel_y = dst_pos.y + 5.0;
+            let channel_y = dst_pos.y + 5.0 * zoom;
             // Add a right-hand offset before heading toward the sink.
-            let offset_x = rect.max.x + 10.0;
+            let offset_x = rect.max.x + 10.0 * zoom;
             let path = vec![
                 start,
                 egui::pos2(offset_x, start.y),
@@ -1768,6 +1900,7 @@ fn draw_interconnect_block(
     parent_rect: egui::Rect,
     dark_mode: bool,
 ) {
+    let zoom = state.zoom_clamped();
     let mut valid_sinks = Vec::new();
     for dst in sinks {
         if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
@@ -1785,7 +1918,7 @@ fn draw_interconnect_block(
         .map(|(_, p)| p.x)
         .fold(f32::INFINITY, |a, b| a.min(b));
 
-    let width = 35.0;
+    let width = 35.0 * zoom;
 
     let max_sink_y = valid_sinks
         .iter()
@@ -1798,13 +1931,13 @@ fn draw_interconnect_block(
 
     let sink_spread = max_sink_y - min_sink_y;
 
-    let input_spacing = 15.0;
+    let input_spacing = 15.0 * zoom;
     let input_spread = (sources.len() as f32 + 1.0) * input_spacing;
 
     let spread = sink_spread.max(input_spread);
-    let height = (spread + 20.0).max(40.0).min(150.0);
+    let height = (spread + 20.0 * zoom).max(40.0 * zoom).min(150.0 * zoom);
 
-    let block_center = egui::pos2(min_x - 50.0, avg_y);
+    let block_center = egui::pos2(min_x - 50.0 * zoom, avg_y);
     let rect = egui::Rect::from_center_size(block_center, egui::vec2(width, height));
 
     let mut block_hovered = false;
@@ -1823,7 +1956,7 @@ fn draw_interconnect_block(
     } else {
         color_scheme::theme_border_color(dark_mode)
     };
-    let stroke = egui::Stroke::new(1.5, stroke_color);
+    let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
     let fill_color = color_scheme::theme_block_bg(dark_mode);
 
     if kind == "mux" {
@@ -1840,7 +1973,7 @@ fn draw_interconnect_block(
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
         // rectangle with X
-        painter.rect(rect, 2.0, fill_color, stroke);
+        painter.rect(rect, 2.0 * zoom, fill_color, stroke);
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
             [
@@ -1878,7 +2011,7 @@ fn draw_interconnect_block(
         } else {
             color_scheme::theme_interconnect_bg(dark_mode)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
         let input_y = rect.min.y + input_step * (i as f32 + 1.0);
         let target = egui::pos2(left_edge_x, input_y);
@@ -1931,7 +2064,7 @@ fn draw_interconnect_block(
         } else {
             egui::Color32::from_rgba_unmultiplied(100, 100, 100, 100)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
         let start = egui::pos2(right_edge_x, block_center.y);
         // Check if this is a clock connection by examining sink port name

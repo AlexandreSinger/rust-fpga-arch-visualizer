@@ -7,8 +7,8 @@ use eframe::egui;
 use fpga_arch_parser::{PBType, Port};
 use std::collections::HashMap;
 
-use super::intra_tile::IntraTileState;
 use super::color_scheme;
+use super::intra_tile::IntraTileState;
 
 // Constants
 const HEADER_HEIGHT: f32 = 35.0;
@@ -31,18 +31,23 @@ fn draw_pin(
     stroke_color: egui::Color32,
     is_highlighted: bool,
 ) {
-    let stroke_width = if is_highlighted { 2.5 } else { 1.0 };
+    let zoom = state.zoom_clamped();
+    let stroke_width = if is_highlighted {
+        2.5 * zoom
+    } else {
+        1.0 * zoom
+    };
     let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
     painter.line_segment([start, end], stroke);
 
     port_map.insert(pin_name.to_string(), port_pos);
 
-    let square_size = PIN_SQUARE_SIZE;
+    let square_size = PIN_SQUARE_SIZE * zoom;
     let square_rect = egui::Rect::from_center_size(start, egui::vec2(square_size, square_size));
     painter.rect_filled(square_rect, 0.0, stroke_color);
 
-    let hit_rect = square_rect.expand(3.0);
+    let hit_rect = square_rect.expand(3.0 * zoom);
     let response = ui.put(hit_rect, egui::Label::new(""));
     if response.hovered() {
         state.highlighted_positions_next_frame.push(port_pos);
@@ -74,14 +79,15 @@ fn draw_pins_on_side(
         return;
     }
 
+    let zoom = state.zoom_clamped();
     let total_pins = pins.len() as f32;
     let (spacing, start_pos, default_color) = match side {
         PinSide::Left | PinSide::Right => {
-            let min_required_height = (total_pins + 1.0) * MIN_PIN_SPACING;
+            let min_required_height = (total_pins + 1.0) * (MIN_PIN_SPACING * zoom);
             let spacing = if rect.height() >= min_required_height {
                 rect.height() / (total_pins + 1.0)
             } else {
-                MIN_PIN_SPACING
+                MIN_PIN_SPACING * zoom
             };
             let total_pin_height = spacing * (total_pins - 1.0);
             let start_y = rect.min.y + (rect.height() - total_pin_height) / 2.0;
@@ -93,11 +99,11 @@ fn draw_pins_on_side(
             (spacing, (x_pos, start_y), color_scheme::PIN_COLOR)
         }
         PinSide::Top => {
-            let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
+            let min_required_width = (total_pins + 1.0) * (MIN_PIN_SPACING * zoom);
             let spacing = if rect.width() >= min_required_width {
                 rect.width() / (total_pins + 1.0)
             } else {
-                MIN_PIN_SPACING
+                MIN_PIN_SPACING * zoom
             };
             let total_pin_width = spacing * (total_pins - 1.0);
             let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
@@ -108,11 +114,11 @@ fn draw_pins_on_side(
             )
         }
         PinSide::Bottom => {
-            let min_required_width = (total_pins + 1.0) * MIN_PIN_SPACING;
+            let min_required_width = (total_pins + 1.0) * (MIN_PIN_SPACING * zoom);
             let spacing = if rect.width() >= min_required_width {
                 rect.width() / (total_pins + 1.0)
             } else {
-                MIN_PIN_SPACING
+                MIN_PIN_SPACING * zoom
             };
             let total_pin_width = spacing * (total_pins - 1.0);
             let start_x = rect.min.x + (rect.width() - total_pin_width) / 2.0;
@@ -130,28 +136,28 @@ fn draw_pins_on_side(
                 let (x_pos, start_y) = start_pos;
                 let y_pos = start_y + spacing * i as f32;
                 let start = egui::pos2(x_pos, y_pos);
-                let end = egui::pos2(x_pos - PORT_LENGTH, y_pos);
+                let end = egui::pos2(x_pos - PORT_LENGTH * zoom, y_pos);
                 (start, end, end)
             }
             PinSide::Right => {
                 let (x_pos, start_y) = start_pos;
                 let y_pos = start_y + spacing * i as f32;
                 let start = egui::pos2(x_pos, y_pos);
-                let end = egui::pos2(x_pos + PORT_LENGTH, y_pos);
+                let end = egui::pos2(x_pos + PORT_LENGTH * zoom, y_pos);
                 (start, end, end)
             }
             PinSide::Top => {
                 let (start_x, _) = start_pos;
                 let x_pos = start_x + spacing * i as f32;
                 let start = egui::pos2(x_pos, rect.min.y);
-                let end = egui::pos2(x_pos, rect.min.y - PORT_LENGTH);
+                let end = egui::pos2(x_pos, rect.min.y - PORT_LENGTH * zoom);
                 (start, end, end)
             }
             PinSide::Bottom => {
                 let (start_x, _) = start_pos;
                 let x_pos = start_x + spacing * i as f32;
                 let start = egui::pos2(x_pos, rect.max.y);
-                let end = egui::pos2(x_pos, rect.max.y + PORT_LENGTH);
+                let end = egui::pos2(x_pos, rect.max.y + PORT_LENGTH * zoom);
                 (start, end, end)
             }
         };
@@ -272,15 +278,17 @@ pub fn draw_generic_block(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     painter.rect(
         rect,
         0.0,
         color_scheme::theme_block_bg(dark_mode),
-        egui::Stroke::new(1.5, color_scheme::theme_border_color(dark_mode)),
+        egui::Stroke::new(1.5 * zoom, color_scheme::theme_border_color(dark_mode)),
     );
 
     // Title bar
-    let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+    let title_rect =
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
@@ -289,10 +297,10 @@ pub fn draw_generic_block(
     );
 
     painter.text(
-        rect.min + egui::vec2(5.0, 5.0),
+        rect.min + egui::vec2(5.0, 5.0) * zoom,
         egui::Align2::LEFT_TOP,
         &pb_type.name,
-        egui::FontId::proportional(14.0),
+        egui::FontId::proportional(14.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 
@@ -312,22 +320,28 @@ pub fn draw_lut(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let colors = color_scheme::lut_colors(dark_mode);
-    painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
+    painter.rect(
+        rect,
+        0.0,
+        colors.bg,
+        egui::Stroke::new(1.5 * zoom, colors.border),
+    );
 
     painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         "LUT",
-        egui::FontId::monospace(16.0),
+        egui::FontId::monospace(16.0 * zoom),
         colors.text,
     );
 
     painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
+        rect.min + egui::vec2(5.0, 2.0) * zoom,
         egui::Align2::LEFT_TOP,
         &pb_type.name,
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(10.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 
@@ -347,10 +361,16 @@ pub fn draw_flip_flop(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let colors = color_scheme::flip_flop_colors(dark_mode);
-    painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
+    painter.rect(
+        rect,
+        0.0,
+        colors.bg,
+        egui::Stroke::new(1.5 * zoom, colors.border),
+    );
 
-    let triangle_size = 8.0;
+    let triangle_size = 8.0 * zoom;
     let bottom_center = rect.center_bottom();
 
     painter.add(egui::Shape::convex_polygon(
@@ -360,22 +380,22 @@ pub fn draw_flip_flop(
             bottom_center + egui::vec2(0.0, -triangle_size),
         ],
         egui::Color32::TRANSPARENT,
-        egui::Stroke::new(1.5, color_scheme::theme_text_color(dark_mode)),
+        egui::Stroke::new(1.5 * zoom, color_scheme::theme_text_color(dark_mode)),
     ));
 
     painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         "FF",
-        egui::FontId::monospace(16.0),
+        egui::FontId::monospace(16.0 * zoom),
         colors.text,
     );
 
     painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
+        rect.min + egui::vec2(5.0, 2.0) * zoom,
         egui::Align2::LEFT_TOP,
         &pb_type.name,
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(10.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 
@@ -395,18 +415,24 @@ pub fn draw_memory(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let colors = color_scheme::memory_colors(dark_mode);
-    painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
+    painter.rect(
+        rect,
+        0.0,
+        colors.bg,
+        egui::Stroke::new(1.5 * zoom, colors.border),
+    );
 
-    let grid_spacing = 10.0;
-    let mut y = rect.min.y + 20.0;
-    while y < rect.max.y - 10.0 {
+    let grid_spacing = 10.0 * zoom;
+    let mut y = rect.min.y + 20.0 * zoom;
+    while y < rect.max.y - 10.0 * zoom {
         painter.line_segment(
             [
-                egui::pos2(rect.min.x + 10.0, y),
-                egui::pos2(rect.max.x - 10.0, y),
+                egui::pos2(rect.min.x + 10.0 * zoom, y),
+                egui::pos2(rect.max.x - 10.0 * zoom, y),
             ],
-            egui::Stroke::new(0.5, colors.grid),
+            egui::Stroke::new(0.5 * zoom, colors.grid),
         );
         y += grid_spacing;
     }
@@ -415,15 +441,15 @@ pub fn draw_memory(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         "RAM",
-        egui::FontId::monospace(16.0),
+        egui::FontId::monospace(16.0 * zoom),
         colors.text,
     );
 
     painter.text(
-        rect.min + egui::vec2(5.0, 2.0),
+        rect.min + egui::vec2(5.0, 2.0) * zoom,
         egui::Align2::LEFT_TOP,
         &pb_type.name,
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(10.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 
@@ -443,11 +469,18 @@ pub fn draw_blif_block(
     ui: &mut egui::Ui,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let colors = color_scheme::blif_colors(dark_mode);
-    painter.rect(rect, 0.0, colors.bg, egui::Stroke::new(1.5, colors.border));
+    painter.rect(
+        rect,
+        0.0,
+        colors.bg,
+        egui::Stroke::new(1.5 * zoom, colors.border),
+    );
 
     // Title bar
-    let title_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+    let title_rect =
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
     painter.rect(
         title_rect,
         egui::Rounding::ZERO,
@@ -461,16 +494,16 @@ pub fn draw_blif_block(
             rect.center(),
             egui::Align2::CENTER_CENTER,
             blif_model,
-            egui::FontId::monospace(14.0),
+            egui::FontId::monospace(14.0 * zoom),
             colors.text,
         );
     }
 
     painter.text(
-        rect.min + egui::vec2(5.0, 5.0),
+        rect.min + egui::vec2(5.0, 5.0) * zoom,
         egui::Align2::LEFT_TOP,
         &pb_type.name,
-        egui::FontId::proportional(14.0),
+        egui::FontId::proportional(14.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
 

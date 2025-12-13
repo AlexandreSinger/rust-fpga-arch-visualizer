@@ -53,6 +53,8 @@ pub struct FpgaViewer {
     intra_tile_state: IntraTileState,
     // Track if all blocks are expanded
     all_blocks_expanded: bool,
+    // Whether to draw intra-tile interconnects (direct/mux/complete)
+    draw_intra_interconnects: bool,
     // Theme setting
     dark_mode: bool,
     // Selected layout index (for switching between auto/fixed layouts)
@@ -82,6 +84,7 @@ impl FpgaViewer {
             show_hierarchy_tree: false,
             intra_tile_state: IntraTileState::default(),
             all_blocks_expanded: false,
+            draw_intra_interconnects: true,
             dark_mode: false,
             selected_layout_index: 0,
         }
@@ -683,6 +686,9 @@ impl eframe::App for FpgaViewer {
                         self.apply_expand_all_state();
                     }
 
+                    // Interconnect toggle
+                    ui.checkbox(&mut self.draw_intra_interconnects, "Draw Interconnects");
+
                     ui.add_space(10.0);
                     ui.separator();
                     ui.add_space(10.0);
@@ -768,6 +774,7 @@ impl eframe::App for FpgaViewer {
                                         self.show_hierarchy_tree,
                                         sub_tile_index,
                                         self.all_blocks_expanded,
+                                        self.draw_intra_interconnects,
                                         self.dark_mode,
                                     );
                                 } else {

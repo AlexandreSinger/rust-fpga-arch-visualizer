@@ -6,8 +6,8 @@ use eframe::egui;
 use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
 use std::collections::{HashMap, HashSet};
 
-use crate::intra_block_drawing;
 use crate::color_scheme;
+use crate::intra_block_drawing;
 use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
@@ -21,13 +21,70 @@ const MIN_PIN_SPACING: f32 = 25.0;
 // ------------------------------------------------------------
 // Intra Tile Drawing Entry Point
 // ------------------------------------------------------------
-#[derive(Default)]
 pub struct IntraTileState {
     pub selected_modes: HashMap<String, usize>,
     pub highlighted_positions_this_frame: Vec<egui::Pos2>,
     pub highlighted_positions_next_frame: Vec<egui::Pos2>,
     pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
+    pub pb_rects: HashMap<String, egui::Rect>,
+    /// Zoom factor for the intra-tile canvas (1.0 = 100%).
+    pub zoom: f32,
+    // Cache for PBType measurements: (instance_path, is_expanded, mode_index) -> size
+    measurement_cache: HashMap<(String, bool, usize), egui::Vec2>,
+}
+
+impl Default for IntraTileState {
+    fn default() -> Self {
+        Self {
+            selected_modes: HashMap::new(),
+            highlighted_positions_this_frame: Vec::new(),
+            highlighted_positions_next_frame: Vec::new(),
+            hierarchy_tree_height: None,
+            expanded_blocks: HashSet::new(),
+            pb_rects: HashMap::new(),
+            zoom: 1.0,
+            measurement_cache: HashMap::new(),
+        }
+    }
+}
+
+impl IntraTileState {
+    pub(crate) fn zoom_clamped(&self) -> f32 {
+        self.zoom.clamp(0.2, 4.0)
+    }
+}
+
+fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::Style> {
+    let old = ui.style().clone(); // Arc<Style>
+    if (zoom - 1.0).abs() < f32::EPSILON {
+        return old;
+    }
+
+    let mut style: egui::Style = (*old).clone();
+
+    // Scale fonts used by widgets (ComboBox, labels, etc.) inside this UI scope.
+    style.text_styles = style
+        .text_styles
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                egui::FontId::new(v.size * zoom, v.family.clone()),
+            )
+        })
+        .collect();
+
+    // Scale a few key spacing values so the widget chrome scales too.
+    style.spacing.item_spacing = style.spacing.item_spacing * zoom;
+    style.spacing.button_padding = style.spacing.button_padding * zoom;
+    style.spacing.interact_size = style.spacing.interact_size * zoom;
+    style.spacing.icon_width *= zoom;
+    style.spacing.icon_width_inner *= zoom;
+    style.spacing.icon_spacing *= zoom;
+
+    ui.set_style(std::sync::Arc::new(style));
+    old
 }
 
 fn render_hierarchy_tree_panel(
@@ -110,7 +167,48 @@ fn render_visual_layout_canvas(
     egui::ScrollArea::both()
         .id_source("intra_tile_canvas")
         .auto_shrink([false, false])
+        // Enable "click + drag" panning within the canvas area.
+        // This remains confined to the ScrollArea viewport, so it won't overlap other UI panels.
+        .drag_to_scroll(true)
         .show(ui, |ui| {
+            // Canvas-local zoom controls (only active when pointer is over this viewport):
+            // - Ctrl/Cmd + mouse wheel
+            // - Trackpad pinch zoom
+            let zoom_viewport = ui.clip_rect();
+            let pointer_pos = ui.ctx().pointer_latest_pos();
+            let pointer_over_canvas = pointer_pos
+                .map(|p| zoom_viewport.contains(p))
+                .unwrap_or(false);
+
+            let (cmd_or_ctrl, scroll_y, pinch_zoom) = ui.input(|i| {
+                let cmd_or_ctrl = i.modifiers.command || i.modifiers.ctrl;
+                let scroll_y = i.raw_scroll_delta.y;
+                let pinch_zoom = i.zoom_delta();
+                (cmd_or_ctrl, scroll_y, pinch_zoom)
+            });
+
+            if pointer_over_canvas {
+                let mut z = state.zoom_clamped();
+                let mut changed = false;
+
+                // Ctrl/Cmd + wheel: treat scroll as zoom steps.
+                if cmd_or_ctrl && scroll_y.abs() > 0.0 {
+                    let steps = (scroll_y / 200.0).clamp(-5.0, 5.0);
+                    z = (z * 1.1_f32.powf(steps)).clamp(0.2, 4.0);
+                    changed = true;
+                }
+
+                // Trackpad pinch zoom.
+                if pinch_zoom != 1.0 {
+                    z = (z * pinch_zoom).clamp(0.2, 4.0);
+                    changed = true;
+                }
+
+                if changed {
+                    state.zoom = z;
+                }
+            }
+
             if sub_tile_index < tile.sub_tiles.len() {
                 let sub_tile = &tile.sub_tiles[sub_tile_index];
                 if let Some(site) = sub_tile.equivalent_sites.first() {
@@ -120,12 +218,15 @@ fn render_visual_layout_canvas(
                         .find(|pb| pb.name == site.pb_type)
                     {
                         // Draw pbtype here
+                        let zoom = state.zoom_clamped();
                         let total_size = measure_pb_type(root_pb, state, &root_pb.name);
                         let (response, painter) = ui.allocate_painter(
-                            total_size + egui::vec2(40.0, 40.0),
-                            egui::Sense::drag(),
+                            total_size + egui::vec2(40.0, 40.0) * zoom,
+                            // Important: don't capture drags here, otherwise it prevents the
+                            // ScrollArea from receiving drag-to-pan gestures.
+                            egui::Sense::hover(),
                         );
-                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0);
+                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
 
                         let _ = draw_pb_type(
                             &painter,
@@ -149,6 +250,22 @@ fn render_visual_layout_canvas(
         });
 }
 
+fn render_visual_layout_controls(ui: &mut egui::Ui, state: &mut IntraTileState) {
+    ui.horizontal(|ui| {
+        ui.label("Zoom:");
+        if ui.small_button("−").clicked() {
+            state.zoom = (state.zoom_clamped() / 1.1).max(0.2);
+        }
+        ui.label(format!("{:.0}%", state.zoom_clamped() * 100.0));
+        if ui.small_button("+").clicked() {
+            state.zoom = (state.zoom_clamped() * 1.1).min(4.0);
+        }
+        if ui.small_button("Reset").clicked() {
+            state.zoom = 1.0;
+        }
+    });
+}
+
 pub fn render_intra_tile_view(
     ui: &mut egui::Ui,
     arch: &FPGAArch,
@@ -159,6 +276,12 @@ pub fn render_intra_tile_view(
     expand_all: bool,
     dark_mode: bool,
 ) {
+    // Clear per-frame PB rects before drawing
+    state.pb_rects.clear();
+    // Clear measurement cache at start of each frame to ensure fresh calculations
+    // when expanded_blocks or selected_modes change
+    state.measurement_cache.clear();
+
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
     ui.heading(format!("Tile: {}", tile.name));
@@ -182,6 +305,7 @@ pub fn render_intra_tile_view(
         ui.allocate_ui_at_rect(layout_rect, |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
+            render_visual_layout_controls(ui, state);
             render_visual_layout_canvas(
                 ui,
                 arch,
@@ -195,6 +319,7 @@ pub fn render_intra_tile_view(
     } else {
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
+        render_visual_layout_controls(ui, state);
         render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, dark_mode);
     }
 }
@@ -206,6 +331,13 @@ pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_
     state.expanded_blocks.insert(instance_path.to_string());
 
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
     let children = get_children_for_mode(pb_type, mode_index);
 
     for child_pb in children {
@@ -268,28 +400,28 @@ fn count_pins(pb_type: &PBType, port_type: PortType) -> i32 {
 }
 
 /// Calculates the header name width
-fn calculate_header_name_width(pb_type: &PBType, has_children: bool) -> f32 {
-    let font = egui::FontId::proportional(14.0);
+fn calculate_header_name_width(pb_type: &PBType, has_children: bool, zoom: f32) -> f32 {
+    let font = egui::FontId::proportional(14.0 * zoom);
     let name_width = estimate_text_width(&font, &pb_type.name);
     let header_name_width = if has_children {
-        name_width + 25.0 // Expand indicator space
+        name_width + 25.0 * zoom // Expand indicator space
     } else {
-        name_width + 5.0 // Just margin
+        name_width + 5.0 * zoom // Just margin
     };
     if !pb_type.modes.is_empty() {
-        header_name_width + 130.0 // Mode selector space
+        header_name_width + 130.0 * zoom // Mode selector space
     } else {
         header_name_width
     }
 }
 
 /// Calculates the width needed for blif_model name.
-fn calculate_blif_model_width(pb_type: &PBType) -> f32 {
+fn calculate_blif_model_width(pb_type: &PBType, zoom: f32) -> f32 {
     match pb_type.class {
         PBTypeClass::None => {
             if let Some(blif_model) = &pb_type.blif_model {
-                let blif_font = egui::FontId::monospace(14.0);
-                estimate_text_width(&blif_font, blif_model) + 20.0
+                let blif_font = egui::FontId::monospace(14.0 * zoom);
+                estimate_text_width(&blif_font, blif_model) + 20.0 * zoom
             } else {
                 0.0
             }
@@ -303,6 +435,18 @@ fn generate_child_instance_name(child_pb: &PBType, index: usize) -> String {
         child_pb.name.clone()
     } else {
         format!("{}[{}]", child_pb.name, index)
+    }
+}
+
+/// Validates and corrects a mode index for a PBType, ensuring it's within bounds.
+/// Returns a valid mode index (defaults to 0 if out of bounds).
+fn validate_mode_index(pb_type: &PBType, mode_index: usize) -> usize {
+    if pb_type.modes.is_empty() {
+        0 // No modes, index doesn't matter
+    } else if mode_index < pb_type.modes.len() {
+        mode_index
+    } else {
+        0 // Out of bounds, default to first mode
     }
 }
 
@@ -333,21 +477,38 @@ fn get_interconnects_for_mode(
     }
 }
 
-fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str) -> egui::Vec2 {
+fn measure_pb_type(
+    pb_type: &PBType,
+    state: &mut IntraTileState,
+    instance_path: &str,
+) -> egui::Vec2 {
+    let zoom = state.zoom_clamped();
     let is_expanded = state.expanded_blocks.contains(instance_path);
+    let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    // Check cache first
+    let cache_key = (instance_path.to_string(), is_expanded, mode_index);
+    if let Some(cached_size) = state.measurement_cache.get(&cache_key) {
+        return *cached_size;
+    }
+
     let children = get_children_for_mode(pb_type, mode_index);
 
     if !is_expanded && !children.is_empty() {
-        let header_name_width_with_selector = calculate_header_name_width(pb_type, true);
-        let blif_model_width = calculate_blif_model_width(pb_type);
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, true, zoom);
+        let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-        let min_width = MIN_BLOCK_SIZE
-            .x
+        let min_width = (MIN_BLOCK_SIZE.x * zoom)
             .max(header_name_width_with_selector)
             .max(blif_model_width);
-        return egui::vec2(min_width, HEADER_HEIGHT);
+        return egui::vec2(min_width, HEADER_HEIGHT * zoom);
     }
 
     if children.is_empty() {
@@ -357,23 +518,24 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
 
         let max_side_pins = total_input_pins.max(total_output_pins) as f32;
         let min_height_for_pins = if max_side_pins > 0.0 {
-            (max_side_pins + 1.0) * MIN_PIN_SPACING
+            (max_side_pins + 1.0) * (MIN_PIN_SPACING * zoom)
         } else {
             0.0
         };
 
         let min_width_for_clock = if total_clock_pins > 0 {
-            (total_clock_pins as f32 + 1.0) * MIN_PIN_SPACING
+            (total_clock_pins as f32 + 1.0) * (MIN_PIN_SPACING * zoom)
         } else {
             0.0
         };
 
-        let header_name_width_with_selector = calculate_header_name_width(pb_type, false);
-        let blif_model_width = calculate_blif_model_width(pb_type);
+        let header_name_width_with_selector = calculate_header_name_width(pb_type, false, zoom);
+        let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-        let required_height = (HEADER_HEIGHT + min_height_for_pins).max(MIN_BLOCK_SIZE.y);
+        let required_height =
+            ((HEADER_HEIGHT * zoom) + min_height_for_pins).max(MIN_BLOCK_SIZE.y * zoom);
         let required_width = min_width_for_clock
-            .max(MIN_BLOCK_SIZE.x)
+            .max(MIN_BLOCK_SIZE.x * zoom)
             .max(header_name_width_with_selector)
             .max(blif_model_width);
 
@@ -403,13 +565,13 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
                     max_instance_size = max_instance_size.max(s);
                 }
 
-                let total_instances_h = max_instance_size.y * num + PADDING * gaps;
+                let total_instances_h = max_instance_size.y * num + (PADDING * zoom) * gaps;
 
                 max_child_w = max_child_w.max(max_instance_size.x);
-                current_h += total_instances_h + PADDING;
+                current_h += total_instances_h + (PADDING * zoom);
             }
             if !children.is_empty() {
-                current_h -= PADDING;
+                current_h -= PADDING * zoom;
             }
 
             total_w = max_child_w;
@@ -431,15 +593,15 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
                     max_instance_size = max_instance_size.max(s);
                 }
 
-                let child_instances_h = max_instance_size.y * num + PADDING * gaps;
+                let child_instances_h = max_instance_size.y * num + (PADDING * zoom) * gaps;
                 let child_instances_w = max_instance_size.x;
 
                 max_child_h = max_child_h.max(child_instances_h);
-                current_w += child_instances_w + PADDING;
+                current_w += child_instances_w + (PADDING * zoom);
             }
 
             if !children.is_empty() {
-                current_w -= PADDING;
+                current_w -= PADDING * zoom;
             }
 
             total_w = current_w;
@@ -450,26 +612,53 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     let total_input_pins = count_pins(pb_type, PortType::Input);
     let total_output_pins = count_pins(pb_type, PortType::Output);
     let max_pins = total_input_pins.max(total_output_pins) as f32;
-    let min_port_height = (max_pins + 1.0) * MIN_PIN_SPACING;
+    let min_port_height = (max_pins + 1.0) * (MIN_PIN_SPACING * zoom);
+
+    let has_complete_interconnect = pb_type
+        .interconnects
+        .iter()
+        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+
+    let is_clock_complete = pb_type
+        .interconnects
+        .iter()
+        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
+
+    let complete_spacing = if has_complete_interconnect && !is_clock_complete {
+        180.0 * zoom
+    } else {
+        0.0
+    };
+    // Extra right-side padding only for clock completes; does not shift children.
+    let clock_padding_right = if is_clock_complete { 140.0 * zoom } else { 0.0 };
 
     let interconnect_width = if !pb_type.modes.is_empty() || !pb_type.interconnects.is_empty() {
-        80.0
+        if has_complete_interconnect {
+            140.0 * zoom
+        } else {
+            80.0 * zoom
+        }
     } else {
         0.0
     };
 
     let header_name_width_with_selector =
-        calculate_header_name_width(pb_type, !children.is_empty());
-    let blif_model_width = calculate_blif_model_width(pb_type);
+        calculate_header_name_width(pb_type, !children.is_empty(), zoom);
+    let blif_model_width = calculate_blif_model_width(pb_type, zoom);
 
-    let w = (total_w + PADDING * 2.0 + interconnect_width)
-        .max(MIN_BLOCK_SIZE.x)
+    let w = (total_w + (PADDING * zoom) * 2.0 + interconnect_width + clock_padding_right)
+        .max(MIN_BLOCK_SIZE.x * zoom)
         .max(header_name_width_with_selector)
-        .max(blif_model_width);
-    let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
-        .max(MIN_BLOCK_SIZE.y)
+        .max(blif_model_width)
+        .max(total_w + complete_spacing + (PADDING * zoom) * 2.0);
+    let h = ((HEADER_HEIGHT * zoom) + (PADDING * zoom) + total_h + (PADDING * zoom))
+        .max(MIN_BLOCK_SIZE.y * zoom)
         .max(min_port_height);
-    egui::vec2(w, h)
+    let size = egui::vec2(w, h);
+
+    // Cache the result
+    state.measurement_cache.insert(cache_key, size);
+    size
 }
 
 // ------------------------------------------------------------
@@ -477,16 +666,176 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
 // ------------------------------------------------------------
 
 /// Draws the expand indicator (▶) in the header.
-fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect, dark_mode: bool) {
-    let indicator_x = header_rect.min.x + 8.0;
+fn draw_expand_indicator(
+    painter: &egui::Painter,
+    header_rect: egui::Rect,
+    zoom: f32,
+    dark_mode: bool,
+) {
+    let indicator_x = header_rect.min.x + 8.0 * zoom;
     let indicator_y = header_rect.center().y;
     painter.text(
         egui::pos2(indicator_x, indicator_y),
         egui::Align2::LEFT_CENTER,
         "▶",
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(12.0 * zoom),
         color_scheme::theme_text_color(dark_mode),
     );
+}
+
+/// Checks if a port reference refers to a clock port.
+/// Handles both current PBType ports and child instance ports.
+/// Extracts the port name from references like "clk[0]", "clb.clk[0]", or "fle[0].clk[0]".
+fn is_clock_port(port_ref: &str, current_pb: &PBType, children: &[PBType]) -> bool {
+    use fpga_arch_parser::{Port, PortClass};
+
+    // Extract port name and instance from various formats:
+    // "clk[0]" -> (None, "clk")
+    // "clb.clk[0]" -> (Some("clb"), "clk")
+    // "fle[0].clk[0]" -> (Some("fle[0]"), "clk")
+    let (instance_prefix, port_name) = if let Some(dot_idx) = port_ref.rfind('.') {
+        // Has instance prefix
+        let instance_part = &port_ref[..dot_idx];
+        let port_part = &port_ref[dot_idx + 1..];
+        let port_name = if let Some(bracket_idx) = port_part.find('[') {
+            &port_part[..bracket_idx]
+        } else {
+            port_part
+        };
+        (Some(instance_part), port_name)
+    } else if let Some(bracket_idx) = port_ref.find('[') {
+        // Just port name with index
+        (None, &port_ref[..bracket_idx])
+    } else {
+        (None, port_ref)
+    };
+
+    // If there's an instance prefix, check child PBTypes
+    if let Some(instance) = instance_prefix {
+        // Extract child name (e.g., "fle" from "fle[0]")
+        let child_name = if let Some(bracket_idx) = instance.find('[') {
+            &instance[..bracket_idx]
+        } else {
+            instance
+        };
+
+        // Find matching child PBType
+        for child_pb in children {
+            if child_pb.name == child_name {
+                // Check ports in this child PBType
+                for port in &child_pb.ports {
+                    match port {
+                        Port::Clock(c) => {
+                            if c.name == port_name {
+                                return true;
+                            }
+                        }
+                        Port::Input(p) => {
+                            if p.name == port_name {
+                                // Check port_class first, then fall back to name matching for backward compatibility
+                                if matches!(p.port_class, PortClass::Clock) {
+                                    return true;
+                                }
+                                // Fallback: check if port name contains "clk" or "clock"
+                                let name_lower = p.name.to_lowercase();
+                                if name_lower.contains("clk") || name_lower.contains("clock") {
+                                    return true;
+                                }
+                            }
+                        }
+                        Port::Output(p) => {
+                            if p.name == port_name {
+                                // Check port_class first, then fall back to name matching for backward compatibility
+                                if matches!(p.port_class, PortClass::Clock) {
+                                    return true;
+                                }
+                                // Fallback: check if port name contains "clk" or "clock"
+                                let name_lower = p.name.to_lowercase();
+                                if name_lower.contains("clk") || name_lower.contains("clock") {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    } else {
+        // Check current PBType ports
+        for port in &current_pb.ports {
+            match port {
+                Port::Clock(c) => {
+                    if c.name == port_name {
+                        return true;
+                    }
+                }
+                Port::Input(p) => {
+                    if p.name == port_name {
+                        // Check port_class first, then fall back to name matching for backward compatibility
+                        if matches!(p.port_class, PortClass::Clock) {
+                            return true;
+                        }
+                        // Fallback: check if port name contains "clk" or "clock"
+                        let name_lower = p.name.to_lowercase();
+                        if name_lower.contains("clk") || name_lower.contains("clock") {
+                            return true;
+                        }
+                    }
+                }
+                Port::Output(p) => {
+                    if p.name == port_name {
+                        // Check port_class first, then fall back to name matching for backward compatibility
+                        if matches!(p.port_class, PortClass::Clock) {
+                            return true;
+                        }
+                        // Fallback: check if port name contains "clk" or "clock"
+                        let name_lower = p.name.to_lowercase();
+                        if name_lower.contains("clk") || name_lower.contains("clock") {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Final fallback: if port name itself contains "clk" or "clock", treat as clock
+    // This handles cases where the port might not be found in the PBType but the name suggests it's a clock
+    let port_name_lower = port_name.to_lowercase();
+    if port_name_lower.contains("clk") || port_name_lower.contains("clock") {
+        return true;
+    }
+
+    false
+}
+
+/// Checks if a Complete interconnect is a clock interconnect by verifying
+/// that all ports in both input and output lists are clock ports.
+fn is_clock_complete_interconnect(
+    interconnect: &fpga_arch_parser::Interconnect,
+    current_pb: &PBType,
+    children: &[PBType],
+) -> bool {
+    if let fpga_arch_parser::Interconnect::Complete(c) = interconnect {
+        // Expand port lists to get individual port references
+        let raw_inputs = expand_port_list(&c.input);
+        let raw_outputs = expand_port_list(&c.output);
+
+        // Check if all input ports are clock ports
+        let all_inputs_clock = raw_inputs
+            .iter()
+            .all(|port_ref| is_clock_port(port_ref, current_pb, children));
+
+        // Check if all output ports are clock ports
+        let all_outputs_clock = raw_outputs
+            .iter()
+            .all(|port_ref| is_clock_port(port_ref, current_pb, children));
+
+        all_inputs_clock && all_outputs_clock
+    } else {
+        false
+    }
 }
 
 fn resolve_port_pos(
@@ -546,7 +895,17 @@ fn resolve_bus_list(
         }
 
         let mut idx = 0;
+        const MAX_BUS_ITERATIONS: usize = 1024; // Prevent infinite loops
         loop {
+            if idx >= MAX_BUS_ITERATIONS {
+                // Log warning for debugging (could use eprintln! or a logging framework)
+                eprintln!(
+                    "Warning: Bus resolution hit max iterations ({}) for port: {}",
+                    MAX_BUS_ITERATIONS, port_ref
+                );
+                break;
+            }
+
             let candidate = if let Some((prefix, suffix)) = port_ref.rsplit_once('.') {
                 format!("{}.{}[{}]", prefix, suffix, idx)
             } else {
@@ -630,17 +989,37 @@ fn draw_pb_type(
     expand_all: bool,
     dark_mode: bool,
 ) -> HashMap<String, egui::Pos2> {
+    let zoom = state.zoom_clamped();
     let size = measure_pb_type(pb_type, state, instance_path);
     let rect = egui::Rect::from_min_size(pos, size);
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    // Record this PB's rect for downstream placement (e.g., interconnect boxes)
+    state.pb_rects.insert(instance_path.to_string(), rect);
+
+    let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
     let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
+    let has_complete_interconnect = pb_type
+        .interconnects
+        .iter()
+        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+    let _is_clock_complete = pb_type
+        .interconnects
+        .iter()
+        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
     let is_expanded = state.expanded_blocks.contains(instance_path);
 
     // Draw header with expand/collapse indicator
-    let header_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT));
+    let header_rect =
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
 
     // Make header clickable if it has children
     if has_children {
@@ -669,11 +1048,11 @@ fn draw_pb_type(
 
         // Draw block name in header
         let name_x = if has_children {
-            header_rect.min.x + 25.0
+            header_rect.min.x + 25.0 * zoom
         } else {
-            header_rect.min.x + 5.0
+            header_rect.min.x + 5.0 * zoom
         };
-        let font = egui::FontId::proportional(14.0);
+        let font = egui::FontId::proportional(14.0 * zoom);
         painter.text(
             egui::pos2(name_x, header_rect.center().y),
             egui::Align2::LEFT_CENTER,
@@ -684,7 +1063,7 @@ fn draw_pb_type(
 
         // Draw expand/collapse indicator on top
         if has_children {
-            draw_expand_indicator(painter, header_rect, dark_mode);
+            draw_expand_indicator(painter, header_rect, zoom, dark_mode);
         }
 
         return HashMap::new();
@@ -712,35 +1091,38 @@ fn draw_pb_type(
         }
     };
 
-    // Draw collapse indicator
-    if has_children && !is_expanded {
-        draw_expand_indicator(painter, header_rect, dark_mode);
-    }
-
     if pb_type.modes.len() > 1 {
-        let mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
+        let mut mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
+        mode_idx = validate_mode_index(pb_type, mode_idx);
+        // Update state with validated mode index if it was corrected
+        if mode_idx != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+            state
+                .selected_modes
+                .insert(instance_path.to_string(), mode_idx);
+        }
         let mode_name = &pb_type.modes[mode_idx].name;
 
         // Truncate mode name if it's too long
-        let selector_width = (120.0_f32).min(rect.width() * 0.4);
+        let selector_width = (120.0_f32 * zoom).min(rect.width() * 0.4);
         let display_name = if mode_name.len() > 15 {
             format!("{}...", &mode_name[..12])
         } else {
             mode_name.clone()
         };
 
-        let selector_height = 18.0;
-        let margin = 5.0;
+        let selector_height = 18.0 * zoom;
+        let margin = 5.0 * zoom;
         let selector_rect = egui::Rect::from_min_size(
-            rect.min + egui::vec2(rect.width() - selector_width - margin, 2.0),
+            rect.min + egui::vec2(rect.width() - selector_width - margin, 2.0 * zoom),
             egui::vec2(selector_width, selector_height),
         );
 
         let mut selected_mode = mode_idx;
 
         ui.put(selector_rect, |ui: &mut egui::Ui| {
+            let old_style = apply_local_zoom_style(ui, zoom);
             ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 0.0);
-            egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
+            let response = egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
                 .width(selector_width)
                 .selected_text(&display_name)
                 .show_ui(ui, |ui| {
@@ -753,7 +1135,9 @@ fn draw_pb_type(
                         ui.selectable_value(&mut selected_mode, i, &item_text);
                     }
                 })
-                .response
+                .response;
+            ui.set_style(old_style);
+            response
         });
 
         if selected_mode != mode_idx {
@@ -772,8 +1156,17 @@ fn draw_pb_type(
     if has_children && is_expanded {
         let direction = get_layout_direction(children);
 
-        let start_x = rect.min.x + PADDING;
-        let start_y = rect.min.y + HEADER_HEIGHT + PADDING;
+        // If this block has a non-clock complete interconnect, push children
+        // rightward to create an intentional gutter. Clock completes keep
+        // children aligned; their space is handled on the right at measure time.
+        let complete_spacing = if has_complete_interconnect {
+            180.0 * zoom
+        } else {
+            0.0
+        };
+
+        let start_x = rect.min.x + (PADDING * zoom) + complete_spacing;
+        let start_y = rect.min.y + (HEADER_HEIGHT * zoom) + (PADDING * zoom);
 
         let mut cursor_x = start_x;
         let mut cursor_y = start_y;
@@ -803,13 +1196,13 @@ fn draw_pb_type(
                     children_ports.insert(format!("{}.{}", instance_name, port_name), p);
                 }
 
-                cursor_y += child_single_size.y + PADDING;
+                cursor_y += child_single_size.y + (PADDING * zoom);
             }
 
             match direction {
                 LayoutDirection::Vertical => {}
                 LayoutDirection::Horizontal => {
-                    cursor_x += max_col_width + PADDING;
+                    cursor_x += max_col_width + (PADDING * zoom);
                     cursor_y = start_y;
                 }
             }
@@ -820,49 +1213,123 @@ fn draw_pb_type(
         let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
-            let (input_str, output_str, kind) = match inter {
-                fpga_arch_parser::Interconnect::Direct(d) => (&d.input, &d.output, "direct"),
-                fpga_arch_parser::Interconnect::Mux(m) => (&m.input, &m.output, "mux"),
-                fpga_arch_parser::Interconnect::Complete(c) => (&c.input, &c.output, "complete"),
-            };
+            match inter {
+                fpga_arch_parser::Interconnect::Direct(d) => {
+                    let raw_sources = expand_port_list(&d.input);
+                    let raw_sinks = expand_port_list(&d.output);
+                    let mut sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let mut sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
 
-            let raw_sources = expand_port_list(input_str);
-            let raw_sinks = expand_port_list(output_str);
-            let sources = resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
-            let sinks = resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+                    // Align buses by numeric index when both sides are indexed, so
+                    // fle[0] maps to O[0], fle[1] to O[1], etc. We try to parse an
+                    // outer index (before the dot) first, then an inner bit index.
+                    // If either side lacks indices or lengths differ, we keep order.
+                    let parse_indices = |s: &str| {
+                        // outer like "fle[3].out[0]"
+                        let outer = s.find('[').and_then(|start| {
+                            s[start + 1..]
+                                .find(']')
+                                .and_then(|e| s[start + 1..start + 1 + e].parse::<i32>().ok())
+                        });
+                        // inner like ".out[0]"
+                        let inner = s.rfind('[').and_then(|start| {
+                            s[start + 1..]
+                                .find(']')
+                                .and_then(|e| s[start + 1..start + 1 + e].parse::<i32>().ok())
+                        });
+                        (outer, inner)
+                    };
 
-            if kind == "direct" || kind == "complete" {
-                for (i, src) in sources.iter().enumerate() {
-                    if i < sinks.len() {
-                        let dst = &sinks[i];
-                        draw_direct_connection(
-                            painter,
-                            src,
-                            dst,
-                            pb_type,
-                            &my_ports,
-                            &children_ports,
-                            state,
-                            ui,
-                            rect,
-                            dark_mode,
-                        );
+                    let src_all_idx = sources.iter().all(|s| parse_indices(s).0.is_some());
+                    let dst_all_idx = sinks.iter().all(|s| parse_indices(s).0.is_some());
+
+                    if src_all_idx && dst_all_idx && sources.len() == sinks.len() {
+                        let mut src_with = sources
+                            .into_iter()
+                            .filter_map(|s| {
+                                let (o, i) = parse_indices(&s);
+                                Some(((o?, i.unwrap_or(0)), s))
+                            })
+                            .collect::<Vec<_>>();
+                        let mut dst_with = sinks
+                            .into_iter()
+                            .filter_map(|d| {
+                                let (o, i) = parse_indices(&d);
+                                Some(((o?, i.unwrap_or(0)), d))
+                            })
+                            .collect::<Vec<_>>();
+                        src_with.sort_by_key(|(k, _)| *k);
+                        dst_with.sort_by_key(|(k, _)| *k);
+                        sources = src_with.into_iter().map(|(_, s)| s).collect();
+                        sinks = dst_with.into_iter().map(|(_, d)| d).collect();
+                    }
+
+                    for (i, src) in sources.iter().enumerate() {
+                        if i < sinks.len() {
+                            let dst = &sinks[i];
+                            draw_direct_connection(
+                                painter,
+                                src,
+                                dst,
+                                pb_type,
+                                children,
+                                &my_ports,
+                                &children_ports,
+                                state,
+                                ui,
+                                rect,
+                                dark_mode,
+                            );
+                        }
                     }
                 }
-            } else {
-                draw_interconnect_block(
-                    painter,
-                    kind,
-                    &sources,
-                    &sinks,
-                    pb_type,
-                    &my_ports,
-                    &children_ports,
-                    state,
-                    ui,
-                    rect,
-                    dark_mode,
-                );
+                fpga_arch_parser::Interconnect::Mux(m) => {
+                    let raw_sources = expand_port_list(&m.input);
+                    let raw_sinks = expand_port_list(&m.output);
+                    let sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+                    draw_interconnect_block(
+                        painter,
+                        "mux",
+                        &sources,
+                        &sinks,
+                        pb_type,
+                        children,
+                        &my_ports,
+                        &children_ports,
+                        state,
+                        ui,
+                        rect,
+                        dark_mode,
+                    );
+                }
+                fpga_arch_parser::Interconnect::Complete(c) => {
+                    let raw_sources = expand_port_list(&c.input);
+                    let raw_sinks = expand_port_list(&c.output);
+                    let sources =
+                        resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
+                    let sinks =
+                        resolve_bus_list(&raw_sinks, &pb_type.name, &my_ports, &children_ports);
+
+                    draw_complete_interconnect(
+                        painter,
+                        &sources,
+                        &sinks,
+                        pb_type,
+                        children,
+                        &my_ports,
+                        &children_ports,
+                        state,
+                        ui,
+                        rect,
+                        dark_mode,
+                    );
+                }
             }
         }
     }
@@ -883,6 +1350,7 @@ fn draw_wire_segment(
     ui: &mut egui::Ui,
     is_clock: bool,
 ) {
+    let zoom = state.zoom_clamped();
     let mut points = Vec::new();
     points.push(start);
 
@@ -891,42 +1359,23 @@ fn draw_wire_segment(
         if start.y == end.y {
             // Same Y level - direct horizontal routing
             points.push(end);
-        } else if start.y < end.y {
-            // Vertical routing for clock: A is above B
-            if start.x > end.x {
-                // A is on the right of B: down → left → down
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            } else {
-                // A is on the left of B: down → right → down
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            }
-            points.push(end);
         } else {
-            if start.x > end.x {
-                // A is on the right of B: up → left → up
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            } else {
-                // A is on the left of B: up → right → up
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            }
+            // Vertical routing for clock: route through midpoint
+            let mid_y = start.y + (end.y - start.y) / 2.0;
+            points.push(egui::pos2(start.x, mid_y));
+            points.push(egui::pos2(end.x, mid_y));
             points.push(end);
         }
     } else if start.x < end.x {
         let dist = end.x - start.x;
-        let is_parent_output = end.x >= parent_rect.max.x - 20.0;
+        let is_parent_output = end.x >= parent_rect.max.x - 20.0 * zoom;
 
-        if dist > 100.0 && !is_parent_output {
-            let channel_x_start = start.x + 10.0;
-            let channel_x_end = end.x - 10.0;
-            let route_y = parent_rect.min.y + 40.0;
+        // Scale these thresholds/offsets with zoom so detours remain "above"
+        // the same relative region when zooming.
+        if dist > 100.0 * zoom && !is_parent_output {
+            let channel_x_start = start.x + 10.0 * zoom;
+            let channel_x_end = end.x - 10.0 * zoom;
+            let route_y = parent_rect.min.y + 40.0 * zoom;
 
             points.push(egui::pos2(channel_x_start, start.y));
             points.push(egui::pos2(channel_x_start, route_y));
@@ -938,8 +1387,8 @@ fn draw_wire_segment(
             points.push(egui::pos2(mid_x, end.y));
         }
     } else {
-        let channel_out = start.x + 10.0;
-        let channel_in = end.x - 10.0;
+        let channel_out = start.x + 10.0 * zoom;
+        let channel_in = end.x - 10.0 * zoom;
         let mid_y = start.y + (end.y - start.y) / 2.0;
 
         points.push(egui::pos2(channel_out, start.y));
@@ -947,8 +1396,96 @@ fn draw_wire_segment(
         points.push(egui::pos2(channel_in, mid_y));
         points.push(egui::pos2(channel_in, end.y));
     }
+    // Only push end if it wasn't already pushed (clock routing already includes end)
+    if !is_clock {
+        points.push(end);
+    }
+
+    if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
+        let mut hovered = false;
+        for i in 0..points.len() - 1 {
+            let p1 = points[i];
+            let p2 = points[i + 1];
+            let pad = 5.0 * zoom;
+            let min_x = p1.x.min(p2.x) - pad;
+            let max_x = p1.x.max(p2.x) + pad;
+            let min_y = p1.y.min(p2.y) - pad;
+            let max_y = p1.y.max(p2.y) + pad;
+
+            if pointer_pos.x >= min_x
+                && pointer_pos.x <= max_x
+                && pointer_pos.y >= min_y
+                && pointer_pos.y <= max_y
+            {
+                hovered = true;
+                break;
+            }
+        }
+
+        if hovered {
+            state.highlighted_positions_next_frame.push(start);
+            state.highlighted_positions_next_frame.push(end);
+        }
+    }
+
+    painter.add(egui::Shape::line(points, stroke));
+}
+
+fn pb_name_from_port(port: &str) -> Option<&str> {
+    port.split('.').next()
+}
+
+fn find_pb_rect<'a>(state: &'a IntraTileState, pb_name: &str) -> Option<&'a egui::Rect> {
+    state
+        .pb_rects
+        .iter()
+        .find(|(k, _)| k.ends_with(pb_name))
+        .map(|(_, r)| r)
+}
+
+fn clock_channel_y_between(
+    state: &IntraTileState,
+    src_pb: &str,
+    dst_pb: &str,
+    default: f32,
+) -> f32 {
+    let src_rect = find_pb_rect(state, src_pb);
+    let dst_rect = find_pb_rect(state, dst_pb);
+
+    match (src_rect, dst_rect) {
+        (Some(sr), Some(dr)) => {
+            // Prefer horizontal routing through overlapping vertical band if available.
+            let overlap_top = sr.min.y.max(dr.min.y);
+            let overlap_bot = sr.max.y.min(dr.max.y);
+            if overlap_bot > overlap_top {
+                (overlap_top + overlap_bot) * 0.5
+            } else {
+                // No overlap; route midway between the two rects vertically.
+                (sr.max.y + dr.min.y) * 0.5
+            }
+        }
+        _ => default,
+    }
+}
+
+fn draw_clock_wire_segment(
+    painter: &egui::Painter,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    stroke: egui::Stroke,
+    parent_rect: egui::Rect,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+    channel_y: f32,
+) {
+    let _ = parent_rect;
+    let mut points = Vec::new();
+    points.push(start);
+    points.push(egui::pos2(start.x, channel_y));
+    points.push(egui::pos2(end.x, channel_y));
     points.push(end);
 
+    // Minimal hover highlight reuse from draw_wire_segment
     if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
         let mut hovered = false;
         for i in 0..points.len() - 1 {
@@ -983,6 +1520,7 @@ fn draw_direct_connection(
     src: &str,
     dst: &str,
     current_pb: &PBType,
+    children: &[PBType],
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
     state: &mut IntraTileState,
@@ -1012,11 +1550,12 @@ fn draw_direct_connection(
         let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
         let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
-        // Check if this is a clock connection by examining port names
-        let is_clock = src.to_lowercase().contains("clk")
-            || src.to_lowercase().contains("clock")
-            || dst.to_lowercase().contains("clk")
-            || dst.to_lowercase().contains("clock");
+        // Check if this is a clock connection using port class instead of string matching
+        let is_clock =
+            is_clock_port(src, current_pb, children) || is_clock_port(dst, current_pb, children);
+
+        // For direct clock links (e.g., ff clk -> ble clk), keep a simple route
+        // using the generic wire segment to avoid long detours.
         draw_wire_segment(
             painter,
             start,
@@ -1030,12 +1569,12 @@ fn draw_direct_connection(
     }
 }
 
-fn draw_interconnect_block(
+fn draw_complete_interconnect(
     painter: &egui::Painter,
-    kind: &str,
     sources: &[String],
     sinks: &[String],
     current_pb: &PBType,
+    children: &[PBType],
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
     state: &mut IntraTileState,
@@ -1043,6 +1582,325 @@ fn draw_interconnect_block(
     parent_rect: egui::Rect,
     dark_mode: bool,
 ) {
+    let zoom = state.zoom_clamped();
+    // Resolve sources and group by prefix (e.g., "clb", "fle")
+    let mut source_groups: Vec<Vec<(String, egui::Pos2)>> = Vec::new();
+    let mut current_group: Option<(String, Vec<(String, egui::Pos2)>)> = None;
+
+    for src in sources {
+        if let Some(pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
+            // Extract prefix: everything before first '.' or '['
+            let prefix = src
+                .split(|c| c == '.' || c == '[')
+                .next()
+                .unwrap_or(src)
+                .to_string();
+
+            match current_group.as_mut() {
+                Some((last_prefix, group)) if *last_prefix == prefix => {
+                    // Same prefix, add to current group
+                    group.push((src.clone(), pos));
+                }
+                _ => {
+                    // New prefix, start a new group
+                    if let Some((_, group)) = current_group.take() {
+                        source_groups.push(group);
+                    }
+                    current_group = Some((prefix.clone(), vec![(src.clone(), pos)]));
+                }
+            }
+        }
+    }
+    // Push the last group
+    if let Some((_, group)) = current_group {
+        source_groups.push(group);
+    }
+
+    let mut resolved_sinks = Vec::new();
+    for dst in sinks {
+        if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
+            resolved_sinks.push((dst, pos));
+        }
+    }
+
+    // Combine for calculations that need all sources
+    let resolved_sources: Vec<_> = source_groups[0].clone();
+
+    if resolved_sources.is_empty() || resolved_sinks.is_empty() {
+        return;
+    }
+
+    for group in &mut source_groups {
+        group.sort_by(|a, b| {
+            a.1.y
+                .partial_cmp(&b.1.y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    resolved_sinks.sort_by(|a, b| {
+        a.1.y
+            .partial_cmp(&b.1.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let all_y: Vec<f32> = resolved_sources
+        .iter()
+        .map(|(_, p)| p.y)
+        .chain(resolved_sinks.iter().map(|(_, p)| p.y))
+        .collect();
+    let avg_y = all_y.iter().sum::<f32>() / all_y.len() as f32;
+
+    let source_max_x = resolved_sources
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let sink_min_x = resolved_sinks
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::INFINITY, f32::min);
+    let sink_max_x = resolved_sinks
+        .iter()
+        .map(|(_, p)| p.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    let rows = resolved_sources.len().max(resolved_sinks.len());
+    let row_spacing = 18.0 * zoom;
+    let available_height = (parent_rect.height() - 20.0 * zoom).max(60.0 * zoom);
+    let height = ((rows as f32 + 1.0) * row_spacing)
+        .max(60.0 * zoom)
+        .min(available_height);
+    let width = 55.0 * zoom;
+
+    // Special-case clock crossbars: place them in the gap between the source
+    // cluster (clb clk pins) and the sink cluster (fle clk pins), based on
+    // their bounding edges rather than a fixed offset.
+    let is_clock_block = resolved_sources
+        .iter()
+        .all(|(s, _)| is_clock_port(s, current_pb, children))
+        && resolved_sinks
+            .iter()
+            .all(|(s, _)| is_clock_port(s, current_pb, children));
+
+    let block_center_x = if is_clock_block {
+        // Try to derive the sink PB bounds from recorded rects.
+        let sink_pb_names: Vec<String> = resolved_sinks
+            .iter()
+            .filter_map(|(s, _)| s.rsplit('.').nth(1).map(|p| p.to_string()))
+            .collect();
+
+        let mut sink_rect_max = f32::NEG_INFINITY;
+        for (path, rect) in state.pb_rects.iter() {
+            if sink_pb_names.iter().any(|n| path.ends_with(n)) {
+                sink_rect_max = sink_rect_max.max(rect.max.x);
+            }
+        }
+
+        // Fallback to pin-based span if we couldn't find rects.
+        if !sink_rect_max.is_finite() {
+            sink_rect_max = sink_max_x;
+        }
+
+        let center = ((sink_rect_max + parent_rect.max.x) * 0.5)
+            .max(parent_rect.min.x + width * 0.5 + 6.0 * zoom)
+            .min(parent_rect.max.x - width * 0.5 - 6.0 * zoom);
+        center
+    } else {
+        // Position the block based on the actual gap between sources and sinks.
+        let gap = sink_min_x - source_max_x;
+        let gap_is_usable = gap.is_finite() && gap > width + 20.0 * zoom;
+
+        if gap_is_usable {
+            // Leave 1/3 of the free gap on each side of the crossbar
+            let side_margin = ((gap - width).max(0.0)) / 3.0;
+            let left_x = source_max_x + side_margin;
+            let right_x = sink_min_x - side_margin;
+            ((left_x + right_x) * 0.5).clamp(
+                parent_rect.min.x + width * 0.5 + 4.0 * zoom,
+                parent_rect.max.x - width * 0.5 - 4.0 * zoom,
+            )
+        } else {
+            // Gap too small: bias near sinks but keep a buffer from the parent edge
+            (sink_min_x - 20.0 * zoom - width * 0.5)
+                .max(parent_rect.min.x + width * 0.5 + 10.0 * zoom)
+                .min(parent_rect.max.x - width * 0.5 - 10.0 * zoom)
+        }
+    };
+
+    let rect =
+        egui::Rect::from_center_size(egui::pos2(block_center_x, avg_y), egui::vec2(width, height));
+
+    let block_hovered = ui.rect_contains_pointer(rect);
+    let is_block_highlighted = block_hovered
+        || state
+            .highlighted_positions_this_frame
+            .iter()
+            .any(|p| rect.contains(*p));
+
+    let stroke_color = if is_block_highlighted {
+        color_scheme::HIGHLIGHT_COLOR
+    } else {
+        color_scheme::theme_border_color(dark_mode)
+    };
+    let fill_color = color_scheme::theme_block_bg(dark_mode);
+    let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
+
+    painter.rect(rect, 3.0 * zoom, fill_color, stroke);
+    // Draw a large X across the block instead of text.
+    let x_stroke = egui::Stroke::new(2.0 * zoom, stroke_color);
+    painter.line_segment([rect.min, rect.max], x_stroke);
+    painter.line_segment(
+        [
+            egui::pos2(rect.min.x, rect.max.y),
+            egui::pos2(rect.max.x, rect.min.y),
+        ],
+        x_stroke,
+    );
+
+    for group in &mut source_groups {
+        let clb_step = if group.is_empty() {
+            rect.height()
+        } else {
+            (rect.height() / (group.len() as f32 + 1.0)).max(20.0 * zoom)
+        };
+
+        for (i, (src_name, src_pos)) in group.iter().enumerate() {
+            let y = rect.min.y + clb_step * (i as f32 + 1.0);
+            let target = egui::pos2(rect.min.x, y);
+
+            let wire_highlighted = is_block_highlighted
+                || state
+                    .highlighted_positions_this_frame
+                    .iter()
+                    .any(|p| p.distance(*src_pos) < 1.0);
+            let wire_color = if wire_highlighted {
+                color_scheme::HIGHLIGHT_COLOR
+            } else {
+                color_scheme::theme_interconnect_bg(dark_mode)
+            };
+            let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
+
+            let is_clock = is_clock_port(src_name, current_pb, children);
+            if is_clock {
+                // Approach from the left with an extra turn: left offset, then up to target y, then into block.
+                let offset_x = rect.min.x - 10.0 * zoom;
+                let path = vec![
+                    *src_pos,
+                    egui::pos2(offset_x, src_pos.y),
+                    egui::pos2(offset_x, target.y),
+                    target,
+                ];
+                painter.add(egui::Shape::line(path, wire_stroke));
+            } else {
+                // Special-case only when the source sits to the right of the interconnect:
+                // route via a top rail (using fle top minus padding) to avoid cutting across the block.
+                if src_pos.x > rect.min.x {
+                    // Route: up to top rail, left, down, then right horizontally to interconnect edge
+                    let mut fle_top = f32::INFINITY;
+                    for (path, r) in state.pb_rects.iter() {
+                        if path.contains(".fle[") || path.ends_with("fle") {
+                            fle_top = fle_top.min(r.min.y);
+                        }
+                    }
+                    let padding = 10.0 * zoom;
+                    let mut top_y = fle_top - padding;
+                    if !top_y.is_finite() {
+                        top_y = rect.min.y - padding; // fallback
+                    }
+                    top_y = top_y.max(parent_rect.min.y + 2.0 * zoom);
+
+                    let offset_x = rect.min.x - 10.0 * zoom;
+                    let path = vec![
+                        *src_pos,
+                        egui::pos2(src_pos.x, top_y),
+                        egui::pos2(offset_x, top_y),
+                        egui::pos2(offset_x, target.y),
+                        target,
+                    ];
+                    painter.add(egui::Shape::line(path, wire_stroke));
+                } else {
+                    draw_wire_segment(
+                        painter,
+                        *src_pos,
+                        target,
+                        wire_stroke,
+                        parent_rect,
+                        state,
+                        ui,
+                        is_clock,
+                    );
+                }
+            }
+
+            if block_hovered {
+                state.highlighted_positions_next_frame.push(*src_pos);
+            }
+        }
+    }
+    let sink_step = rect.height() / (resolved_sinks.len() as f32 + 1.0);
+    for (i, (dst_name, dst_pos)) in resolved_sinks.iter().enumerate() {
+        let y = rect.min.y + sink_step * (i as f32 + 1.0);
+        let start = egui::pos2(rect.max.x, y);
+
+        let wire_highlighted = is_block_highlighted
+            || state
+                .highlighted_positions_this_frame
+                .iter()
+                .any(|p| p.distance(*dst_pos) < 1.0);
+        let wire_color = if wire_highlighted {
+            color_scheme::HIGHLIGHT_COLOR
+        } else {
+            color_scheme::theme_interconnect_bg(dark_mode)
+        };
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
+
+        let is_clock = is_clock_port(dst_name, current_pb, children);
+        if is_clock {
+            let channel_y = dst_pos.y + 5.0 * zoom;
+            // Add a right-hand offset before heading toward the sink.
+            let offset_x = rect.max.x + 10.0 * zoom;
+            let path = vec![
+                start,
+                egui::pos2(offset_x, start.y),
+                egui::pos2(offset_x, channel_y),
+                egui::pos2(dst_pos.x, channel_y),
+                *dst_pos,
+            ];
+            painter.add(egui::Shape::line(path, wire_stroke));
+        } else {
+            draw_wire_segment(
+                painter,
+                start,
+                *dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
+
+        if block_hovered {
+            state.highlighted_positions_next_frame.push(*dst_pos);
+        }
+    }
+}
+
+fn draw_interconnect_block(
+    painter: &egui::Painter,
+    kind: &str,
+    sources: &[String],
+    sinks: &[String],
+    current_pb: &PBType,
+    children: &[PBType],
+    my_ports: &HashMap<String, egui::Pos2>,
+    children_ports: &HashMap<String, egui::Pos2>,
+    state: &mut IntraTileState,
+    ui: &mut egui::Ui,
+    parent_rect: egui::Rect,
+    dark_mode: bool,
+) {
+    let zoom = state.zoom_clamped();
     let mut valid_sinks = Vec::new();
     for dst in sinks {
         if let Some(pos) = resolve_port_pos(dst, &current_pb.name, my_ports, children_ports) {
@@ -1060,7 +1918,7 @@ fn draw_interconnect_block(
         .map(|(_, p)| p.x)
         .fold(f32::INFINITY, |a, b| a.min(b));
 
-    let width = 35.0;
+    let width = 35.0 * zoom;
 
     let max_sink_y = valid_sinks
         .iter()
@@ -1073,13 +1931,13 @@ fn draw_interconnect_block(
 
     let sink_spread = max_sink_y - min_sink_y;
 
-    let input_spacing = 15.0;
+    let input_spacing = 15.0 * zoom;
     let input_spread = (sources.len() as f32 + 1.0) * input_spacing;
 
     let spread = sink_spread.max(input_spread);
-    let height = (spread + 20.0).max(40.0).min(150.0);
+    let height = (spread + 20.0 * zoom).max(40.0 * zoom).min(150.0 * zoom);
 
-    let block_center = egui::pos2(min_x - 50.0, avg_y);
+    let block_center = egui::pos2(min_x - 50.0 * zoom, avg_y);
     let rect = egui::Rect::from_center_size(block_center, egui::vec2(width, height));
 
     let mut block_hovered = false;
@@ -1098,7 +1956,7 @@ fn draw_interconnect_block(
     } else {
         color_scheme::theme_border_color(dark_mode)
     };
-    let stroke = egui::Stroke::new(1.5, stroke_color);
+    let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
     let fill_color = color_scheme::theme_block_bg(dark_mode);
 
     if kind == "mux" {
@@ -1115,7 +1973,7 @@ fn draw_interconnect_block(
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
         // rectangle with X
-        painter.rect(rect, 2.0, fill_color, stroke);
+        painter.rect(rect, 2.0 * zoom, fill_color, stroke);
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
             [
@@ -1153,24 +2011,41 @@ fn draw_interconnect_block(
         } else {
             color_scheme::theme_interconnect_bg(dark_mode)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
         let input_y = rect.min.y + input_step * (i as f32 + 1.0);
         let target = egui::pos2(left_edge_x, input_y);
 
         // Check if this is a clock connection by examining source port name
-        let is_clock =
-            src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            *src_pos,
-            target,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        let is_clock = is_clock_port(src_name, current_pb, children);
+        if is_clock {
+            let default_mid = src_pos.y + (target.y - src_pos.y) * 0.5;
+            let channel_y = match (pb_name_from_port(src_name), Some(current_pb.name.as_str())) {
+                (Some(spb), Some(dpb)) => clock_channel_y_between(state, spb, dpb, default_mid),
+                _ => default_mid,
+            };
+            draw_clock_wire_segment(
+                painter,
+                *src_pos,
+                target,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                channel_y,
+            );
+        } else {
+            draw_wire_segment(
+                painter,
+                *src_pos,
+                target,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(*src_pos);
@@ -1189,22 +2064,39 @@ fn draw_interconnect_block(
         } else {
             egui::Color32::from_rgba_unmultiplied(100, 100, 100, 100)
         };
-        let wire_stroke = egui::Stroke::new(1.5, wire_color);
+        let wire_stroke = egui::Stroke::new(1.5 * zoom, wire_color);
 
         let start = egui::pos2(right_edge_x, block_center.y);
         // Check if this is a clock connection by examining sink port name
-        let is_clock =
-            dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
-        draw_wire_segment(
-            painter,
-            start,
-            dst_pos,
-            wire_stroke,
-            parent_rect,
-            state,
-            ui,
-            is_clock,
-        );
+        let is_clock = is_clock_port(dst_name, current_pb, children);
+        if is_clock {
+            let default_mid = start.y + (dst_pos.y - start.y) * 0.5;
+            let channel_y = match (pb_name_from_port(dst_name), Some(current_pb.name.as_str())) {
+                (Some(dpb), Some(spb)) => clock_channel_y_between(state, spb, dpb, default_mid),
+                _ => default_mid,
+            };
+            draw_clock_wire_segment(
+                painter,
+                start,
+                dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                channel_y,
+            );
+        } else {
+            draw_wire_segment(
+                painter,
+                start,
+                dst_pos,
+                wire_stroke,
+                parent_rect,
+                state,
+                ui,
+                is_clock,
+            );
+        }
 
         if ui.rect_contains_pointer(rect) {
             state.highlighted_positions_next_frame.push(dst_pos);

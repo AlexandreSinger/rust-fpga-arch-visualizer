@@ -29,6 +29,8 @@ pub struct IntraTileState {
     pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
     pub pb_rects: HashMap<String, egui::Rect>,
+    // Cache for PBType measurements: (instance_path, is_expanded, mode_index) -> size
+    measurement_cache: HashMap<(String, bool, usize), egui::Vec2>,
 }
 
 fn render_hierarchy_tree_panel(
@@ -162,6 +164,9 @@ pub fn render_intra_tile_view(
 ) {
     // Clear per-frame PB rects before drawing
     state.pb_rects.clear();
+    // Clear measurement cache at start of each frame to ensure fresh calculations
+    // when expanded_blocks or selected_modes change
+    state.measurement_cache.clear();
 
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
@@ -210,6 +215,13 @@ pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_
     state.expanded_blocks.insert(instance_path.to_string());
 
     let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
     let children = get_children_for_mode(pb_type, mode_index);
 
     for child_pb in children {
@@ -310,6 +322,18 @@ fn generate_child_instance_name(child_pb: &PBType, index: usize) -> String {
     }
 }
 
+/// Validates and corrects a mode index for a PBType, ensuring it's within bounds.
+/// Returns a valid mode index (defaults to 0 if out of bounds).
+fn validate_mode_index(pb_type: &PBType, mode_index: usize) -> usize {
+    if pb_type.modes.is_empty() {
+        0 // No modes, index doesn't matter
+    } else if mode_index < pb_type.modes.len() {
+        mode_index
+    } else {
+        0 // Out of bounds, default to first mode
+    }
+}
+
 fn get_children_for_mode(pb_type: &PBType, mode_index: usize) -> &[PBType] {
     if !pb_type.modes.is_empty() {
         if mode_index < pb_type.modes.len() {
@@ -337,10 +361,27 @@ fn get_interconnects_for_mode(
     }
 }
 
-fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str) -> egui::Vec2 {
+fn measure_pb_type(
+    pb_type: &PBType,
+    state: &mut IntraTileState,
+    instance_path: &str,
+) -> egui::Vec2 {
     let is_expanded = state.expanded_blocks.contains(instance_path);
+    let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    // Check cache first
+    let cache_key = (instance_path.to_string(), is_expanded, mode_index);
+    if let Some(cached_size) = state.measurement_cache.get(&cache_key) {
+        return *cached_size;
+    }
+
     let children = get_children_for_mode(pb_type, mode_index);
 
     if !is_expanded && !children.is_empty() {
@@ -461,13 +502,10 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
         .iter()
         .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
 
-    let is_clock_complete = pb_type.interconnects.iter().any(|i| {
-        if let fpga_arch_parser::Interconnect::Complete(c) = i {
-            c.input.to_lowercase().contains("clk") && c.output.to_lowercase().contains("clk")
-        } else {
-            false
-        }
-    });
+    let is_clock_complete = pb_type
+        .interconnects
+        .iter()
+        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
 
     let complete_spacing = if has_complete_interconnect && !is_clock_complete {
         180.0
@@ -499,7 +537,11 @@ fn measure_pb_type(pb_type: &PBType, state: &IntraTileState, instance_path: &str
     let h = (HEADER_HEIGHT + PADDING + total_h + PADDING)
         .max(MIN_BLOCK_SIZE.y)
         .max(min_port_height);
-    egui::vec2(w, h)
+    let size = egui::vec2(w, h);
+
+    // Cache the result
+    state.measurement_cache.insert(cache_key, size);
+    size
 }
 
 // ------------------------------------------------------------
@@ -517,6 +559,161 @@ fn draw_expand_indicator(painter: &egui::Painter, header_rect: egui::Rect, dark_
         egui::FontId::proportional(12.0),
         color_scheme::theme_text_color(dark_mode),
     );
+}
+
+/// Checks if a port reference refers to a clock port.
+/// Handles both current PBType ports and child instance ports.
+/// Extracts the port name from references like "clk[0]", "clb.clk[0]", or "fle[0].clk[0]".
+fn is_clock_port(port_ref: &str, current_pb: &PBType, children: &[PBType]) -> bool {
+    use fpga_arch_parser::{Port, PortClass};
+
+    // Extract port name and instance from various formats:
+    // "clk[0]" -> (None, "clk")
+    // "clb.clk[0]" -> (Some("clb"), "clk")
+    // "fle[0].clk[0]" -> (Some("fle[0]"), "clk")
+    let (instance_prefix, port_name) = if let Some(dot_idx) = port_ref.rfind('.') {
+        // Has instance prefix
+        let instance_part = &port_ref[..dot_idx];
+        let port_part = &port_ref[dot_idx + 1..];
+        let port_name = if let Some(bracket_idx) = port_part.find('[') {
+            &port_part[..bracket_idx]
+        } else {
+            port_part
+        };
+        (Some(instance_part), port_name)
+    } else if let Some(bracket_idx) = port_ref.find('[') {
+        // Just port name with index
+        (None, &port_ref[..bracket_idx])
+    } else {
+        (None, port_ref)
+    };
+
+    // If there's an instance prefix, check child PBTypes
+    if let Some(instance) = instance_prefix {
+        // Extract child name (e.g., "fle" from "fle[0]")
+        let child_name = if let Some(bracket_idx) = instance.find('[') {
+            &instance[..bracket_idx]
+        } else {
+            instance
+        };
+
+        // Find matching child PBType
+        for child_pb in children {
+            if child_pb.name == child_name {
+                // Check ports in this child PBType
+                for port in &child_pb.ports {
+                    match port {
+                        Port::Clock(c) => {
+                            if c.name == port_name {
+                                return true;
+                            }
+                        }
+                        Port::Input(p) => {
+                            if p.name == port_name {
+                                // Check port_class first, then fall back to name matching for backward compatibility
+                                if matches!(p.port_class, PortClass::Clock) {
+                                    return true;
+                                }
+                                // Fallback: check if port name contains "clk" or "clock"
+                                let name_lower = p.name.to_lowercase();
+                                if name_lower.contains("clk") || name_lower.contains("clock") {
+                                    return true;
+                                }
+                            }
+                        }
+                        Port::Output(p) => {
+                            if p.name == port_name {
+                                // Check port_class first, then fall back to name matching for backward compatibility
+                                if matches!(p.port_class, PortClass::Clock) {
+                                    return true;
+                                }
+                                // Fallback: check if port name contains "clk" or "clock"
+                                let name_lower = p.name.to_lowercase();
+                                if name_lower.contains("clk") || name_lower.contains("clock") {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    } else {
+        // Check current PBType ports
+        for port in &current_pb.ports {
+            match port {
+                Port::Clock(c) => {
+                    if c.name == port_name {
+                        return true;
+                    }
+                }
+                Port::Input(p) => {
+                    if p.name == port_name {
+                        // Check port_class first, then fall back to name matching for backward compatibility
+                        if matches!(p.port_class, PortClass::Clock) {
+                            return true;
+                        }
+                        // Fallback: check if port name contains "clk" or "clock"
+                        let name_lower = p.name.to_lowercase();
+                        if name_lower.contains("clk") || name_lower.contains("clock") {
+                            return true;
+                        }
+                    }
+                }
+                Port::Output(p) => {
+                    if p.name == port_name {
+                        // Check port_class first, then fall back to name matching for backward compatibility
+                        if matches!(p.port_class, PortClass::Clock) {
+                            return true;
+                        }
+                        // Fallback: check if port name contains "clk" or "clock"
+                        let name_lower = p.name.to_lowercase();
+                        if name_lower.contains("clk") || name_lower.contains("clock") {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Final fallback: if port name itself contains "clk" or "clock", treat as clock
+    // This handles cases where the port might not be found in the PBType but the name suggests it's a clock
+    let port_name_lower = port_name.to_lowercase();
+    if port_name_lower.contains("clk") || port_name_lower.contains("clock") {
+        return true;
+    }
+
+    false
+}
+
+/// Checks if a Complete interconnect is a clock interconnect by verifying
+/// that all ports in both input and output lists are clock ports.
+fn is_clock_complete_interconnect(
+    interconnect: &fpga_arch_parser::Interconnect,
+    current_pb: &PBType,
+    children: &[PBType],
+) -> bool {
+    if let fpga_arch_parser::Interconnect::Complete(c) = interconnect {
+        // Expand port lists to get individual port references
+        let raw_inputs = expand_port_list(&c.input);
+        let raw_outputs = expand_port_list(&c.output);
+
+        // Check if all input ports are clock ports
+        let all_inputs_clock = raw_inputs
+            .iter()
+            .all(|port_ref| is_clock_port(port_ref, current_pb, children));
+
+        // Check if all output ports are clock ports
+        let all_outputs_clock = raw_outputs
+            .iter()
+            .all(|port_ref| is_clock_port(port_ref, current_pb, children));
+
+        all_inputs_clock && all_outputs_clock
+    } else {
+        false
+    }
 }
 
 fn resolve_port_pos(
@@ -576,7 +773,17 @@ fn resolve_bus_list(
         }
 
         let mut idx = 0;
+        const MAX_BUS_ITERATIONS: usize = 1024; // Prevent infinite loops
         loop {
+            if idx >= MAX_BUS_ITERATIONS {
+                // Log warning for debugging (could use eprintln! or a logging framework)
+                eprintln!(
+                    "Warning: Bus resolution hit max iterations ({}) for port: {}",
+                    MAX_BUS_ITERATIONS, port_ref
+                );
+                break;
+            }
+
             let candidate = if let Some((prefix, suffix)) = port_ref.rsplit_once('.') {
                 format!("{}.{}[{}]", prefix, suffix, idx)
             } else {
@@ -666,7 +873,14 @@ fn draw_pb_type(
     // Record this PB's rect for downstream placement (e.g., interconnect boxes)
     state.pb_rects.insert(instance_path.to_string(), rect);
 
-    let mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    let mut mode_index = *state.selected_modes.get(instance_path).unwrap_or(&0);
+    mode_index = validate_mode_index(pb_type, mode_index);
+    // Update state with validated mode index if it was corrected
+    if mode_index != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+        state
+            .selected_modes
+            .insert(instance_path.to_string(), mode_index);
+    }
     let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
@@ -674,13 +888,10 @@ fn draw_pb_type(
         .interconnects
         .iter()
         .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
-    let _is_clock_complete = pb_type.interconnects.iter().any(|i| {
-        if let fpga_arch_parser::Interconnect::Complete(c) = i {
-            c.input.to_lowercase().contains("clk") && c.output.to_lowercase().contains("clk")
-        } else {
-            false
-        }
-    });
+    let _is_clock_complete = pb_type
+        .interconnects
+        .iter()
+        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
     let is_expanded = state.expanded_blocks.contains(instance_path);
 
     // Draw header with expand/collapse indicator
@@ -756,13 +967,15 @@ fn draw_pb_type(
         }
     };
 
-    // Draw collapse indicator
-    if has_children && !is_expanded {
-        draw_expand_indicator(painter, header_rect, dark_mode);
-    }
-
     if pb_type.modes.len() > 1 {
-        let mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
+        let mut mode_idx = *state.selected_modes.get(instance_path).unwrap_or(&0);
+        mode_idx = validate_mode_index(pb_type, mode_idx);
+        // Update state with validated mode index if it was corrected
+        if mode_idx != *state.selected_modes.get(instance_path).unwrap_or(&0) {
+            state
+                .selected_modes
+                .insert(instance_path.to_string(), mode_idx);
+        }
         let mode_name = &pb_type.modes[mode_idx].name;
 
         // Truncate mode name if it's too long
@@ -934,6 +1147,7 @@ fn draw_pb_type(
                                 src,
                                 dst,
                                 pb_type,
+                                children,
                                 &my_ports,
                                 &children_ports,
                                 state,
@@ -958,6 +1172,7 @@ fn draw_pb_type(
                         &sources,
                         &sinks,
                         pb_type,
+                        children,
                         &my_ports,
                         &children_ports,
                         state,
@@ -979,6 +1194,7 @@ fn draw_pb_type(
                         &sources,
                         &sinks,
                         pb_type,
+                        children,
                         &my_ports,
                         &children_ports,
                         state,
@@ -1015,32 +1231,11 @@ fn draw_wire_segment(
         if start.y == end.y {
             // Same Y level - direct horizontal routing
             points.push(end);
-        } else if start.y < end.y {
-            // Vertical routing for clock: A is above B
-            if start.x > end.x {
-                // A is on the right of B: down → left → down
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            } else {
-                // A is on the left of B: down → right → down
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            }
-            points.push(end);
         } else {
-            if start.x > end.x {
-                // A is on the right of B: up → left → up
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            } else {
-                // A is on the left of B: up → right → up
-                let mid_y = start.y + (end.y - start.y) / 2.0;
-                points.push(egui::pos2(start.x, mid_y));
-                points.push(egui::pos2(end.x, mid_y));
-            }
+            // Vertical routing for clock: route through midpoint
+            let mid_y = start.y + (end.y - start.y) / 2.0;
+            points.push(egui::pos2(start.x, mid_y));
+            points.push(egui::pos2(end.x, mid_y));
             points.push(end);
         }
     } else if start.x < end.x {
@@ -1071,7 +1266,10 @@ fn draw_wire_segment(
         points.push(egui::pos2(channel_in, mid_y));
         points.push(egui::pos2(channel_in, end.y));
     }
-    points.push(end);
+    // Only push end if it wasn't already pushed (clock routing already includes end)
+    if !is_clock {
+        points.push(end);
+    }
 
     if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
         let mut hovered = false;
@@ -1191,6 +1389,7 @@ fn draw_direct_connection(
     src: &str,
     dst: &str,
     current_pb: &PBType,
+    children: &[PBType],
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
     state: &mut IntraTileState,
@@ -1220,11 +1419,9 @@ fn draw_direct_connection(
         let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
         let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
-        // Check if this is a clock connection by examining port names
-        let is_clock = src.to_lowercase().contains("clk")
-            || src.to_lowercase().contains("clock")
-            || dst.to_lowercase().contains("clk")
-            || dst.to_lowercase().contains("clock");
+        // Check if this is a clock connection using port class instead of string matching
+        let is_clock =
+            is_clock_port(src, current_pb, children) || is_clock_port(dst, current_pb, children);
 
         // For direct clock links (e.g., ff clk -> ble clk), keep a simple route
         // using the generic wire segment to avoid long detours.
@@ -1246,6 +1443,7 @@ fn draw_complete_interconnect(
     sources: &[String],
     sinks: &[String],
     current_pb: &PBType,
+    children: &[PBType],
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
     state: &mut IntraTileState,
@@ -1285,19 +1483,6 @@ fn draw_complete_interconnect(
     if let Some((_, group)) = current_group {
         source_groups.push(group);
     }
-
-    // // Extract clb and fle groups for backward compatibility
-    // let mut clb_sources = source_groups[0].clone();
-    // let mut fle_sources = Vec::new();
-    // for group in &source_groups {
-    //     if let Some((first_name, _)) = group.first() {
-    //         if first_name.starts_with("clb") {
-    //             clb_sources = group.clone();
-    //         } else if first_name.starts_with("fle") {
-    //             fle_sources = group.clone();
-    //         }
-    //     }
-    // }
 
     let mut resolved_sinks = Vec::new();
     for dst in sinks {
@@ -1360,10 +1545,10 @@ fn draw_complete_interconnect(
     // their bounding edges rather than a fixed offset.
     let is_clock_block = resolved_sources
         .iter()
-        .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"))
+        .all(|(s, _)| is_clock_port(s, current_pb, children))
         && resolved_sinks
             .iter()
-            .all(|(s, _)| s.to_lowercase().contains("clk") || s.to_lowercase().contains("clock"));
+            .all(|(s, _)| is_clock_port(s, current_pb, children));
 
     let block_center_x = if is_clock_block {
         // Try to derive the sink PB bounds from recorded rects.
@@ -1463,8 +1648,7 @@ fn draw_complete_interconnect(
             };
             let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
-            let is_clock = src_name.to_lowercase().contains("clk")
-                || src_name.to_lowercase().contains("clock");
+            let is_clock = is_clock_port(src_name, current_pb, children);
             if is_clock {
                 // Approach from the left with an extra turn: left offset, then up to target y, then into block.
                 let offset_x = rect.min.x - 10.0;
@@ -1538,8 +1722,7 @@ fn draw_complete_interconnect(
         };
         let wire_stroke = egui::Stroke::new(1.5, wire_color);
 
-        let is_clock =
-            dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
+        let is_clock = is_clock_port(dst_name, current_pb, children);
         if is_clock {
             let channel_y = dst_pos.y + 5.0;
             // Add a right-hand offset before heading toward the sink.
@@ -1577,6 +1760,7 @@ fn draw_interconnect_block(
     sources: &[String],
     sinks: &[String],
     current_pb: &PBType,
+    children: &[PBType],
     my_ports: &HashMap<String, egui::Pos2>,
     children_ports: &HashMap<String, egui::Pos2>,
     state: &mut IntraTileState,
@@ -1700,8 +1884,7 @@ fn draw_interconnect_block(
         let target = egui::pos2(left_edge_x, input_y);
 
         // Check if this is a clock connection by examining source port name
-        let is_clock =
-            src_name.to_lowercase().contains("clk") || src_name.to_lowercase().contains("clock");
+        let is_clock = is_clock_port(src_name, current_pb, children);
         if is_clock {
             let default_mid = src_pos.y + (target.y - src_pos.y) * 0.5;
             let channel_y = match (pb_name_from_port(src_name), Some(current_pb.name.as_str())) {
@@ -1752,8 +1935,7 @@ fn draw_interconnect_block(
 
         let start = egui::pos2(right_edge_x, block_center.y);
         // Check if this is a clock connection by examining sink port name
-        let is_clock =
-            dst_name.to_lowercase().contains("clk") || dst_name.to_lowercase().contains("clock");
+        let is_clock = is_clock_port(dst_name, current_pb, children);
         if is_clock {
             let default_mid = start.y + (dst_pos.y - start.y) * 0.5;
             let channel_y = match (pb_name_from_port(dst_name), Some(current_pb.name.as_str())) {

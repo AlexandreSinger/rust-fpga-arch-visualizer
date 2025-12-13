@@ -1650,6 +1650,10 @@ fn draw_complete_interconnect(
         }
     }
 
+    if source_groups.is_empty() || resolved_sinks.is_empty() {
+        return;
+    }
+
     // Combine for calculations that need all sources
     let resolved_sources: Vec<_> = source_groups[0].clone();
 

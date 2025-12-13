@@ -1,9 +1,11 @@
 use eframe::egui;
+use egui_extras;
 use fpga_arch_parser::FPGAArch;
 
 // Import IntraTileState from intra_tile module
 use crate::block_style::DefaultBlockStyles;
 use crate::grid::DeviceGrid;
+use crate::grid::GridCell;
 use crate::grid_renderer;
 use crate::intra_tile::IntraTileState;
 use crate::settings;
@@ -659,6 +661,62 @@ impl eframe::App for FpgaViewer {
                         self.grid_width, self.grid_height
                     ));
 
+                    ui.add_space(15.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    ui.heading("Tile Counts");
+                    ui.add_space(10.0);
+
+                    if let Some(grid) = &self.device_grid {
+                        let mut tile_counts: std::collections::BTreeMap<String, usize> =
+                            std::collections::BTreeMap::new();
+                        for row in &grid.cells {
+                            for cell in row {
+                                if let GridCell::BlockAnchor { pb_type, .. } = cell {
+                                    *tile_counts.entry(pb_type.clone()).or_insert(0) += 1;
+                                }
+                            }
+                        }
+
+                        let sorted_counts: Vec<_> = tile_counts.into_iter().collect();
+
+                        let table = egui_extras::TableBuilder::new(ui)
+                            .striped(true)
+                            .column(egui_extras::Column::auto().at_least(100.0))
+                            .column(egui_extras::Column::auto().at_least(50.0))
+                            .header(20.0, |mut header| {
+                                header.col(|ui| {
+                                    ui.strong("Tile");
+                                });
+                                header.col(|ui| {
+                                    ui.strong("Count");
+                                });
+                            });
+
+                        table.body(|mut body| {
+                            for (pb_type, count) in sorted_counts {
+                                let color = self
+                                    .tile_colors
+                                    .get(&pb_type)
+                                    .copied()
+                                    .unwrap_or(egui::Color32::TRANSPARENT);
+                                body.row(30.0, |mut row| {
+                                    row.col(|ui| {
+                                        let rect = ui.available_rect_before_wrap();
+                                        ui.painter().rect_filled(rect, 0.0, color);
+                                        ui.label(pb_type.to_uppercase());
+                                    });
+                                    row.col(|ui| {
+                                        let rect = ui.available_rect_before_wrap();
+                                        ui.painter().rect_filled(rect, 0.0, color);
+                                        ui.label(count.to_string());
+                                    });
+                                });
+                            }
+                        });
+                    }
+
                     if grid_changed {
                         self.rebuild_grid();
                     }
@@ -739,9 +797,16 @@ impl eframe::App for FpgaViewer {
                 Page::Main => {
                     match self.view_mode {
                         ViewMode::InterTile => {
-                            if let Some(grid) = &self.device_grid {
+                            if let (Some(grid), Some(arch)) = (&self.device_grid, &self.architecture) {
                                 // Check if a tile was clicked
-                                if let Some(clicked_tile) = grid_renderer::render_grid(ui, grid, &self.block_styles, &self.tile_colors, self.dark_mode) {
+                                if let Some(clicked_tile) = grid_renderer::render_grid(
+                                    ui,
+                                    grid,
+                                    &self.block_styles,
+                                    &self.tile_colors,
+                                    self.dark_mode,
+                                    arch,
+                                ) {
                                     self.selected_tile_name = Some(clicked_tile);
                                     self.selected_sub_tile_index = 0;
                                     self.view_mode = ViewMode::IntraTile;

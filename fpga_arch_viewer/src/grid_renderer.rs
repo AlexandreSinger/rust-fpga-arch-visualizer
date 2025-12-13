@@ -1,6 +1,7 @@
 use crate::block_style::{darken_color, DefaultBlockStyles};
 use crate::grid::{DeviceGrid, GridCell};
 use eframe::egui;
+use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
 pub fn render_grid(
@@ -9,6 +10,7 @@ pub fn render_grid(
     _block_styles: &DefaultBlockStyles,
     tile_colors: &HashMap<String, egui::Color32>,
     _dark_mode: bool,
+    arch: &FPGAArch,
 ) -> Option<String> {
     // Cell size is based on the available space
     let available_size = ui.available_size();
@@ -97,11 +99,19 @@ pub fn render_grid(
                                                     pb_type, row, col
                                                 ));
                                                 ui.label(format!("Size: {}x{}", width, height));
+                                                if let Some(tile) =
+                                                    arch.tiles.iter().find(|t| t.name == *pb_type)
+                                                {
+                                                    ui.label(format!(
+                                                        "Contains {} sub-tiles",
+                                                        tile.sub_tiles.len()
+                                                    ));
+                                                }
                                                 ui.label("Click to view internal structure");
                                             },
                                         );
                                     }
-                                }
+                                 }
 
                                 // Check if mouse clicked on this tile
                                 if response.clicked() {

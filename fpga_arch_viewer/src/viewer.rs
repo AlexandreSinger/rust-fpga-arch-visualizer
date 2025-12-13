@@ -4,6 +4,7 @@ use fpga_arch_parser::FPGAArch;
 // Import IntraTileState from intra_tile module
 use crate::block_style::DefaultBlockStyles;
 use crate::grid::DeviceGrid;
+use crate::grid::GridCell;
 use crate::grid_renderer;
 use crate::intra_tile::IntraTileState;
 use crate::settings;
@@ -655,6 +656,32 @@ impl eframe::App for FpgaViewer {
                         "Grid Size: {}x{}",
                         self.grid_width, self.grid_height
                     ));
+
+                    ui.add_space(15.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    ui.heading("Tile Counts");
+                    ui.add_space(10.0);
+
+                    if let Some(grid) = &self.device_grid {
+                        let mut tile_counts: std::collections::HashMap<String, usize> =
+                            std::collections::HashMap::new();
+                        for row in &grid.cells {
+                            for cell in row {
+                                if let GridCell::BlockAnchor { pb_type, .. } = cell {
+                                    *tile_counts.entry(pb_type.clone()).or_insert(0) += 1;
+                                }
+                            }
+                        }
+
+                        let mut sorted_counts: Vec<_> = tile_counts.into_iter().collect();
+                        sorted_counts.sort_by(|a, b| a.0.cmp(&b.0));
+
+                        for (pb_type, count) in sorted_counts {
+                            ui.label(format!("{}: {}", pb_type, count));
+                        }
+                    }
 
                     if grid_changed {
                         self.rebuild_grid();

@@ -22,3 +22,6 @@ target
 
 # Vim Git Ignores
 *.swp
+
+# Mac Files
+.DS_Store

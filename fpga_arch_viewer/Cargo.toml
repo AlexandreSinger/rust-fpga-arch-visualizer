@@ -1,6 +1,6 @@
 [package]
 name = "fpga_arch_viewer"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 repository = "https://github.com/AlexandreSinger/rust-fpga-arch-visualizer"
 

@@ -1,5 +1,8 @@
 # rust-fpga-arch-visualizer
 
+<img src="./docs/images/demo-splash-layout.png" width="49%" />
+<img src="./docs/images/demo-splash-complex-blocks.png" width="49%" />
+
 ## Install
 
 ### Pre-Built Binaries

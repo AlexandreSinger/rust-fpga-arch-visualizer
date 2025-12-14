@@ -49,7 +49,7 @@ The goal for this project is to provide an FPGA architecture visualizer to the V
 As FPGA architectures continue to become larger and more complex, there is a growing need for fast FPGA architecture visualizers which show the key details that FPGA architects care about. By designing a custom FPGA architecture visualizer in Rust, we will provide a fast and safe visualizer to the open-source FPGA community.
 
 
-## Objective and Key Features
+## Objective
 
 The main objective of this project is to design a Rust-based FPGA visualizer that can parse a description of an FPGA architecture and provide an interactive user interface for FPGA architects to visualize and analyze their FPGA architectures.
 
@@ -61,37 +61,101 @@ This project aims to fix these issues by providing a detailed visualizer for dif
 
 While the Rust programming language has been widely used in system programming, web services, and embedded systems, few efforts have been made to explore its application in the field of computer architecture. The Rust ecosystem lacks native support for computer architectures and CAD tools, which are traditionally dominated by C/C++ implementations. This project addresses this gap by introducing a modern, open-source tool that brings the safety and performance benefits of Rust into FPGA research and development. It not only provides a functional tool for FPGA exploration but also lays the foundation for a future Rust-based CAD tooling framework that could greatly benefit the research and development of FPGA devices.
 
-### Key features include:
 
-- FPGA description XML parsing engine: 
-  - Develop a parsing engine that is able to parse FPGA architecture description XML files, as described in the [VTR architecture description specification](https://docs.verilogtorouting.org/en/latest/arch/).
-  - Extract information for logic blocks, routing resources, and local / global interconnects.
-  - Since the architecture description file used in VTR is under active development and constantly evolving, this parsing engine must be extensible to allow future description features to be added.
+## Features
 
-- Specialized FPGA database: 
-  - Design efficient and type-safe Rust data structures to represent the parsed FPGA architecture.
-  - Store grid layouts, routing connections, and blocks hierarchically for visualization and analysis.
-  - Ensure fast and convenient data access for visualization.
+This project is a **Rust-based, standalone visualizer** for VTR FPGA Architecture Description XML files. It helps FPGA architects **explore and debug architecture XML** by providing interactive views of:
+- the **global tile grid** (inter-tile structure), and
+- the **tile internals** (intra-tile primitives + local interconnect).
 
-- FPGA Visualization:
-  - Render both the general (global) FPGA grid layout and intra-tile (local) components (primitives and local interconnect).
-  - Support visualization for the local interconnect structures between logic blocks; which has not been done before for VTR architecture visualization.
-  - Provide clear insights for users into the structure of the FPGA for efficient debugging and design.
+The key technical contributions are split across two crates:
+- `fpga_arch_parser`: XML parsing + typed architecture model
+- `fpga_arch_viewer`: interactive GUI + rendering
+Below is a detailed feature breakdown aligned with: **parsing**, **visual**, and **general**.
 
-- Interactive User interface: 
-  - Implement an intuitive, cross-platform user interface.
-  - Enable responsive user interaction, such as zooming, panning, and highlighting.
-  - Allows users to explore, analyze, and experiment with the FPGA architectures.
+### Parsing
 
-### Work Distribution
+- **Spec-driven XML parsing**
+  - `fpga_arch_parser::parse(path)` parses an architecture XML into a strongly-typed `FPGAArch` model.
+  - The parser is organized into focused modules (e.g., device/layout/tiles/ports/interconnect lists/
+  timing), which makes it easier to extend as the VTR spec evolves.
 
-The work will be divided generally as follows to ensure a fair distribution of work and a reasonable workload throughout the term. More details will be provided in the next **Tentative Plan** section.
+- **Type-safe architecture database**
+  - Architecture is stored in Rust structs/enums, including:
+    - hierarchical PBTypes (with per-mode children and per-mode interconnect)
+    - ports and pin counts
+    - tile and layout structures
+  - This enables safe traversal during visualization and reduces crash-prone string handling.
 
-- Alex: XML parsing engine + specialized FPGA database.
+- **Testcases / real architecture files**
+  - Includes multiple realistic architecture XML test inputs under `fpga_arch_parser/tests/` (e.g., `k4_N4_90nm.xml`, `stratixiv_arch.timing.xml`, `z1000.xml`, `z1010.xml`, `z1060.xml`).
 
-- Maggie: Global FPGA layout and inter-tile routing visualization, user interface.
+### Visual
 
-- Jack: Local (intra-tile) primitive and routing visualization, user interface.
+#### Global / inter-tile view
+
+- **Grid-level device visualization**
+  - Renders the FPGA fabric as a 2D grid of tiles.
+  - Tiles are shown using consistent **block/tile representations** with color mapping.
+
+- **AutoLayout + FixedLayout support**
+  - Supports switching between available layouts when the architecture provides them.
+  - For fixed layouts, grid dimensions are derived from the architecture.
+  - For auto layouts, use sliders to control grid width/height
+
+- **Tile counts summary**
+  - Shows derived metrics like aspect ratio and grid size.
+  - Computes counts of tile types from the rendered grid and displays them in a table.
+
+- **Select tile**
+  - Clicking a tile in the grid selects it and switches into the intra-tile view for that tile.
+
+#### Intra-tile view
+
+- **Block representation**
+  - Recursive PBType drawing for hierarchical structures (e.g., CLB → BLE array → LUT/FF/memory).
+  - For blocks with multiple modes, a per-block mode selector lets you choose which mode’s children/interconnect to visualize.
+  - Optional textual hierarchy tree panel.
+
+- **Expand/collapse and “Expand All”**
+  - Expand/collapse on a per-block basis:
+    - Collapsed state draws a compact header-only representation.
+    - Expanded state renders child PBTypes and (optionally) the local interconnect.
+  - Global “Expand All” to fully open hierarchy for deep inspection.
+
+- **Routing**
+  - Draws pins/ports and local routing between blocks:
+    - Direct Interconnect: draws point-to-point port routing between blocks.
+    - Mux Interconnect: draws mux “nodes” and routes sources/sinks to/from the mux, includes routing heuristics to reduce wire crossings in dense fabrics.
+    - Complete Interconnect: renders dense crossbar structures.
+    - Draw Interconnect UI toggle to hide direct/mux/complete interconnects (Blocks-only mode) for readability in very dense tiles.
+  - Highlighting：
+    - Hover highlighting for wires and interconnect blocks.
+    - Pin hitboxes and tooltips for pin name, e.g., in[3], clk[0], etc.
+
+- **Zoom and pan**
+  - Panning is constrained to the intra-tile canvas viewport.
+  - Zoom scales rendering and interaction targets (pins, labels, interconnect blocks, routing heuristics, widget sizing).
+
+### General
+
+- **Settings and theme**
+  - Settings page for appearance controls.
+  - Light/dark mode support.
+
+- **Navigation**
+  - Back button to return to previous views/pages (e.g., intra-tile → grid).
+
+- **Load architecture file from UI**
+  - File picker to open architecture XML.
+  - Window title shows the loaded filename (`FPGA Architecture Visualizer - <file>.xml`).
+
+- **Cross-platform desktop app**
+  - Built using `eframe/egui`, targeting a single Rust codebase for common desktop platforms.
+
+- **Release / easy download**
+  - Pre-built binary install scripts are documented for macOS/Linux and Windows.
+
 
 
 ## Tentative Plan

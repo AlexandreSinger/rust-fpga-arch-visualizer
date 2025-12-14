@@ -47,8 +47,8 @@ Before cutting a release, ensure:
 
 Update the version in:
 
-- `Cargo.toml`
-- `Cargo.lock`
+- `fpga_arch_parser/Cargo.toml`
+- `fpga_arch_viewer/Cargo.toml`
 
 Example:
 
@@ -56,12 +56,14 @@ Example:
 version = "1.2.3"
 ```
 
+Then run `cargo build` to update the `Cargo.lock` automatically.
+
 ### 2. Update the Changelog
 
 Add a new section to `CHANGELOG.md`:
 
 ```md
-## [1.2.3] - YYYY-MM-DD
+## [v1.2.3] - YYYY-MM-DD
 ### Added
 - ...
 
@@ -92,8 +94,10 @@ Make sure you are on a commit of master (i.e. you are tagging a commit that is o
 Create a signed tag if possible:
 
 ```sh
-git tag -s v1.2.3 -m "Release v1.2.3"
-git push origin main --tags
+git fetch origin
+git checkout origin/master
+git tag v1.2.3
+git push --tags
 ```
 
 Pushing the tag triggers the release workflow.

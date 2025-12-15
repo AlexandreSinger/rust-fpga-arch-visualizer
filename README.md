@@ -38,11 +38,15 @@ cargo build --release
 
 ## Video Slide Presentation
 
+The following is a video slide presentation which walks through the visualizer.
+
 [Video](https://youtu.be/ypVk95ZjI6Y)
 
 [Slides](https://docs.google.com/presentation/d/1NXGFRixbnRxMU9UpB9kxxSlQUp7m2NCTHL0fqMGghno/edit?usp=sharing)
 
 ## Video Demo
+
+The following is a video demo showing off the major features of this visualizer.
 
 [Video](https://youtu.be/BIhsh-qbHR8)
 

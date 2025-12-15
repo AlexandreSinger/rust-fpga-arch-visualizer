@@ -170,6 +170,81 @@ Below is a detailed feature breakdown aligned with: **parsing**, **visual**, and
 - **Release / easy download**
   - Pre-built binary install scripts are documented for macOS/Linux and Windows.
 
+## User Guide
+
+When the application is first launched, the main window is shown as below.
+**To load an architecture file**, click **File → Open Architecture File** in the top-left menu and select an FPGA architecture XML file of your choice.
+
+<img src="./docs/images/user-guide-open-file.png" />
+
+After opening a file, the application switches to the global tile grid view. The central panel displays the inter-tile structure of the architecture, while the right-hand panel provides configuration and visualization options.
+In the right panel:
+- The Layout dropdown allows switching between:
+  - Auto layout, which enables the width and height sliders for adjusting the grid size
+  - Fixed layout, which uses a fixed width and height (sliders are disabled)
+- Additional information is displayed, including aspect ratio, grid size, and tile counts
+
+<img src="./docs/images/user-guide-inter-view.png" />
+
+Hovering over a tile displays a tooltip with the tile’s name, grid location, size, and number of subtiles as shown above. Clicking on a tile opens its corresponding tile internals view, which visualizes intra-tile primitives and local interconnect.
+
+<img src="./docs/images/user-guide-intra-view.png" />
+
+In the tile internals view (shown above):
+- The right panel provides visualization settings
+- A **hierarchy tree** shows a textual representation of all components contained in the tile
+- In the visual layout, individual components and subtiles can be expanded or collapsed
+- Hovering over interconnects highlights them in red
+
+The **back arrow button** at the bottom of the left navigation bar returns the user to the global tile grid view.
+
+## Reproducibility Guide
+
+
+This section describes how to run the FPGA Architecture Visualizer using either pre-built binaries or by building from source.
+
+### Pre-Built Binaries
+
+Pre-built binaries are available on the GitHub releases page:  
+https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases
+
+You can install the application using the provided installer scripts.
+
+#### macOS and Linux (not NixOS)
+
+Run the following command in a terminal:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases/latest/download/fpga_arch_viewer-installer.sh | sh
+```
+#### Windows (PowerShell)
+Run the following command in PowerShell:
+```bash
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases/latest/download/fpga_arch_viewer-installer.ps1 | iex"
+```
+After installation, **run**:
+```bash
+fpga_arch_viewer
+```
+> **Note:** You may need to allow the application to run in your system’s privacy or security settings the first time it is opened.
+### Build From Source
+This project uses Cargo as its build system. You will need Cargo installed to build the project from source.
+1. Clone the repository and navigate into it:
+```bash
+git clone https://github.com/AlexandreSinger/rust-fpga-arch-visualizer.git
+cd rust-fpga-arch-visualizer
+```
+2. Build the project:
+```bash
+cargo build --release
+```
+3. Run the executable:
+
+
+```bash
+./target/release/fpga_arch_viewer
+```
+
 ## Team Contribution
 
 | Team Member | Contribution |
@@ -177,6 +252,14 @@ Below is a detailed feature breakdown aligned with: **parsing**, **visual**, and
 | Alex | FPGA Architecture Parser |
 | Maggie | Inter-tile View (FPGA Layout) |
 | Jack | Intra-tile View (FPGA Tile Interconnect) |
+
+## Lessons Learned and Concluding Remarks
+
+Throughout this project, we learned the importance of defining a clear separation between data parsing and visualization. Splitting the system into a dedicated architecture parser crate and an independent viewer crate made the codebase easier to reason about, extend, and debug. This modular design also enabled faster iteration on the visualization layer without repeatedly revisiting low-level XML parsing logic, which proved especially valuable given the complexity and variability of FPGA architecture files.
+
+Another key takeaway was the effectiveness of interactive visualization when working with complex FPGA architectures. Compared to inspecting large XML files directly, visual representations made architectural structure, connectivity, and hierarchy significantly more intuitive and easier to explore.
+
+In conclusion, this project demonstrates how a standalone, interactive visualization tool can meaningfully improve the usability and debuggability of FPGA architecture descriptions. By providing both global inter-tile views and detailed intra-tile views within a single tool, the visualizer bridges global architecture structure and tile-level details in a way that is not readily available in existing workflows. The project also provides a strong foundation for future extensions, such as richer interconnect visualization or additional architecture analysis features, and its early adoption by researchers further validates its practical usefulness.
 
 ## Resources
 

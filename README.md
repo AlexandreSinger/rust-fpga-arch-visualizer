@@ -36,6 +36,16 @@ cargo build --release
 ./target/release/fpga_arch_viewer
 ```
 
+## Video Slide Presentation
+
+[Video](https://youtu.be/ypVk95ZjI6Y)
+
+[Slides](https://docs.google.com/presentation/d/1NXGFRixbnRxMU9UpB9kxxSlQUp7m2NCTHL0fqMGghno/edit?usp=sharing)
+
+## Video Demo
+
+[Video](https://youtu.be/BIhsh-qbHR8)
+
 ## Motivation
 
 Computer Aided Design (CAD) software has been mostly dominated by C++ due to its high performance and prior adoption. Due to this decision, many of these tools suffer from poor memory safety, brought on by how pointers are used within the C++ language, especially in parsing code which reads custom files written by users. This has led to open-source CAD software that is prone to crashes, making the tools challenging to use, which is especially a concern for commercial applications.

@@ -1,3 +1,9 @@
+## [v0.2.0] - 2025-12-15
+
+### Added
+- Major release for basic features.
+- Able to visualize the layout and complex blocks for most VTR architectures.
+
 ## [v0.1.2] - 2025-12-13
 
 ### Added

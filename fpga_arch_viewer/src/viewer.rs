@@ -487,6 +487,12 @@ impl eframe::App for FpgaViewer {
                     ui.label("No architecture loaded");
                     ui.add_space(10.0);
                     ui.label("Layer list will appear here once an architecture file is loaded.");
+                    ui.add_space(20.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "! This feature is currently under development and will be implemented in a future update.",
+                        ).color(egui::Color32::RED),
+                    );
                 });
         }
 

@@ -1,4 +1,4 @@
-# rust-fpga-arch-visualizer
+# Rust-Based FPGA Architecture Visualizer
 
 <p>
 <img src="./docs/images/demo-splash-layout.png" width="49%" />
@@ -93,6 +93,7 @@ Below is a detailed feature breakdown aligned with: **parsing**, **visual**, and
   - `fpga_arch_parser::parse(path)` parses an architecture XML into a strongly-typed `FPGAArch` model.
   - The parser is organized into focused modules (e.g., device/layout/tiles/ports/interconnect lists/
   timing), which makes it easier to extend as the VTR spec evolves.
+  - All parsing functions are panic-free, and return custom errors if an XML file is ill-formed.
 
 - **Type-safe architecture database**
   - Architecture is stored in Rust structs/enums, including:
@@ -200,7 +201,6 @@ The **back arrow button** at the bottom of the left navigation bar returns the u
 
 ## Reproducibility Guide
 
-
 This section describes how to run the FPGA Architecture Visualizer using either pre-built binaries or by building from source.
 
 ### Pre-Built Binaries
@@ -239,8 +239,6 @@ cd rust-fpga-arch-visualizer
 cargo build --release
 ```
 3. Run the executable:
-
-
 ```bash
 ./target/release/fpga_arch_viewer
 ```

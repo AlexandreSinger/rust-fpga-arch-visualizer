@@ -1353,14 +1353,14 @@ dependencies = [
 
 [[package]]
 name = "fpga_arch_parser"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "xml",
 ]
 
 [[package]]
 name = "fpga_arch_viewer"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "eframe",
  "egui",

@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 enum ViewMode {
+    Summary,
     InterTile,
     IntraTile,
 }
@@ -67,7 +68,7 @@ impl FpgaViewer {
     pub fn new() -> Self {
         // Start with no grid - user will load architecture file via File menu
         Self {
-            view_mode: ViewMode::InterTile,
+            view_mode: ViewMode::Summary,
             show_about: false,
             current_page: Page::Main,
             show_layer_list: false,
@@ -360,6 +361,10 @@ impl eframe::App for FpgaViewer {
                 });
 
                 ui.menu_button("View", |ui| {
+                    if ui.button("Summary View").clicked() {
+                        self.view_mode = ViewMode::Summary;
+                        ui.close_menu();
+                    }
                     if ui.button("Inter-Tile View").clicked() {
                         self.view_mode = ViewMode::InterTile;
                         ui.close_menu();
@@ -802,6 +807,20 @@ impl eframe::App for FpgaViewer {
             match self.current_page {
                 Page::Main => {
                     match self.view_mode {
+                        ViewMode::Summary => {
+                            // Show summary view
+                            if self.architecture.is_none() {
+                                // No architecture loaded - show welcome message
+                                self.render_welcome_message(ui);
+                            } else if let Some(arch) = &self.architecture {
+                                crate::summary_view::render_summary_view(
+                                    ui,
+                                    arch,
+                                    &self.block_styles,
+                                    self.dark_mode,
+                                );
+                            }
+                        }
                         ViewMode::InterTile => {
                             if let (Some(grid), Some(arch)) = (&self.device_grid, &self.architecture) {
                                 // Check if a tile was clicked

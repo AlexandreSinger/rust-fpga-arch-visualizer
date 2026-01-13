@@ -12,6 +12,7 @@ mod intra_hierarchy_tree;
 mod intra_tile;
 mod color_scheme;
 mod settings;
+mod summary_view;
 mod viewer;
 
 use viewer::FpgaViewer;

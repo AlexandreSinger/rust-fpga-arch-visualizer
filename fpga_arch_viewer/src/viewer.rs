@@ -12,7 +12,7 @@ use crate::settings;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
-enum ViewMode {
+pub enum ViewMode {
     Summary,
     InterTile,
     IntraTile,
@@ -813,12 +813,14 @@ impl eframe::App for FpgaViewer {
                                 // No architecture loaded - show welcome message
                                 self.render_welcome_message(ui);
                             } else if let Some(arch) = &self.architecture {
-                                crate::summary_view::render_summary_view(
+                                if let Some(new_view_mode) = crate::summary_view::render_summary_view(
                                     ui,
                                     arch,
                                     &self.block_styles,
                                     self.dark_mode,
-                                );
+                                ) {
+                                    self.view_mode = new_view_mode;
+                                }
                             }
                         }
                         ViewMode::InterTile => {

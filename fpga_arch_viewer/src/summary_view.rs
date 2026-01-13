@@ -1,4 +1,5 @@
 use egui;
+use crate::viewer::ViewMode;
 use fpga_arch_parser::FPGAArch;
 use crate::block_style::DefaultBlockStyles;
 
@@ -7,7 +8,9 @@ pub fn render_summary_view(
     arch: &FPGAArch,
     _block_styles: &DefaultBlockStyles,
     _dark_mode: bool,
-) {
+) -> Option<ViewMode> {
+    let mut view_mode_change: Option<ViewMode> = None;
+
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show(ui, |ui| {
@@ -36,7 +39,12 @@ pub fn render_summary_view(
 
             // Tiles Section
             ui.group(|ui| {
-                ui.heading(format!("Tiles ({})", arch.tiles.len()));
+                ui.horizontal(|ui| {
+                    ui.heading(format!("Tiles ({})", arch.tiles.len()));
+                    if ui.button("View Tile Grid").clicked() {
+                        view_mode_change = Some(ViewMode::InterTile);
+                    }
+                });
                 ui.separator();
 
                 for (tile_idx, tile) in arch.tiles.iter().enumerate() {
@@ -132,7 +140,12 @@ pub fn render_summary_view(
 
             // Complex Blocks Section
             ui.group(|ui| {
-                ui.heading(format!("Complex Blocks ({})", arch.complex_block_list.len()));
+                ui.horizontal(|ui| {
+                    ui.heading(format!("Complex Blocks ({})", arch.complex_block_list.len()));
+                    if ui.button("View Complex Block Details").clicked() {
+                        view_mode_change = Some(ViewMode::IntraTile);
+                    }
+                });
                 ui.separator();
 
                 ui.collapsing("Complex Blocks", |ui| {
@@ -168,4 +181,6 @@ pub fn render_summary_view(
                 });
             }
         });
+
+    view_mode_change
 }

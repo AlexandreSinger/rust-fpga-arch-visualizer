@@ -1,13 +1,10 @@
 use egui;
 use crate::viewer::ViewMode;
 use fpga_arch_parser::FPGAArch;
-use crate::block_style::DefaultBlockStyles;
 
 pub fn render_summary_view(
     ui: &mut egui::Ui,
     arch: &FPGAArch,
-    _block_styles: &DefaultBlockStyles,
-    _dark_mode: bool,
 ) -> Option<ViewMode> {
     let mut view_mode_change: Option<ViewMode> = None;
 

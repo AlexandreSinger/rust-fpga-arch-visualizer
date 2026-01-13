@@ -244,6 +244,12 @@ impl FpgaViewer {
             return;
         }
 
+        // If in inter-tile view, go back to summary view (the default)
+        if self.view_mode == ViewMode::InterTile {
+            self.view_mode = ViewMode::Summary;
+            return;
+        }
+
         if !self.navigation_history.is_empty() {
             self.navigation_history.pop();
             // TODO: Update current layer based on history
@@ -447,6 +453,7 @@ impl eframe::App for FpgaViewer {
                     // Returns to previous layer, exits settings page, or goes back from intra-tile view
                     let back_enabled = self.current_page == Page::Settings
                         || self.view_mode == ViewMode::IntraTile
+                        || self.view_mode == ViewMode::InterTile
                         || !self.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
@@ -816,8 +823,6 @@ impl eframe::App for FpgaViewer {
                                 if let Some(new_view_mode) = crate::summary_view::render_summary_view(
                                     ui,
                                     arch,
-                                    &self.block_styles,
-                                    self.dark_mode,
                                 ) {
                                     self.view_mode = new_view_mode;
                                 }

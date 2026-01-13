@@ -74,7 +74,11 @@ pub fn render_summary_view(
                 ui.separator();
 
                 for (idx, layout) in arch.layouts.iter().enumerate() {
-                    ui.collapsing(format!("[{}] Layout", idx), |ui| {
+                    let layout_name = match layout {
+                        fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout",
+                        fpga_arch_parser::Layout::FixedLayout(fixed_layout) => &fixed_layout.name,
+                    };
+                    ui.collapsing(format!("[{}] {}", idx, layout_name), |ui| {
                         match layout {
                             fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                                 ui.label(format!(
@@ -119,7 +123,7 @@ pub fn render_summary_view(
 
                 ui.collapsing("Segments", |ui| {
                     for (seg_idx, segment) in arch.segment_list.iter().enumerate() {
-                        ui.collapsing(format!("[{}] {}", seg_idx, &segment.name), |ui| {
+                        ui.collapsing(format!("[{}] L{}: {}", seg_idx, segment.length, &segment.name), |ui| {
                             ui.label(format!("Axis: {:?}", segment.axis));
                             ui.label(format!("Type: {:?}", segment.segment_type));
                             ui.label(format!("Length: {}", segment.length));
@@ -164,17 +168,19 @@ pub fn render_summary_view(
                     ui.heading(format!("Global Directs ({})", arch.direct_list.len()));
                     ui.separator();
 
-                    for direct in &arch.direct_list {
-                        ui.label(format!(
-                            "{}: {} -> {} (offset: {},{},{})",
-                            direct.name,
-                            direct.from_pin,
-                            direct.to_pin,
-                            direct.x_offset,
-                            direct.y_offset,
-                            direct.z_offset
-                        ));
-                    }
+                    ui.collapsing("Global Directs", |ui| {
+                        for direct in &arch.direct_list {
+                            ui.label(format!(
+                                "{}: {} -> {} (offset: {},{},{})",
+                                direct.name,
+                                direct.from_pin,
+                                direct.to_pin,
+                                direct.x_offset,
+                                direct.y_offset,
+                                direct.z_offset
+                            ));
+                        }
+                    });
                 });
             }
         });

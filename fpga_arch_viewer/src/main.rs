@@ -12,7 +12,7 @@ mod grid_renderer;
 mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
-mod inter_tile_view;
+mod grid_view;
 mod intra_tile_view;
 mod settings;
 mod summary_view;

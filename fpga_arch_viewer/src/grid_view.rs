@@ -3,18 +3,18 @@ use egui_extras;
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
-use crate::grid::{DeviceGrid, GridCell};
+use crate::{grid::{DeviceGrid, GridCell}, grid_renderer, viewer::{ViewMode, ViewerContext}};
 
-/// State for inter-tile (grid) view
+/// State for grid view
 #[derive(Debug, Clone)]
-pub struct InterTileState {
+pub struct GridState {
     pub grid_width: usize,
     pub grid_height: usize,
     pub aspect_ratio: f32,
     pub selected_layout_index: usize,
 }
 
-impl Default for InterTileState {
+impl Default for GridState {
     fn default() -> Self {
         Self {
             grid_width: 10,
@@ -25,12 +25,74 @@ impl Default for InterTileState {
     }
 }
 
+pub struct GridView {
+    // Device grid and grid view state
+    pub device_grid: Option<DeviceGrid>,
+    pub grid_state: GridState,
+}
+
+impl Default for GridView {
+    fn default() -> Self {
+        Self {
+            grid_state: GridState::default(),
+            device_grid: None,
+        }
+    }
+}
+
+impl GridView {
+    pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
+        self.grid_state.selected_layout_index = 0;
+        self.rebuild_grid(arch);
+    }
+
+    pub fn rebuild_grid(&mut self, arch: &FPGAArch) {
+        if let Some(layout) = arch.layouts.get(self.grid_state.selected_layout_index) {
+            let grid = match layout {
+                fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                    self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
+                    DeviceGrid::from_auto_layout_with_dimensions(
+                        arch,
+                        self.grid_state.grid_width,
+                        self.grid_state.grid_height,
+                    )
+                }
+                fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
+                    self.grid_state.grid_width = fixed_layout.width as usize;
+                    self.grid_state.grid_height = fixed_layout.height as usize;
+                    DeviceGrid::from_fixed_layout(arch, self.grid_state.selected_layout_index)
+                }
+            };
+            self.device_grid = Some(grid);
+        }
+    }
+
+    pub fn render(&mut self, arch: &FPGAArch, viewer_ctx: &mut ViewerContext, ui: &mut egui::Ui) {
+        if let Some(grid) = &self.device_grid {
+            if let Some(clicked_tile) = grid_renderer::render_grid(
+                ui,
+                grid,
+                &viewer_ctx.block_styles,
+                &viewer_ctx.tile_colors,
+                viewer_ctx.dark_mode,
+                arch,
+            ) {
+                viewer_ctx.selected_tile_name = Some(clicked_tile);
+                viewer_ctx.selected_sub_tile_index = 0;
+                viewer_ctx.next_view_mode = ViewMode::IntraTile;
+            }
+        } else {
+            // TODO: Render an error window
+        }
+    }
+}
+
 /// Renders the grid controls panel on the right side
 /// Returns true if grid dimensions changed
 pub fn render_grid_controls_panel(
     ctx: &egui::Context,
     arch: Option<&FPGAArch>,
-    state: &mut InterTileState,
+    state: &mut GridState,
     device_grid: Option<&DeviceGrid>,
     tile_colors: &HashMap<String, egui::Color32>,
 ) -> bool {
@@ -259,13 +321,13 @@ fn get_layout_name(arch: &FPGAArch, index: usize) -> String {
     }
 }
 
-fn update_grid_height_from_width(state: &mut InterTileState) {
+fn update_grid_height_from_width(state: &mut GridState) {
     state.grid_height = (state.grid_width as f32 / state.aspect_ratio)
         .round()
         .max(1.0) as usize;
 }
 
-fn update_grid_width_from_height(state: &mut InterTileState) {
+fn update_grid_width_from_height(state: &mut GridState) {
     state.grid_width = (state.grid_height as f32 * state.aspect_ratio)
         .round()
         .max(1.0) as usize;

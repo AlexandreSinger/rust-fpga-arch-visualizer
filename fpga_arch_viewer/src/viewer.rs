@@ -4,9 +4,7 @@ use std::collections::HashMap;
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
-use crate::grid::DeviceGrid;
-use crate::grid_renderer;
-use crate::inter_tile_view::{self, InterTileState};
+use crate::grid_view::{self, GridView};
 use crate::intra_tile::{self, IntraTileState};
 use crate::intra_tile_view;
 use crate::settings;
@@ -15,67 +13,66 @@ use crate::summary_view;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
     Summary,
-    InterTile,
+    Grid,
     IntraTile,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Page {
+pub enum Page {
     Main,
     Settings,
 }
 
 pub struct ViewerContext {
-    view_mode: ViewMode,
-    show_about: bool,
-    current_page: Page,
+    pub next_view_mode: ViewMode,
+    pub show_about: bool,
+    pub current_page: Page,
     // Navigation state
-    show_layer_list: bool,
-    navigation_history: Vec<String>,
+    pub show_layer_list: bool,
+    pub navigation_history: Vec<String>,
     // Block styles
-    block_styles: DefaultBlockStyles,
-    // Device grid and inter-tile view state
-    device_grid: Option<DeviceGrid>,
-    inter_tile_state: InterTileState,
+    pub block_styles: DefaultBlockStyles,
     // Currently loaded architecture file path
-    loaded_file_path: Option<std::path::PathBuf>,
+    pub loaded_file_path: Option<std::path::PathBuf>,
     // Cache the last window title we set
-    window_title: String,
+    pub window_title: String,
     // Tile name to color mapping
-    tile_colors: HashMap<String, egui::Color32>,
-    // Parsed architecture
-    architecture: Option<FPGAArch>,
+    pub tile_colors: HashMap<String, egui::Color32>,
     // Intra-tile view state
-    selected_tile_name: Option<String>,
-    selected_sub_tile_index: usize,
-    show_hierarchy_tree: bool,
-    intra_tile_state: IntraTileState,
-    all_blocks_expanded: bool,
-    draw_intra_interconnects: bool,
+    pub selected_tile_name: Option<String>,
+    pub selected_sub_tile_index: usize,
+    pub show_hierarchy_tree: bool,
+    pub intra_tile_state: IntraTileState,
+    pub all_blocks_expanded: bool,
+    pub draw_intra_interconnects: bool,
     // Theme setting
-    dark_mode: bool,
+    pub dark_mode: bool,
 }
 
 pub struct FpgaViewer {
+    // Parsed architecture
+    pub architecture: Option<FPGAArch>,
     viewer_ctx: ViewerContext,
+
+    grid_view: GridView,
+
+    view_mode: ViewMode,
 }
 
 impl FpgaViewer {
     pub fn new() -> Self {
         Self {
+            architecture: None,
             viewer_ctx: ViewerContext {
-                view_mode: ViewMode::Summary,
+                next_view_mode: ViewMode::Summary,
                 show_about: false,
                 current_page: Page::Main,
                 show_layer_list: false,
                 navigation_history: Vec::new(),
                 block_styles: DefaultBlockStyles::new(),
-                device_grid: None,
-                inter_tile_state: InterTileState::default(),
                 loaded_file_path: None,
                 window_title: "FPGA Architecture Visualizer".to_string(),
                 tile_colors: HashMap::new(),
-                architecture: None,
                 selected_tile_name: None,
                 selected_sub_tile_index: 0,
                 show_hierarchy_tree: false,
@@ -83,7 +80,9 @@ impl FpgaViewer {
                 all_blocks_expanded: false,
                 draw_intra_interconnects: true,
                 dark_mode: false,
-            }
+            },
+            grid_view: GridView::default(),
+            view_mode: ViewMode::Summary,
         }
     }
 
@@ -104,7 +103,7 @@ impl FpgaViewer {
     fn apply_expand_all_state(&mut self) {
         let viewer_ctx = &mut self.viewer_ctx;
         if viewer_ctx.all_blocks_expanded {
-            if let Some(arch) = &viewer_ctx.architecture {
+            if let Some(arch) = &self.architecture {
                 if let Some(tile_name) = &viewer_ctx.selected_tile_name {
                     if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
                         if viewer_ctx.selected_sub_tile_index < tile.sub_tiles.len() {
@@ -134,10 +133,9 @@ impl FpgaViewer {
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
             Ok(arch) => {
-                self.viewer_ctx.architecture = Some(arch);
-                self.viewer_ctx.inter_tile_state.selected_layout_index = 0;
+                self.architecture = Some(arch);
 
-                if let Some(arch) = &self.viewer_ctx.architecture {
+                if let Some(arch) = &self.architecture {
                     let mut tile_names = std::collections::HashSet::new();
                     let num_layouts = arch.layouts.len();
                     for layout in &arch.layouts {
@@ -171,7 +169,7 @@ impl FpgaViewer {
                         self.viewer_ctx.tile_colors.insert(tile_name.clone(), color);
                     }
 
-                    self.rebuild_grid();
+                    self.grid_view.on_architecture_load(arch);
                     self.viewer_ctx.loaded_file_path = Some(file_path);
                     println!(
                         "Successfully loaded architecture file with {} tile types and {} layouts",
@@ -195,30 +193,6 @@ impl FpgaViewer {
         }
     }
 
-    fn rebuild_grid(&mut self) {
-        let viewer_ctx = &mut self.viewer_ctx;
-        if let Some(arch) = &viewer_ctx.architecture {
-            if let Some(layout) = arch.layouts.get(viewer_ctx.inter_tile_state.selected_layout_index) {
-                let grid = match layout {
-                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                        viewer_ctx.inter_tile_state.aspect_ratio = auto_layout.aspect_ratio;
-                        DeviceGrid::from_auto_layout_with_dimensions(
-                            arch,
-                            viewer_ctx.inter_tile_state.grid_width,
-                            viewer_ctx.inter_tile_state.grid_height,
-                        )
-                    }
-                    fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
-                        viewer_ctx.inter_tile_state.grid_width = fixed_layout.width as usize;
-                        viewer_ctx.inter_tile_state.grid_height = fixed_layout.height as usize;
-                        DeviceGrid::from_fixed_layout(arch, viewer_ctx.inter_tile_state.selected_layout_index)
-                    }
-                };
-                viewer_ctx.device_grid = Some(grid);
-            }
-        }
-    }
-
     fn navigate_back(&mut self) {
         let viewer_ctx = &mut self.viewer_ctx;
         if viewer_ctx.current_page == Page::Settings {
@@ -226,14 +200,14 @@ impl FpgaViewer {
             return;
         }
 
-        if viewer_ctx.view_mode == ViewMode::IntraTile {
-            viewer_ctx.view_mode = ViewMode::InterTile;
+        if self.view_mode == ViewMode::IntraTile {
+            viewer_ctx.next_view_mode = ViewMode::Grid;
             viewer_ctx.selected_tile_name = None;
             return;
         }
 
-        if viewer_ctx.view_mode == ViewMode::InterTile {
-            viewer_ctx.view_mode = ViewMode::Summary;
+        if self.view_mode == ViewMode::Grid {
+            viewer_ctx.next_view_mode = ViewMode::Summary;
             return;
         }
 
@@ -298,8 +272,8 @@ impl FpgaViewer {
                     ui.add_space(10.0);
 
                     let back_enabled = self.viewer_ctx.current_page == Page::Settings
-                        || self.viewer_ctx.view_mode == ViewMode::IntraTile
-                        || self.viewer_ctx.view_mode == ViewMode::InterTile
+                        || self.view_mode == ViewMode::IntraTile
+                        || self.view_mode == ViewMode::Grid
                         || !self.viewer_ctx.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
@@ -316,7 +290,7 @@ impl FpgaViewer {
                         egui::show_tooltip_at_pointer(ctx, egui::Id::new("back_tooltip"), |ui| {
                             if self.viewer_ctx.current_page == Page::Settings {
                                 ui.label("Back to main");
-                            } else if self.viewer_ctx.view_mode == ViewMode::IntraTile {
+                            } else if self.view_mode == ViewMode::IntraTile {
                                 ui.label("Back to grid view");
                             } else {
                                 ui.label("Go back");
@@ -374,15 +348,15 @@ impl FpgaViewer {
 
                 ui.menu_button("View", |ui| {
                     if ui.button("Summary View").clicked() {
-                        self.viewer_ctx.view_mode = ViewMode::Summary;
+                        self.viewer_ctx.next_view_mode = ViewMode::Summary;
                         ui.close_menu();
                     }
-                    if ui.button("Inter-Tile View").clicked() {
-                        self.viewer_ctx.view_mode = ViewMode::InterTile;
+                    if ui.button("Grid View").clicked() {
+                        self.viewer_ctx.next_view_mode = ViewMode::Grid;
                         ui.close_menu();
                     }
                     if ui.button("Intra-Tile View").clicked() {
-                        self.viewer_ctx.view_mode = ViewMode::IntraTile;
+                        self.viewer_ctx.next_view_mode = ViewMode::IntraTile;
                         ui.close_menu();
                     }
                 });
@@ -408,52 +382,35 @@ impl FpgaViewer {
     fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.viewer_ctx.current_page {
-                Page::Main => match self.viewer_ctx.view_mode {
-                    ViewMode::Summary => self.render_summary_view(ui),
-                    ViewMode::InterTile => self.render_inter_tile_view(ui),
-                    ViewMode::IntraTile => self.render_intra_tile_view(ui),
+                Page::Main => match &self.architecture {
+                    None => common_ui::render_welcome_message(ui, &self.view_mode),
+                    Some(arch) => match self.view_mode {
+                        ViewMode::Summary => self.render_summary_view(ui),
+                        ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, ui),
+                        ViewMode::IntraTile => self.render_intra_tile_view(ui),
+                    }
                 },
                 Page::Settings => {
                     settings::render_settings_page(ui, &self.viewer_ctx.block_styles, &mut self.viewer_ctx.dark_mode);
-                }
+                },
             }
         });
     }
 
     fn render_summary_view(&mut self, ui: &mut egui::Ui) {
-        if self.viewer_ctx.architecture.is_none() {
-            common_ui::render_welcome_message(ui, &self.viewer_ctx.view_mode);
-        } else if let Some(arch) = &self.viewer_ctx.architecture {
+        if self.architecture.is_none() {
+            common_ui::render_welcome_message(ui, &self.view_mode);
+        } else if let Some(arch) = &self.architecture {
             if let Some(new_view_mode) = summary_view::render_summary_view(ui, arch) {
-                self.viewer_ctx.view_mode = new_view_mode;
+                self.viewer_ctx.next_view_mode = new_view_mode;
             }
-        }
-    }
-
-    fn render_inter_tile_view(&mut self, ui: &mut egui::Ui) {
-        if let (Some(grid), Some(arch)) = (&self.viewer_ctx.device_grid, &self.viewer_ctx.architecture) {
-            if let Some(clicked_tile) = grid_renderer::render_grid(
-                ui,
-                grid,
-                &self.viewer_ctx.block_styles,
-                &self.viewer_ctx.tile_colors,
-                self.viewer_ctx.dark_mode,
-                arch,
-            ) {
-                self.viewer_ctx.selected_tile_name = Some(clicked_tile);
-                self.viewer_ctx.selected_sub_tile_index = 0;
-                self.viewer_ctx.view_mode = ViewMode::IntraTile;
-                self.apply_expand_all_state();
-            }
-        } else {
-            common_ui::render_welcome_message(ui, &self.viewer_ctx.view_mode);
         }
     }
 
     fn render_intra_tile_view(&mut self, ui: &mut egui::Ui) {
-        if self.viewer_ctx.architecture.is_none() {
-            common_ui::render_welcome_message(ui, &self.viewer_ctx.view_mode);
-        } else if let (Some(arch), Some(tile_name)) = (&self.viewer_ctx.architecture, &self.viewer_ctx.selected_tile_name) {
+        if self.architecture.is_none() {
+            common_ui::render_welcome_message(ui, &self.view_mode);
+        } else if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.viewer_ctx.selected_tile_name) {
             if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
                 let sub_tile_index = if self.viewer_ctx.selected_sub_tile_index < tile.sub_tiles.len() {
                     self.viewer_ctx.selected_sub_tile_index
@@ -478,7 +435,7 @@ impl FpgaViewer {
                     &format!("Could not find tile: {}", tile_name),
                     Some("Back to Grid View"),
                 ) {
-                    self.viewer_ctx.view_mode = ViewMode::InterTile;
+                    self.viewer_ctx.next_view_mode = ViewMode::Grid;
                     self.viewer_ctx.selected_tile_name = None;
                 }
             }
@@ -489,7 +446,7 @@ impl FpgaViewer {
                 "Please select a tile from the dropdown or click on a tile in the grid view.",
                 Some("Back to Grid View"),
             ) {
-                self.viewer_ctx.view_mode = ViewMode::InterTile;
+                self.viewer_ctx.next_view_mode = ViewMode::Grid;
                 self.viewer_ctx.selected_tile_name = None;
             }
         }
@@ -547,31 +504,31 @@ impl eframe::App for FpgaViewer {
         self.render_navigation_buttons(ctx);
         self.render_layer_list_panel(ctx);
 
-        // Inter-tile view controls
+        // Grid view controls
         if self.viewer_ctx.current_page == Page::Main
-            && self.viewer_ctx.view_mode == ViewMode::InterTile
-            && self.viewer_ctx.device_grid.is_some()
+            && self.view_mode == ViewMode::Grid
+            && self.grid_view.device_grid.is_some()
         {
-            let grid_changed = inter_tile_view::render_grid_controls_panel(
+            let grid_changed = grid_view::render_grid_controls_panel(
                 ctx,
-                self.viewer_ctx.architecture.as_ref(),
-                &mut self.viewer_ctx.inter_tile_state,
-                self.viewer_ctx.device_grid.as_ref(),
+                self.architecture.as_ref(),
+                &mut self.grid_view.grid_state,
+                self.grid_view.device_grid.as_ref(),
                 &self.viewer_ctx.tile_colors,
             );
             if grid_changed {
-                self.rebuild_grid();
+                self.grid_view.rebuild_grid(self.architecture.as_ref().unwrap());
             }
         }
 
         // Intra-tile view controls
         if self.viewer_ctx.current_page == Page::Main
-            && self.viewer_ctx.view_mode == ViewMode::IntraTile
-            && self.viewer_ctx.architecture.is_some()
+            && self.view_mode == ViewMode::IntraTile
+            && self.architecture.is_some()
         {
             let should_expand_all = intra_tile_view::render_intra_tile_controls_panel(
                 ctx,
-                self.viewer_ctx.architecture.as_ref(),
+                self.architecture.as_ref(),
                 &mut self.viewer_ctx.show_hierarchy_tree,
                 &mut self.viewer_ctx.all_blocks_expanded,
                 &mut self.viewer_ctx.draw_intra_interconnects,
@@ -588,5 +545,14 @@ impl eframe::App for FpgaViewer {
 
         // About window
         self.render_about_window(ctx);
+
+        // Next state logic for the view mode.
+        if self.view_mode != self.viewer_ctx.next_view_mode {
+            // Run some code on the transision from one state to the next.
+            if self.viewer_ctx.next_view_mode == ViewMode::IntraTile {
+                self.apply_expand_all_state();
+            }
+            self.view_mode = self.viewer_ctx.next_view_mode.clone();
+        }
     }
 }

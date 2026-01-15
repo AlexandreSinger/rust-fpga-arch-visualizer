@@ -39,7 +39,7 @@ pub fn render_summary_view(
                 ui.horizontal(|ui| {
                     ui.heading(format!("Tiles ({})", arch.tiles.len()));
                     if ui.button("View Tile Grid").clicked() {
-                        view_mode_change = Some(ViewMode::InterTile);
+                        view_mode_change = Some(ViewMode::Grid);
                     }
                 });
                 ui.separator();

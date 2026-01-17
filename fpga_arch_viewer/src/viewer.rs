@@ -30,6 +30,7 @@ pub struct ViewerContext {
     // Navigation state
     pub show_layer_list: bool,
     pub navigation_history: Vec<ViewMode>,
+    pub skip_nav_history_update: bool,
     // Block styles
     pub block_styles: DefaultBlockStyles,
     // Currently loaded architecture file path
@@ -63,6 +64,7 @@ impl FpgaViewer {
                 current_page: Page::Main,
                 show_layer_list: false,
                 navigation_history: Vec::new(),
+                skip_nav_history_update: false,
                 block_styles: DefaultBlockStyles::new(),
                 loaded_file_path: None,
                 window_title: "FPGA Architecture Visualizer".to_string(),
@@ -123,24 +125,17 @@ impl FpgaViewer {
     }
 
     fn navigate_back(&mut self) {
-        let viewer_ctx = &mut self.viewer_ctx;
-        if viewer_ctx.current_page == Page::Settings {
-            viewer_ctx.current_page = Page::Main;
+        if self.viewer_ctx.current_page == Page::Settings {
+            self.viewer_ctx.current_page = Page::Main;
             return;
         }
 
-        if self.view_mode == ViewMode::ComplexBlock {
-            self.next_view_mode = ViewMode::Grid;
-            return;
-        }
-
-        if self.view_mode == ViewMode::Grid {
-            self.next_view_mode = ViewMode::Summary;
-            return;
-        }
-
-        if !viewer_ctx.navigation_history.is_empty() {
-            viewer_ctx.navigation_history.pop();
+        // Navigate back in view mode history
+        if !self.viewer_ctx.navigation_history.is_empty() {
+            if let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
+                self.next_view_mode = previous_mode;
+                self.viewer_ctx.skip_nav_history_update = true;
+            }
         }
     }
 
@@ -200,8 +195,6 @@ impl FpgaViewer {
                     ui.add_space(10.0);
 
                     let back_enabled = self.viewer_ctx.current_page == Page::Settings
-                        || self.view_mode == ViewMode::ComplexBlock
-                        || self.view_mode == ViewMode::Grid
                         || !self.viewer_ctx.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
@@ -397,6 +390,12 @@ impl eframe::App for FpgaViewer {
 
         // Next state logic for the view mode.
         if self.view_mode != self.next_view_mode {
+            // Push current mode to history before transitioning
+            if !self.viewer_ctx.skip_nav_history_update {
+                self.viewer_ctx.navigation_history.push(self.view_mode);
+            }
+            self.viewer_ctx.skip_nav_history_update = false;
+
             // Run code on the close of a view.
             match self.view_mode {
                 ViewMode::ComplexBlock => self.complex_block_view.on_view_close(),

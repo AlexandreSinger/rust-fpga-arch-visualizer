@@ -133,49 +133,52 @@ impl FpgaViewer {
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
             Ok(arch) => {
-                self.architecture = Some(arch);
+                // Extract unique tile names from all layouts
+                let mut tile_names = std::collections::HashSet::new();
+                let num_layouts = arch.layouts.len();
+                for layout in &arch.layouts {
+                    let grid_locations = match layout {
+                        fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
+                        fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
+                    };
 
-                if let Some(arch) = &self.architecture {
-                    let mut tile_names = std::collections::HashSet::new();
-                    let num_layouts = arch.layouts.len();
-                    for layout in &arch.layouts {
-                        let grid_locations = match layout {
-                            fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
-                            fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
+                    for location in grid_locations {
+                        let pb_type = match location {
+                            fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
+                            fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
+                            fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
+                            fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
+                            fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
+                            fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
+                            fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
                         };
-
-                        for location in grid_locations {
-                            let pb_type = match location {
-                                fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
-                                fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
-                                fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
-                                fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
-                                fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
-                                fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
-                                fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
-                            };
-                            if pb_type != "EMPTY" {
-                                tile_names.insert(pb_type.clone());
-                            }
+                        if pb_type != "EMPTY" {
+                            tile_names.insert(pb_type.clone());
                         }
                     }
-
-                    self.viewer_ctx.tile_colors.clear();
-                    let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
-                    sorted_tiles.sort();
-                    let num_tiles = sorted_tiles.len();
-                    for (i, tile_name) in sorted_tiles.iter().enumerate() {
-                        let color = crate::block_style::get_tile_color(tile_name, i);
-                        self.viewer_ctx.tile_colors.insert(tile_name.clone(), color);
-                    }
-
-                    self.grid_view.on_architecture_load(arch);
-                    self.viewer_ctx.loaded_file_path = Some(file_path);
-                    println!(
-                        "Successfully loaded architecture file with {} tile types and {} layouts",
-                        num_tiles, num_layouts
-                    );
                 }
+
+                // Assign colors to tile types
+                self.viewer_ctx.tile_colors.clear();
+                let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
+                sorted_tiles.sort();
+                let num_tiles = sorted_tiles.len();
+                for (i, tile_name) in sorted_tiles.iter().enumerate() {
+                    let color = crate::block_style::get_tile_color(tile_name, i);
+                    self.viewer_ctx.tile_colors.insert(tile_name.clone(), color);
+                }
+
+                // Update grid view with new architecture
+                self.grid_view.on_architecture_load(&arch);
+
+                // Update viewer context
+                self.viewer_ctx.loaded_file_path = Some(file_path);
+                self.architecture = Some(arch);
+                self.viewer_ctx.next_view_mode = ViewMode::Summary;
+                println!(
+                    "Successfully loaded architecture file with {} tile types and {} layouts",
+                    num_tiles, num_layouts
+                );
             }
             Err(e) => {
                 eprintln!("Failed to parse architecture file: {:?}", e);

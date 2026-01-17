@@ -15,6 +15,9 @@ pub enum ViewMode {
     ComplexBlock,
 }
 
+// NOTE: These act more like tabs, so while you are looking at settings,
+//       the main page stays around in the background.
+// TODO: We should make these actual tabs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Page {
     Main,
@@ -304,34 +307,40 @@ impl FpgaViewer {
         });
     }
 
-    fn render_side_panel(&mut self, ctx: &egui::Context) {
+    fn render_page(&mut self, ctx: &egui::Context) {
         match self.viewer_ctx.current_page {
-            Page::Main => match &self.architecture {
-                None => {},
-                Some(arch) => match self.view_mode {
-                    ViewMode::ComplexBlock => self.complex_block_view.render_side_panel(arch, ctx),
-                    ViewMode::Grid => self.grid_view.render_side_panel(arch, ctx),
-                    _ => {},
-                }
+            Page::Main => {
+                self.render_main_page(ctx);
             },
-            _ => {},
+            Page::Settings => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    settings::render_settings_page(ui, &self.viewer_ctx.block_styles, &mut self.viewer_ctx.dark_mode);
+                });
+            },
         }
     }
 
-    fn render_central_panel(&mut self, ctx: &egui::Context) {
+    fn render_main_page(&mut self, ctx: &egui::Context) {
+        // Render the side panel.
+        // TODO: Merge with rendering the central view.
+        match &self.architecture {
+            Some(arch) => match self.view_mode {
+                ViewMode::ComplexBlock => self.complex_block_view.render_side_panel(arch, ctx),
+                ViewMode::Grid => self.grid_view.render_side_panel(arch, ctx),
+                _ => {},
+            },
+            None => {},
+        }
+
+        // Render the central view.
         egui::CentralPanel::default().show(ctx, |ui| {
-            match self.viewer_ctx.current_page {
-                Page::Main => match &self.architecture {
-                    None => common_ui::render_welcome_message(ui, &self.view_mode),
-                    Some(arch) => match self.view_mode {
-                        ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ui),
-                        ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ui),
-                        ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ui),
-                    }
-                },
-                Page::Settings => {
-                    settings::render_settings_page(ui, &self.viewer_ctx.block_styles, &mut self.viewer_ctx.dark_mode);
-                },
+            match &self.architecture {
+                None => common_ui::render_welcome_message(ui, &self.view_mode),
+                Some(arch) => match self.view_mode {
+                    ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ui),
+                    ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ui),
+                    ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ui),
+                }
             }
         });
     }
@@ -388,12 +397,8 @@ impl eframe::App for FpgaViewer {
         self.render_navigation_buttons(ctx);
         self.render_layer_list_panel(ctx);
 
-        // Side panel content
-        // TODO: Merge with central panel to create render_view
-        self.render_side_panel(ctx);
-
-        // Central panel content
-        self.render_central_panel(ctx);
+        // Render the page.
+        self.render_page(ctx);
 
         // About window
         self.render_about_window(ctx);

@@ -38,6 +38,36 @@ pub fn render(
     arch: &FPGAArch,
     next_view_mode: &mut ViewMode,
     dark_mode: bool,
+    ctx: &egui::Context,
+) {
+    self.render_side_panel(arch, ctx);
+
+    egui::CentralPanel::default().show(ctx, |ui| {
+        self.render_complex_block_view(arch, next_view_mode, dark_mode, ui);
+    });
+}
+
+
+pub fn on_view_open(
+    &mut self,
+    arch: &Option<FPGAArch>,
+) {
+    if let Some(arch) = &arch {
+        self.apply_expand_all_state(arch);
+    }
+}
+
+pub fn on_view_close(
+    &mut self,
+) {
+    self.complex_block_view_state.selected_tile_name = None;
+}
+
+fn render_complex_block_view(
+    &mut self,
+    arch: &FPGAArch,
+    next_view_mode: &mut ViewMode,
+    dark_mode: bool,
     ui: &mut egui::Ui,
 ) {
     if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name {
@@ -80,7 +110,7 @@ pub fn render(
     }
 }
 
-pub fn render_side_panel(
+fn render_side_panel(
     &mut self,
     arch: &FPGAArch,
     ctx: &egui::Context,
@@ -99,22 +129,7 @@ pub fn render_side_panel(
     }
 }
 
-pub fn on_view_open(
-    &mut self,
-    arch: &Option<FPGAArch>,
-) {
-    if let Some(arch) = &arch {
-        self.apply_expand_all_state(arch);
-    }
-}
-
-pub fn on_view_close(
-    &mut self,
-) {
-    self.complex_block_view_state.selected_tile_name = None;
-}
-
-pub fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
+fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
     if self.complex_block_view_state.all_blocks_expanded {
         if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name {
             if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
@@ -144,7 +159,7 @@ pub fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
 }
 
 /// Renders the intra-tile view controls panel on the right side
-pub fn render_intra_tile_controls_panel(
+fn render_intra_tile_controls_panel(
     ctx: &egui::Context,
     arch: &FPGAArch,
     show_hierarchy_tree: &mut bool,

@@ -84,7 +84,22 @@ impl GridView {
         self.rebuild_grid(arch);
     }
 
-    pub fn rebuild_grid(&mut self, arch: &FPGAArch) {
+    pub fn render(
+        &mut self,
+        arch: &FPGAArch,
+        viewer_ctx: &mut ViewerContext,
+        complex_block_view_state: &mut ComplexBlockViewState,
+        next_view_mode: &mut ViewMode,
+        ctx: &egui::Context,
+    ) {
+        self.render_side_panel(arch, ctx);
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.render_grid_view(arch, viewer_ctx, complex_block_view_state, next_view_mode, ui);
+        });
+    }
+
+    fn rebuild_grid(&mut self, arch: &FPGAArch) {
         if let Some(layout) = arch.layouts.get(self.grid_state.selected_layout_index) {
             let grid = match layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
@@ -105,7 +120,7 @@ impl GridView {
         }
     }
 
-    pub fn render(
+    fn render_grid_view(
         &mut self,
         arch: &FPGAArch,
         viewer_ctx: &mut ViewerContext,
@@ -131,7 +146,7 @@ impl GridView {
         }
     }
 
-    pub fn render_side_panel(
+    fn render_side_panel(
         &mut self,
         arch: &FPGAArch,
         ctx: &egui::Context,
@@ -151,7 +166,7 @@ impl GridView {
 
 /// Renders the grid controls panel on the right side
 /// Returns true if grid dimensions changed
-pub fn render_grid_controls_panel(
+fn render_grid_controls_panel(
     ctx: &egui::Context,
     arch: &FPGAArch,
     state: &mut GridState,

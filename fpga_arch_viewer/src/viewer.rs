@@ -29,7 +29,7 @@ pub struct ViewerContext {
     pub current_page: Page,
     // Navigation state
     pub show_layer_list: bool,
-    pub navigation_history: Vec<String>,
+    pub navigation_history: Vec<ViewMode>,
     // Block styles
     pub block_styles: DefaultBlockStyles,
     // Currently loaded architecture file path
@@ -321,28 +321,19 @@ impl FpgaViewer {
     }
 
     fn render_main_page(&mut self, ctx: &egui::Context) {
-        // Render the side panel.
-        // TODO: Merge with rendering the central view.
         match &self.architecture {
             Some(arch) => match self.view_mode {
-                ViewMode::ComplexBlock => self.complex_block_view.render_side_panel(arch, ctx),
-                ViewMode::Grid => self.grid_view.render_side_panel(arch, ctx),
-                _ => {},
+                ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ctx),
+                ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ctx),
+                ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ctx),
             },
-            None => {},
+            None => {
+                // If no architecture is loaded, no view can be seen, so show a welcome message.
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    common_ui::render_welcome_message(ui, &self.view_mode);
+                });
+            },
         }
-
-        // Render the central view.
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match &self.architecture {
-                None => common_ui::render_welcome_message(ui, &self.view_mode),
-                Some(arch) => match self.view_mode {
-                    ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ui),
-                    ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ui),
-                    ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ui),
-                }
-            }
-        });
     }
 
     fn render_about_window(&mut self, ctx: &egui::Context) {

@@ -19,6 +19,17 @@ pub fn render(
     &mut self,
     arch: &FPGAArch,
     next_view_mode: &mut ViewMode,
+    ctx: &egui::Context,
+) {
+    egui::CentralPanel::default().show(ctx, |ui| {
+        self.render_summary(arch, next_view_mode, ui);
+    });
+}
+
+fn render_summary(
+    &mut self,
+    arch: &FPGAArch,
+    next_view_mode: &mut ViewMode,
     ui: &mut egui::Ui
 ) {
     egui::ScrollArea::vertical()

@@ -1,6 +1,5 @@
 use eframe::egui;
 use fpga_arch_parser::FPGAArch;
-use std::collections::HashMap;
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
@@ -34,8 +33,6 @@ pub struct ViewerContext {
     pub loaded_file_path: Option<std::path::PathBuf>,
     // Cache the last window title we set
     pub window_title: String,
-    // Tile name to color mapping
-    pub tile_colors: HashMap<String, egui::Color32>,
     // Theme setting
     pub dark_mode: bool,
 }
@@ -66,7 +63,6 @@ impl FpgaViewer {
                 block_styles: DefaultBlockStyles::new(),
                 loaded_file_path: None,
                 window_title: "FPGA Architecture Visualizer".to_string(),
-                tile_colors: HashMap::new(),
                 dark_mode: false,
             },
             summary_view: SummaryView::default(),
@@ -94,52 +90,18 @@ impl FpgaViewer {
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
             Ok(arch) => {
-                // Extract unique tile names from all layouts
-                let mut tile_names = std::collections::HashSet::new();
-                let num_layouts = arch.layouts.len();
-                for layout in &arch.layouts {
-                    let grid_locations = match layout {
-                        fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
-                        fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
-                    };
-
-                    for location in grid_locations {
-                        let pb_type = match location {
-                            fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
-                            fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
-                            fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
-                            fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
-                            fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
-                            fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
-                            fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
-                        };
-                        if pb_type != "EMPTY" {
-                            tile_names.insert(pb_type.clone());
-                        }
-                    }
-                }
-
-                // Assign colors to tile types
-                self.viewer_ctx.tile_colors.clear();
-                let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
-                sorted_tiles.sort();
-                let num_tiles = sorted_tiles.len();
-                for (i, tile_name) in sorted_tiles.iter().enumerate() {
-                    let color = crate::block_style::get_tile_color(tile_name, i);
-                    self.viewer_ctx.tile_colors.insert(tile_name.clone(), color);
-                }
-
-                // Update grid view with new architecture
+                // Update views with new architecture.
                 self.grid_view.on_architecture_load(&arch);
 
-                // Update viewer context
+                // Update viewer context.
                 self.viewer_ctx.loaded_file_path = Some(file_path);
                 self.architecture = Some(arch);
                 self.next_view_mode = ViewMode::Summary;
-                println!(
-                    "Successfully loaded architecture file with {} tile types and {} layouts",
-                    num_tiles, num_layouts
-                );
+
+                // Print success.
+                if let Some(filename) = self.loaded_arch_filename() {
+                    println!("Successfully loaded architecture file: {}", filename);
+                }
             }
             Err(e) => {
                 eprintln!("Failed to parse architecture file: {:?}", e);
@@ -348,7 +310,7 @@ impl FpgaViewer {
                 None => {},
                 Some(arch) => match self.view_mode {
                     ViewMode::ComplexBlock => self.complex_block_view.render_side_panel(arch, ctx),
-                    ViewMode::Grid => self.grid_view.render_side_panel(arch, &mut self.viewer_ctx, ctx),
+                    ViewMode::Grid => self.grid_view.render_side_panel(arch, ctx),
                     _ => {},
                 }
             },

@@ -29,6 +29,9 @@ pub struct GridView {
     // Device grid and grid view state
     pub device_grid: Option<DeviceGrid>,
     pub grid_state: GridState,
+
+    // Tile name to color mapping
+    pub tile_colors: HashMap<String, egui::Color32>,
 }
 
 impl Default for GridView {
@@ -36,12 +39,47 @@ impl Default for GridView {
         Self {
             grid_state: GridState::default(),
             device_grid: None,
+            tile_colors: HashMap::new(),
         }
     }
 }
 
 impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
+        // Extract unique tile names from all layouts
+        let mut tile_names = std::collections::HashSet::new();
+        for layout in &arch.layouts {
+            let grid_locations = match layout {
+                fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
+                fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
+            };
+
+            for location in grid_locations {
+                let pb_type = match location {
+                    fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
+                    fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
+                    fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
+                    fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
+                    fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
+                    fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
+                    fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
+                };
+                if pb_type != "EMPTY" {
+                    tile_names.insert(pb_type.clone());
+                }
+            }
+        }
+
+        // Assign colors to tile types
+        self.tile_colors.clear();
+        let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
+        sorted_tiles.sort();
+        for (i, tile_name) in sorted_tiles.iter().enumerate() {
+            let color = crate::block_style::get_tile_color(tile_name, i);
+            self.tile_colors.insert(tile_name.clone(), color);
+        }
+
+        // Reset layout selection and rebuild grid
         self.grid_state.selected_layout_index = 0;
         self.rebuild_grid(arch);
     }
@@ -80,7 +118,7 @@ impl GridView {
                 ui,
                 grid,
                 &viewer_ctx.block_styles,
-                &viewer_ctx.tile_colors,
+                &self.tile_colors,
                 viewer_ctx.dark_mode,
                 arch,
             ) {
@@ -96,7 +134,6 @@ impl GridView {
     pub fn render_side_panel(
         &mut self,
         arch: &FPGAArch,
-        viewer_ctx: &mut ViewerContext,
         ctx: &egui::Context,
     ) {
         let grid_changed = render_grid_controls_panel(
@@ -104,7 +141,7 @@ impl GridView {
             arch,
             &mut self.grid_state,
             self.device_grid.as_ref(),
-            &viewer_ctx.tile_colors,
+            &self.tile_colors,
         );
         if grid_changed {
             self.rebuild_grid(arch);

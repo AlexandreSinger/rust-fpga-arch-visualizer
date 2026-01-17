@@ -157,7 +157,7 @@ pub fn render(
                 ui.horizontal(|ui| {
                     ui.heading(format!("Complex Blocks ({})", arch.complex_block_list.len()));
                     if ui.button("View Complex Block Details").clicked() {
-                        *next_view_mode = ViewMode::IntraTile;
+                        *next_view_mode = ViewMode::ComplexBlock;
                     }
                 });
                 ui.separator();

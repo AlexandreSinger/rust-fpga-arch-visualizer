@@ -3,7 +3,7 @@ use egui_extras;
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
-use crate::{grid::{DeviceGrid, GridCell}, grid_renderer, viewer::{ViewMode, ViewerContext}};
+use crate::{grid::{DeviceGrid, GridCell}, grid_renderer, complex_block_view::ComplexBlockViewState, viewer::{ViewMode, ViewerContext}};
 
 /// State for grid view
 #[derive(Debug, Clone)]
@@ -67,7 +67,14 @@ impl GridView {
         }
     }
 
-    pub fn render(&mut self, arch: &FPGAArch, viewer_ctx: &mut ViewerContext, ui: &mut egui::Ui) {
+    pub fn render(
+        &mut self,
+        arch: &FPGAArch,
+        viewer_ctx: &mut ViewerContext,
+        complex_block_view_state: &mut ComplexBlockViewState,
+        next_view_mode: &mut ViewMode,
+        ui: &mut egui::Ui
+    ) {
         if let Some(grid) = &self.device_grid {
             if let Some(clicked_tile) = grid_renderer::render_grid(
                 ui,
@@ -77,9 +84,9 @@ impl GridView {
                 viewer_ctx.dark_mode,
                 arch,
             ) {
-                viewer_ctx.selected_tile_name = Some(clicked_tile);
-                viewer_ctx.selected_sub_tile_index = 0;
-                viewer_ctx.next_view_mode = ViewMode::IntraTile;
+                complex_block_view_state.selected_tile_name = Some(clicked_tile);
+                complex_block_view_state.selected_sub_tile_index = 0;
+                *next_view_mode = ViewMode::ComplexBlock;
             }
         } else {
             // TODO: Render an error window

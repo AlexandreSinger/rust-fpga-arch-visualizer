@@ -13,7 +13,7 @@ mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
 mod grid_view;
-mod intra_tile_view;
+mod complex_block_view;
 mod settings;
 mod summary_view;
 mod viewer;

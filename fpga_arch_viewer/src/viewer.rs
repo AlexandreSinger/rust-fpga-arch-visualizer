@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
-use crate::grid_view::{self, GridView};
+use crate::grid_view::GridView;
 use crate::complex_block_view::ComplexBlockView;
 use crate::settings;
 use crate::summary_view::SummaryView;
@@ -342,6 +342,20 @@ impl FpgaViewer {
         });
     }
 
+    fn render_side_panel(&mut self, ctx: &egui::Context) {
+        match self.viewer_ctx.current_page {
+            Page::Main => match &self.architecture {
+                None => {},
+                Some(arch) => match self.view_mode {
+                    ViewMode::ComplexBlock => self.complex_block_view.render_side_panel(arch, ctx),
+                    ViewMode::Grid => self.grid_view.render_side_panel(arch, &mut self.viewer_ctx, ctx),
+                    _ => {},
+                }
+            },
+            _ => {},
+        }
+    }
+
     fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.viewer_ctx.current_page {
@@ -412,31 +426,9 @@ impl eframe::App for FpgaViewer {
         self.render_navigation_buttons(ctx);
         self.render_layer_list_panel(ctx);
 
-        // Grid view controls
-        if self.viewer_ctx.current_page == Page::Main
-            && self.view_mode == ViewMode::Grid
-            && self.grid_view.device_grid.is_some()
-        {
-            let grid_changed = grid_view::render_grid_controls_panel(
-                ctx,
-                self.architecture.as_ref(),
-                &mut self.grid_view.grid_state,
-                self.grid_view.device_grid.as_ref(),
-                &self.viewer_ctx.tile_colors,
-            );
-            if grid_changed {
-                self.grid_view.rebuild_grid(self.architecture.as_ref().unwrap());
-            }
-        }
-
-        // Complex Block view controls
-        if self.viewer_ctx.current_page == Page::Main
-            && self.view_mode == ViewMode::ComplexBlock
-        {
-            if let Some(arch) = &self.architecture {
-                self.complex_block_view.render_side_panel(arch, ctx);
-            }
-        }
+        // Side panel content
+        // TODO: Merge with central panel to create render_view
+        self.render_side_panel(ctx);
 
         // Central panel content
         self.render_central_panel(ctx);

@@ -92,13 +92,31 @@ impl GridView {
             // TODO: Render an error window
         }
     }
+
+    pub fn render_side_panel(
+        &mut self,
+        arch: &FPGAArch,
+        viewer_ctx: &mut ViewerContext,
+        ctx: &egui::Context,
+    ) {
+        let grid_changed = render_grid_controls_panel(
+            ctx,
+            arch,
+            &mut self.grid_state,
+            self.device_grid.as_ref(),
+            &viewer_ctx.tile_colors,
+        );
+        if grid_changed {
+            self.rebuild_grid(arch);
+        }
+    }
 }
 
 /// Renders the grid controls panel on the right side
 /// Returns true if grid dimensions changed
 pub fn render_grid_controls_panel(
     ctx: &egui::Context,
-    arch: Option<&FPGAArch>,
+    arch: &FPGAArch,
     state: &mut GridState,
     device_grid: Option<&DeviceGrid>,
     tile_colors: &HashMap<String, egui::Color32>,
@@ -112,47 +130,41 @@ pub fn render_grid_controls_panel(
             ui.add_space(10.0);
 
             // Layout selection dropdown
-            if let Some(arch) = arch {
-                if arch.layouts.len() > 1 {
-                    ui.label("Layout:");
-                    let mut layout_changed = false;
-                    egui::ComboBox::from_id_source("layout_selector")
-                        .selected_text(get_layout_name(arch, state.selected_layout_index))
-                        .show_ui(ui, |ui| {
-                            for (idx, layout) in arch.layouts.iter().enumerate() {
-                                let layout_name = match layout {
-                                    fpga_arch_parser::Layout::AutoLayout(_) => {
-                                        "Auto Layout".to_string()
-                                    }
-                                    fpga_arch_parser::Layout::FixedLayout(fl) => {
-                                        format!("Fixed: {}", fl.name)
-                                    }
-                                };
-                                if ui
-                                    .selectable_value(&mut state.selected_layout_index, idx, layout_name)
-                                    .clicked()
-                                {
-                                    layout_changed = true;
+            if arch.layouts.len() > 1 {
+                ui.label("Layout:");
+                let mut layout_changed = false;
+                egui::ComboBox::from_id_source("layout_selector")
+                    .selected_text(get_layout_name(arch, state.selected_layout_index))
+                    .show_ui(ui, |ui| {
+                        for (idx, layout) in arch.layouts.iter().enumerate() {
+                            let layout_name = match layout {
+                                fpga_arch_parser::Layout::AutoLayout(_) => {
+                                    "Auto Layout".to_string()
                                 }
+                                fpga_arch_parser::Layout::FixedLayout(fl) => {
+                                    format!("Fixed: {}", fl.name)
+                                }
+                            };
+                            if ui
+                                .selectable_value(&mut state.selected_layout_index, idx, layout_name)
+                                .clicked()
+                            {
+                                layout_changed = true;
                             }
-                        });
+                        }
+                    });
 
-                    if layout_changed {
-                        grid_changed = true;
-                    }
-                    ui.add_space(10.0);
+                if layout_changed {
+                    grid_changed = true;
                 }
+                ui.add_space(10.0);
             }
 
             // Check if current layout is fixed
-            let is_fixed_layout = if let Some(arch) = arch {
-                matches!(
-                    arch.layouts.get(state.selected_layout_index),
-                    Some(fpga_arch_parser::Layout::FixedLayout(_))
-                )
-            } else {
-                false
-            };
+            let is_fixed_layout = matches!(
+                arch.layouts.get(state.selected_layout_index),
+                Some(fpga_arch_parser::Layout::FixedLayout(_))
+            );
 
             ui.label(if is_fixed_layout {
                 "Dimensions (Fixed by layout):"

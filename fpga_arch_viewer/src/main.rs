@@ -5,13 +5,17 @@
 use eframe::egui;
 
 mod block_style;
+mod color_scheme;
+mod common_ui;
 mod grid;
 mod grid_renderer;
 mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
-mod color_scheme;
+mod grid_view;
+mod complex_block_view;
 mod settings;
+mod summary_view;
 mod viewer;
 
 use viewer::FpgaViewer;

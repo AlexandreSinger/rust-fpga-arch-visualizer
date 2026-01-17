@@ -1,99 +1,85 @@
 use eframe::egui;
-use egui_extras;
 use fpga_arch_parser::FPGAArch;
 
-// Import IntraTileState from intra_tile module
 use crate::block_style::DefaultBlockStyles;
-use crate::grid::DeviceGrid;
-use crate::grid::GridCell;
-use crate::grid_renderer;
-use crate::intra_tile::IntraTileState;
+use crate::common_ui;
+use crate::grid_view::GridView;
+use crate::complex_block_view::ComplexBlockView;
 use crate::settings;
-use std::collections::HashMap;
+use crate::summary_view::SummaryView;
 
-#[derive(Debug, Clone, PartialEq)]
-enum ViewMode {
-    InterTile,
-    IntraTile,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewMode {
+    Summary,
+    Grid,
+    ComplexBlock,
 }
 
+// NOTE: These act more like tabs, so while you are looking at settings,
+//       the main page stays around in the background.
+// TODO: We should make these actual tabs.
 #[derive(Debug, Clone, PartialEq)]
-enum Page {
+pub enum Page {
     Main,
     Settings,
 }
 
-pub struct FpgaViewer {
-    view_mode: ViewMode,
-    show_about: bool,
-    current_page: Page,
+pub struct ViewerContext {
+    pub show_about: bool,
+    pub current_page: Page,
     // Navigation state
-    show_layer_list: bool,
-    navigation_history: Vec<String>, // Will store layer/element navigation history
+    pub show_layer_list: bool,
+    pub navigation_history: Vec<ViewMode>,
+    pub skip_nav_history_update: bool,
     // Block styles
-    block_styles: DefaultBlockStyles,
-    // Device grid
-    device_grid: Option<DeviceGrid>,
-    // Grid dimensions (for AutoLayout)
-    grid_width: usize,
-    grid_height: usize,
-    aspect_ratio: f32,
+    pub block_styles: DefaultBlockStyles,
     // Currently loaded architecture file path
-    loaded_file_path: Option<std::path::PathBuf>,
-    // Cache the last window title we set.
-    window_title: String,
-    // Tile name to color mapping
-    tile_colors: HashMap<String, egui::Color32>,
-    // Parsed architecture (needed for intra-tile view)
-    architecture: Option<FPGAArch>,
-    // Selected tile for intra-tile view
-    selected_tile_name: Option<String>,
-    // Selected sub_tile for intra-tile view
-    selected_sub_tile_index: usize,
-    // Show hierarchy tree in intra-tile view
-    show_hierarchy_tree: bool,
-    intra_tile_state: IntraTileState,
-    // Track if all blocks are expanded
-    all_blocks_expanded: bool,
-    // Whether to draw intra-tile interconnects (direct/mux/complete)
-    draw_intra_interconnects: bool,
+    pub loaded_file_path: Option<std::path::PathBuf>,
+    // Cache the last window title we set
+    pub window_title: String,
     // Theme setting
-    dark_mode: bool,
-    // Selected layout index (for switching between auto/fixed layouts)
-    selected_layout_index: usize,
+    pub dark_mode: bool,
+}
+
+pub struct FpgaViewer {
+    // Parsed architecture
+    pub architecture: Option<FPGAArch>,
+    viewer_ctx: ViewerContext,
+
+    summary_view: SummaryView,    
+    grid_view: GridView,
+    complex_block_view: ComplexBlockView,
+
+    view_mode: ViewMode,
+    next_view_mode: ViewMode,
+
 }
 
 impl FpgaViewer {
     pub fn new() -> Self {
-        // Start with no grid - user will load architecture file via File menu
         Self {
-            view_mode: ViewMode::InterTile,
-            show_about: false,
-            current_page: Page::Main,
-            show_layer_list: false,
-            navigation_history: Vec::new(),
-            block_styles: DefaultBlockStyles::new(),
-            device_grid: None,
-            grid_width: 10,
-            grid_height: 10,
-            aspect_ratio: 1.0,
-            loaded_file_path: None,
-            window_title: "FPGA Architecture Visualizer".to_string(),
-            tile_colors: HashMap::new(),
             architecture: None,
-            selected_tile_name: None,
-            selected_sub_tile_index: 0,
-            show_hierarchy_tree: false,
-            intra_tile_state: IntraTileState::default(),
-            all_blocks_expanded: false,
-            draw_intra_interconnects: true,
-            dark_mode: false,
-            selected_layout_index: 0,
+            viewer_ctx: ViewerContext {
+                show_about: false,
+                current_page: Page::Main,
+                show_layer_list: false,
+                navigation_history: Vec::new(),
+                skip_nav_history_update: false,
+                block_styles: DefaultBlockStyles::new(),
+                loaded_file_path: None,
+                window_title: "FPGA Architecture Visualizer".to_string(),
+                dark_mode: false,
+            },
+            summary_view: SummaryView::default(),
+            grid_view: GridView::default(),
+            complex_block_view: ComplexBlockView::default(),
+            view_mode: ViewMode::Summary,
+            next_view_mode: ViewMode::Summary,
         }
     }
 
     fn loaded_arch_filename(&self) -> Option<String> {
-        self.loaded_file_path
+        self.viewer_ctx.loaded_file_path
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().to_string())
@@ -106,85 +92,20 @@ impl FpgaViewer {
         }
     }
 
-    fn apply_expand_all_state(&mut self) {
-        if self.all_blocks_expanded {
-            if let Some(arch) = &self.architecture {
-                if let Some(tile_name) = &self.selected_tile_name {
-                    if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                        if self.selected_sub_tile_index < tile.sub_tiles.len() {
-                            let sub_tile = &tile.sub_tiles[self.selected_sub_tile_index];
-                            if let Some(site) = sub_tile.equivalent_sites.first() {
-                                if let Some(root_pb) = arch
-                                    .complex_block_list
-                                    .iter()
-                                    .find(|pb| pb.name == site.pb_type)
-                                {
-                                    crate::intra_tile::expand_all_blocks(
-                                        &mut self.intra_tile_state,
-                                        root_pb,
-                                        &root_pb.name,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            crate::intra_tile::collapse_all_blocks(&mut self.intra_tile_state);
-        }
-    }
-
     fn load_architecture_file(&mut self, file_path: std::path::PathBuf) {
         match fpga_arch_parser::parse(&file_path) {
-            Ok(parsed) => {
-                self.architecture = Some(parsed);
-                self.selected_layout_index = 0; // Default to first layout
+            Ok(arch) => {
+                // Update views with new architecture.
+                self.grid_view.on_architecture_load(&arch);
 
-                // Build tile color mapping and create grid
-                if let Some(arch) = &self.architecture {
-                    // Collect all tile names from all layouts
-                    let mut tile_names = std::collections::HashSet::new();
-                    let num_layouts = arch.layouts.len();
-                    for layout in &arch.layouts {
-                        let grid_locations = match layout {
-                            fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
-                            fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
-                        };
+                // Update viewer context.
+                self.viewer_ctx.loaded_file_path = Some(file_path);
+                self.architecture = Some(arch);
+                self.next_view_mode = ViewMode::Summary;
 
-                        for location in grid_locations {
-                            let pb_type = match location {
-                                fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
-                                fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
-                                fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
-                                fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
-                                fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
-                                fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
-                                fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
-                            };
-                            if pb_type != "EMPTY" {
-                                tile_names.insert(pb_type.clone());
-                            }
-                        }
-                    }
-
-                    // Assign colors to tiles
-                    self.tile_colors.clear();
-                    let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
-                    sorted_tiles.sort(); // Sort for consistent ordering
-                    let num_tiles = sorted_tiles.len();
-                    for (i, tile_name) in sorted_tiles.iter().enumerate() {
-                        let color = crate::block_style::get_tile_color(tile_name, i);
-                        self.tile_colors.insert(tile_name.clone(), color);
-                    }
-
-                    // Create the grid based on first layout
-                    self.rebuild_grid();
-                    self.loaded_file_path = Some(file_path);
-                    println!(
-                        "Successfully loaded architecture file with {} tile types and {} layouts",
-                        num_tiles, num_layouts
-                    );
+                // Print success.
+                if let Some(filename) = self.loaded_arch_filename() {
+                    println!("Successfully loaded architecture file: {}", filename);
                 }
             }
             Err(e) => {
@@ -203,192 +124,31 @@ impl FpgaViewer {
         }
     }
 
-    // Rebuild the grid with new dimensions based on current architecture and selected layout
-    fn rebuild_grid(&mut self) {
-        if let Some(arch) = &self.architecture {
-            if let Some(layout) = arch.layouts.get(self.selected_layout_index) {
-                let grid = match layout {
-                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                        // For AutoLayout, use user-specified dimensions
-                        self.aspect_ratio = auto_layout.aspect_ratio;
-                        DeviceGrid::from_auto_layout_with_dimensions(
-                            arch,
-                            self.grid_width,
-                            self.grid_height,
-                        )
-                    }
-                    fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
-                        // For FixedLayout, use layout's fixed dimensions
-                        self.grid_width = fixed_layout.width as usize;
-                        self.grid_height = fixed_layout.height as usize;
-                        DeviceGrid::from_fixed_layout(arch, self.selected_layout_index)
-                    }
-                };
-                self.device_grid = Some(grid);
-            }
-        }
-    }
-
     fn navigate_back(&mut self) {
-        // setting page back to main
-        if self.current_page == Page::Settings {
-            self.current_page = Page::Main;
+        if self.viewer_ctx.current_page == Page::Settings {
+            self.viewer_ctx.current_page = Page::Main;
             return;
         }
 
-        // If in intra-tile view, go back to inter-tile view
-        if self.view_mode == ViewMode::IntraTile {
-            self.view_mode = ViewMode::InterTile;
-            self.selected_tile_name = None;
-            return;
-        }
-
-        if !self.navigation_history.is_empty() {
-            self.navigation_history.pop();
-            // TODO: Update current layer based on history
+        // Navigate back in view mode history
+        if !self.viewer_ctx.navigation_history.is_empty() {
+            if let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
+                self.next_view_mode = previous_mode;
+                self.viewer_ctx.skip_nav_history_update = true;
+            }
         }
     }
 
     fn toggle_layer_list(&mut self) {
-        self.show_layer_list = !self.show_layer_list;
-        self.current_page = Page::Main;
+        self.viewer_ctx.show_layer_list = !self.viewer_ctx.show_layer_list;
+        self.viewer_ctx.current_page = Page::Main;
     }
 
     fn open_settings(&mut self) {
-        self.current_page = Page::Settings;
+        self.viewer_ctx.current_page = Page::Settings;
     }
 
-    fn render_welcome_message(&self, ui: &mut egui::Ui) {
-        let available_rect = ui.available_rect_before_wrap();
-        ui.allocate_ui_at_rect(
-            egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0)),
-            |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("FPGA Architecture Visualizer");
-                    ui.add_space(20.0);
-                    ui.label("No architecture file loaded.");
-                    ui.add_space(10.0);
-                    ui.label("Use File > Open Architecture File to load a VTR architecture file.");
-                    ui.add_space(20.0);
-                    ui.label(format!("Current mode: {:?}", self.view_mode));
-                });
-            },
-        );
-    }
-
-    fn render_centered_message(
-        &mut self,
-        ui: &mut egui::Ui,
-        heading: &str,
-        message: &str,
-        button_text: Option<&str>,
-    ) {
-        let available_rect = ui.available_rect_before_wrap();
-        ui.allocate_ui_at_rect(
-            egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0)),
-            |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading(heading);
-                    ui.add_space(10.0);
-                    ui.label(message);
-                    if let Some(btn_text) = button_text {
-                        ui.add_space(20.0);
-                        if ui.button(btn_text).clicked() {
-                            self.view_mode = ViewMode::InterTile;
-                            self.selected_tile_name = None;
-                        }
-                    }
-                });
-            },
-        );
-    }
-
-    fn update_grid_height_from_width(&mut self) {
-        self.grid_height = (self.grid_width as f32 / self.aspect_ratio)
-            .round()
-            .max(1.0) as usize;
-    }
-
-    fn update_grid_width_from_height(&mut self) {
-        self.grid_width = (self.grid_height as f32 * self.aspect_ratio)
-            .round()
-            .max(1.0) as usize;
-    }
-
-    fn get_layout_name(&self) -> String {
-        if let Some(arch) = &self.architecture {
-            if let Some(layout) = arch.layouts.get(self.selected_layout_index) {
-                return match layout {
-                    fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
-                    fpga_arch_parser::Layout::FixedLayout(fl) => format!("Fixed: {}", fl.name),
-                };
-            }
-        }
-        "No Layout".to_string()
-    }
-}
-
-impl eframe::App for FpgaViewer {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Apply theme based on dark_mode setting
-        if self.dark_mode {
-            ctx.set_visuals(egui::Visuals::dark());
-        } else {
-            ctx.set_visuals(egui::Visuals::light());
-        }
-
-        // Keep the window title in sync with the loaded architecture file.
-        let desired_title = self.desired_window_title();
-        if desired_title != self.window_title {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(desired_title.clone()));
-            self.window_title = desired_title;
-        }
-
-        self.block_styles.update_colors(self.dark_mode);
-
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            // Top menu
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Open Architecture File...").clicked() {
-                        self.open_file_dialog();
-                        ui.close_menu();
-                    }
-                    if ui.button("Exit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-
-                ui.menu_button("View", |ui| {
-                    if ui.button("Inter-Tile View").clicked() {
-                        self.view_mode = ViewMode::InterTile;
-                        ui.close_menu();
-                    }
-                    if ui.button("Intra-Tile View").clicked() {
-                        self.view_mode = ViewMode::IntraTile;
-                        ui.close_menu();
-                    }
-                });
-
-                ui.menu_button("Help", |ui| {
-                    if ui.button("About").clicked() {
-                        self.show_about = true;
-                        ui.close_menu();
-                    }
-                });
-
-                // Show loaded architecture filename on the far right.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(name) = self.loaded_arch_filename() {
-                        ui.label(egui::RichText::new(name).strong());
-                    } else {
-                        ui.label(egui::RichText::new("No file loaded").weak());
-                    }
-                });
-            });
-        });
-
-        // Navigation buttons panel
+    fn render_navigation_buttons(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("navigation_buttons")
             .resizable(false)
             .default_width(80.0)
@@ -398,8 +158,6 @@ impl eframe::App for FpgaViewer {
 
                     const BUTTON_SIZE: f32 = 50.0;
 
-                    // Layer list toggle button (☰ icon)
-                    // Shows/hides the expandable layer navigation panel
                     let list_button = ui.add_sized(
                         [BUTTON_SIZE, BUTTON_SIZE],
                         egui::Button::new(egui::RichText::new("☰").size(24.0))
@@ -416,8 +174,6 @@ impl eframe::App for FpgaViewer {
                     }
                     ui.add_space(10.0);
 
-                    // Settings button (⚙ icon)
-                    // Opens the settings page for customizing block appearance
                     let settings_button = ui.add_sized(
                         [BUTTON_SIZE, BUTTON_SIZE],
                         egui::Button::new(egui::RichText::new("⚙").size(24.0))
@@ -438,11 +194,8 @@ impl eframe::App for FpgaViewer {
                     }
                     ui.add_space(10.0);
 
-                    // Back button (◀ icon)
-                    // Returns to previous layer, exits settings page, or goes back from intra-tile view
-                    let back_enabled = self.current_page == Page::Settings
-                        || self.view_mode == ViewMode::IntraTile
-                        || !self.navigation_history.is_empty();
+                    let back_enabled = self.viewer_ctx.current_page == Page::Settings
+                        || !self.viewer_ctx.navigation_history.is_empty();
                     let back_button = ui.add_enabled_ui(back_enabled, |ui| {
                         ui.add_sized(
                             [BUTTON_SIZE, BUTTON_SIZE],
@@ -456,9 +209,9 @@ impl eframe::App for FpgaViewer {
                     }
                     if back_button.inner.hovered() {
                         egui::show_tooltip_at_pointer(ctx, egui::Id::new("back_tooltip"), |ui| {
-                            if self.current_page == Page::Settings {
+                            if self.viewer_ctx.current_page == Page::Settings {
                                 ui.label("Back to main");
-                            } else if self.view_mode == ViewMode::IntraTile {
+                            } else if self.view_mode == ViewMode::ComplexBlock {
                                 ui.label("Back to grid view");
                             } else {
                                 ui.label("Go back");
@@ -467,435 +220,195 @@ impl eframe::App for FpgaViewer {
                     }
                 });
             });
+    }
+
+    fn render_layer_list_panel(&self, ctx: &egui::Context) {
+        if !self.viewer_ctx.show_layer_list {
+            return;
+        }
 
         // Layer list panel (toggleable via list button)
         // This panel will contain expandable layers and navigation to elements
-        if self.show_layer_list {
-            egui::SidePanel::left("layer_list")
-                .resizable(true)
-                .default_width(250.0)
-                .min_width(200.0)
-                .show(ctx, |ui| {
-                    ui.heading("Layers");
-                    ui.separator();
+        egui::SidePanel::left("layer_list")
+            .resizable(true)
+            .default_width(250.0)
+            .min_width(200.0)
+            .show(ctx, |ui| {
+                ui.heading("Layers");
+                ui.separator();
 
-                    // TODO: Add expandable layer tree here
-                    // Each layer will have:
-                    // - Collapse/expand arrow (▼ when expanded, ▶ when collapsed)
-                    // - Layer name
-                    // - Nested elements when expanded
-                    ui.label("No architecture loaded");
-                    ui.add_space(10.0);
-                    ui.label("Layer list will appear here once an architecture file is loaded.");
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "! This feature is currently under development and will be implemented in a future update.",
-                        ).color(egui::Color32::RED),
-                    );
-                });
-        }
+                // TODO: Add expandable layer tree here
+                // Each layer will have:
+                // - Collapse/expand arrow (▼ when expanded, ▶ when collapsed)
+                // - Layer name
+                // - Nested elements when expanded
+                ui.label("No architecture loaded");
+                ui.add_space(10.0);
+                ui.label("Layer list will appear here once an architecture file is loaded.");
+                ui.add_space(20.0);
+                ui.label(
+                    egui::RichText::new(
+                        "! This feature is currently under development and will be implemented in a future update.",
+                    ).color(egui::Color32::RED),
+                );
+            });
+    }
 
-        if self.current_page == Page::Main
-            && self.view_mode == ViewMode::InterTile
-            && self.device_grid.is_some()
-        {
-            egui::SidePanel::right("grid_controls")
-                .default_width(250.0)
-                .show(ctx, |ui| {
-                    ui.heading("Grid Settings");
-                    ui.add_space(10.0);
-
-                    // Layout selection dropdown
-                    if let Some(arch) = &self.architecture {
-                        if arch.layouts.len() > 1 {
-                            ui.label("Layout:");
-                            let mut layout_changed = false;
-                            egui::ComboBox::from_id_source("layout_selector")
-                                .selected_text(self.get_layout_name())
-                                .show_ui(ui, |ui| {
-                                    for (idx, layout) in arch.layouts.iter().enumerate() {
-                                        let layout_name = match layout {
-                                            fpga_arch_parser::Layout::AutoLayout(_) => {
-                                                "Auto Layout".to_string()
-                                            }
-                                            fpga_arch_parser::Layout::FixedLayout(fl) => {
-                                                format!("Fixed: {}", fl.name)
-                                            }
-                                        };
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.selected_layout_index,
-                                                idx,
-                                                layout_name,
-                                            )
-                                            .clicked()
-                                        {
-                                            layout_changed = true;
-                                        }
-                                    }
-                                });
-
-                            if layout_changed {
-                                self.rebuild_grid();
-                            }
-                            ui.add_space(10.0);
-                        }
+    fn render_menu_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Open Architecture File...").clicked() {
+                        self.open_file_dialog();
+                        ui.close_menu();
                     }
+                    if ui.button("Exit").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
 
-                    // Check if current layout is fixed
-                    let is_fixed_layout = if let Some(arch) = &self.architecture {
-                        matches!(
-                            arch.layouts.get(self.selected_layout_index),
-                            Some(fpga_arch_parser::Layout::FixedLayout(_))
-                        )
+                ui.menu_button("View", |ui| {
+                    if ui.button("Summary View").clicked() {
+                        self.next_view_mode = ViewMode::Summary;
+                        ui.close_menu();
+                    }
+                    if ui.button("Grid View").clicked() {
+                        self.next_view_mode = ViewMode::Grid;
+                        ui.close_menu();
+                    }
+                    if ui.button("Complex Block View").clicked() {
+                        self.next_view_mode = ViewMode::ComplexBlock;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.menu_button("Help", |ui| {
+                    if ui.button("About").clicked() {
+                        self.viewer_ctx.show_about = true;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(name) = self.loaded_arch_filename() {
+                        ui.label(egui::RichText::new(name).strong());
                     } else {
-                        false
-                    };
-
-                    ui.label(if is_fixed_layout {
-                        "Dimensions (Fixed by layout):"
-                    } else {
-                        "Adjust dimensions while maintaining aspect ratio:"
-                    });
-                    ui.add_space(10.0);
-
-                    let mut grid_changed = false;
-
-                    ui.horizontal(|ui| {
-                        ui.label("Width:");
-                        let mut temp_width = self.grid_width as f64;
-                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut temp_width, 1.0..=100.0)
-                                        .step_by(1.0)
-                                        .show_value(false),
-                                )
-                                .changed()
-                            {
-                                let new_width = temp_width.round() as usize;
-                                if new_width != self.grid_width && new_width >= 1 {
-                                    self.grid_width = new_width;
-                                    self.update_grid_height_from_width();
-                                    grid_changed = true;
-                                }
-                            }
-                        });
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("       ");
-                        let mut width_text = self.grid_width.to_string();
-                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
-                            if ui
-                                .add(
-                                    egui::TextEdit::singleline(&mut width_text).desired_width(60.0),
-                                )
-                                .changed()
-                            {
-                                if let Ok(new_width) = width_text.parse::<usize>() {
-                                    if new_width >= 1
-                                        && new_width <= 100
-                                        && new_width != self.grid_width
-                                    {
-                                        self.grid_width = new_width;
-                                        self.update_grid_height_from_width();
-                                        grid_changed = true;
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label("Height:");
-                        let mut temp_height = self.grid_height as f64;
-                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut temp_height, 1.0..=100.0)
-                                        .step_by(1.0)
-                                        .show_value(false),
-                                )
-                                .changed()
-                            {
-                                let new_height = temp_height.round() as usize;
-                                if new_height != self.grid_height && new_height >= 1 {
-                                    self.grid_height = new_height;
-                                    self.update_grid_width_from_height();
-                                    grid_changed = true;
-                                }
-                            }
-                        });
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("       ");
-                        let mut height_text = self.grid_height.to_string();
-                        ui.add_enabled_ui(!is_fixed_layout, |ui| {
-                            if ui
-                                .add(
-                                    egui::TextEdit::singleline(&mut height_text)
-                                        .desired_width(60.0),
-                                )
-                                .changed()
-                            {
-                                if let Ok(new_height) = height_text.parse::<usize>() {
-                                    if new_height >= 1
-                                        && new_height <= 100
-                                        && new_height != self.grid_height
-                                    {
-                                        self.grid_height = new_height;
-                                        self.update_grid_width_from_height();
-                                        grid_changed = true;
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    ui.add_space(15.0);
-                    ui.separator();
-                    ui.add_space(10.0);
-
-                    ui.label(format!("Aspect Ratio: {:.2}", self.aspect_ratio));
-                    ui.label(format!(
-                        "Grid Size: {}x{}",
-                        self.grid_width, self.grid_height
-                    ));
-
-                    ui.add_space(15.0);
-                    ui.separator();
-                    ui.add_space(10.0);
-
-                    ui.heading("Tile Counts");
-                    ui.add_space(10.0);
-
-                    if let Some(grid) = &self.device_grid {
-                        let mut tile_counts: std::collections::BTreeMap<String, usize> =
-                            std::collections::BTreeMap::new();
-                        for row in &grid.cells {
-                            for cell in row {
-                                if let GridCell::BlockAnchor { pb_type, .. } = cell {
-                                    *tile_counts.entry(pb_type.clone()).or_insert(0) += 1;
-                                }
-                            }
-                        }
-
-                        let sorted_counts: Vec<_> = tile_counts.into_iter().collect();
-
-                        let table = egui_extras::TableBuilder::new(ui)
-                            .striped(true)
-                            .column(egui_extras::Column::auto().at_least(100.0))
-                            .column(egui_extras::Column::auto().at_least(50.0))
-                            .header(20.0, |mut header| {
-                                header.col(|ui| {
-                                    ui.strong("Tile");
-                                });
-                                header.col(|ui| {
-                                    ui.strong("Count");
-                                });
-                            });
-
-                        table.body(|mut body| {
-                            for (pb_type, count) in sorted_counts {
-                                let color = self
-                                    .tile_colors
-                                    .get(&pb_type)
-                                    .copied()
-                                    .unwrap_or(egui::Color32::TRANSPARENT);
-                                body.row(30.0, |mut row| {
-                                    row.col(|ui| {
-                                        let rect = ui.available_rect_before_wrap();
-                                        ui.painter().rect_filled(rect, 0.0, color);
-                                        ui.label(pb_type.to_uppercase());
-                                    });
-                                    row.col(|ui| {
-                                        let rect = ui.available_rect_before_wrap();
-                                        ui.painter().rect_filled(rect, 0.0, color);
-                                        ui.label(count.to_string());
-                                    });
-                                });
-                            }
-                        });
-                    }
-
-                    if grid_changed {
-                        self.rebuild_grid();
+                        ui.label(egui::RichText::new("No file loaded").weak());
                     }
                 });
-        }
-
-        // Side panel for intra-tile view controls
-        if self.current_page == Page::Main
-            && self.view_mode == ViewMode::IntraTile
-            && self.architecture.is_some()
-        {
-            egui::SidePanel::right("intra_tile_controls")
-                .default_width(250.0)
-                .show(ctx, |ui| {
-                    ui.heading("Intra-Tile View");
-                    ui.add_space(10.0);
-
-                    // Hierarchy tree toggle
-                    ui.checkbox(&mut self.show_hierarchy_tree, "Show Hierarchy Tree");
-
-                    // Expand All toggle
-                    let mut expand_all = self.all_blocks_expanded;
-                    if ui.checkbox(&mut expand_all, "Expand All").changed() {
-                        self.all_blocks_expanded = expand_all;
-                        self.apply_expand_all_state();
-                    }
-
-                    // Interconnect toggle
-                    ui.checkbox(&mut self.draw_intra_interconnects, "Draw Interconnects");
-
-                    ui.add_space(10.0);
-                    ui.separator();
-                    ui.add_space(10.0);
-
-                    // Tile selector - shows all available tiles from architecture
-                    if let Some(arch) = &self.architecture {
-                        if !arch.tiles.is_empty() {
-                            ui.label("Select Tile:");
-                            ui.add_space(5.0);
-
-                            let mut selected_tile_name =
-                                self.selected_tile_name.as_deref().unwrap_or("").to_string();
-
-                            egui::ComboBox::from_id_source("tile_selector")
-                                .selected_text(if !selected_tile_name.is_empty() {
-                                    selected_tile_name.as_str()
-                                } else {
-                                    "Select a tile"
-                                })
-                                .show_ui(ui, |ui| {
-                                    for tile in &arch.tiles {
-                                        ui.selectable_value(
-                                            &mut selected_tile_name,
-                                            tile.name.clone(),
-                                            &tile.name,
-                                        );
-                                    }
-                                });
-
-                            // If tile selection changed, update state
-                            if selected_tile_name
-                                != self.selected_tile_name.as_deref().unwrap_or("")
-                            {
-                                self.selected_tile_name = Some(selected_tile_name);
-                                self.selected_sub_tile_index = 0;
-                                self.apply_expand_all_state();
-                            }
-                        } else {
-                            ui.label("No tiles available in architecture");
-                        }
-                    }
-                });
-        }
-
-        // Main window
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.current_page {
-                Page::Main => {
-                    match self.view_mode {
-                        ViewMode::InterTile => {
-                            if let (Some(grid), Some(arch)) = (&self.device_grid, &self.architecture) {
-                                // Check if a tile was clicked
-                                if let Some(clicked_tile) = grid_renderer::render_grid(
-                                    ui,
-                                    grid,
-                                    &self.block_styles,
-                                    &self.tile_colors,
-                                    self.dark_mode,
-                                    arch,
-                                ) {
-                                    self.selected_tile_name = Some(clicked_tile);
-                                    self.selected_sub_tile_index = 0;
-                                    self.view_mode = ViewMode::IntraTile;
-                                    self.apply_expand_all_state();
-                                }
-                            } else {
-                                // No grid loaded, show welcome message
-                                self.render_welcome_message(ui);
-                            }
-                        }
-                        ViewMode::IntraTile => {
-                            // Show intra-tile view
-                            if self.architecture.is_none() {
-                                // No architecture loaded - show welcome message
-                                self.render_welcome_message(ui);
-                            } else if let (Some(arch), Some(tile_name)) = (&self.architecture, &self.selected_tile_name) {
-                                // Find the tile that matches the selected tile name
-                                if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                                    // Ensure selected_sub_tile_index is valid
-                                    let sub_tile_index = if self.selected_sub_tile_index < tile.sub_tiles.len() {
-                                        self.selected_sub_tile_index
-                                    } else {
-                                        0
-                                    };
-                                    crate::intra_tile::render_intra_tile_view(
-                                        ui,
-                                        arch,
-                                        tile,
-                                        &mut self.intra_tile_state,
-                                        self.show_hierarchy_tree,
-                                        sub_tile_index,
-                                        self.all_blocks_expanded,
-                                        self.draw_intra_interconnects,
-                                        self.dark_mode,
-                                    );
-                                } else {
-                                    self.render_centered_message(
-                                        ui,
-                                        "Tile not found",
-                                        &format!("Could not find tile: {}", tile_name),
-                                        Some("Back to Grid View"),
-                                    );
-                                }
-                            } else {
-                                self.render_centered_message(
-                                    ui,
-                                    "No tile selected",
-                                    "Please select a tile from the dropdown or click on a tile in the grid view.",
-                                    Some("Back to Grid View"),
-                                );
-                            }
-                        }
-                    }
-                }
-                Page::Settings => {
-                    settings::render_settings_page(ui, &self.block_styles, &mut self.dark_mode);
-                }
-            }
+            });
         });
+    }
+
+    fn render_page(&mut self, ctx: &egui::Context) {
+        match self.viewer_ctx.current_page {
+            Page::Main => {
+                self.render_main_page(ctx);
+            },
+            Page::Settings => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    settings::render_settings_page(ui, &self.viewer_ctx.block_styles, &mut self.viewer_ctx.dark_mode);
+                });
+            },
+        }
+    }
+
+    fn render_main_page(&mut self, ctx: &egui::Context) {
+        match &self.architecture {
+            Some(arch) => match self.view_mode {
+                ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ctx),
+                ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ctx),
+                ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ctx),
+            },
+            None => {
+                // If no architecture is loaded, no view can be seen, so show a welcome message.
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    common_ui::render_welcome_message(ui, &self.view_mode);
+                });
+            },
+        }
+    }
+
+    fn render_about_window(&mut self, ctx: &egui::Context) {
+        if !self.viewer_ctx.show_about {
+            return;
+        }
+
+        egui::Window::new("About")
+            .collapsible(false)
+            .resizable(false)
+            .default_size([300.0, 150.0])
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading("FPGA Architecture Visualizer");
+                    ui.add_space(10.0);
+                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                    ui.add_space(10.0);
+                    ui.label(
+                        "A Rust-based visualizer for VTR FPGA architecture description files.",
+                    );
+                    ui.add_space(10.0);
+                    ui.label("Copyright (c) 2025 AlexandreSinger");
+                    ui.label("Licensed under MIT License (SPDX: MIT)");
+                    ui.add_space(20.0);
+                    if ui.button("Close").clicked() {
+                        self.viewer_ctx.show_about = false;
+                    }
+                });
+            });
+    }
+}
+
+impl eframe::App for FpgaViewer {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme
+        if self.viewer_ctx.dark_mode {
+            ctx.set_visuals(egui::Visuals::dark());
+        } else {
+            ctx.set_visuals(egui::Visuals::light());
+        }
+
+        // Update window title
+        let desired_title = self.desired_window_title();
+        if desired_title != self.viewer_ctx.window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(desired_title.clone()));
+            self.viewer_ctx.window_title = desired_title;
+        }
+
+        self.viewer_ctx.block_styles.update_colors(self.viewer_ctx.dark_mode);
+
+        // Render UI panels and windows
+        self.render_menu_bar(ctx);
+        self.render_navigation_buttons(ctx);
+        self.render_layer_list_panel(ctx);
+
+        // Render the page.
+        self.render_page(ctx);
 
         // About window
-        if self.show_about {
-            egui::Window::new("About")
-                .collapsible(false)
-                .resizable(false)
-                .default_size([300.0, 150.0])
-                .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.heading("FPGA Architecture Visualizer");
-                        ui.add_space(10.0);
-                        ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                        ui.add_space(10.0);
-                        ui.label(
-                            "A Rust-based visualizer for VTR FPGA architecture description files.",
-                        );
-                        ui.add_space(10.0);
-                        ui.label("All rights reserved?");
-                        ui.add_space(20.0);
-                        if ui.button("Close").clicked() {
-                            self.show_about = false;
-                        }
-                    });
-                });
+        self.render_about_window(ctx);
+
+        // Next state logic for the view mode.
+        if self.view_mode != self.next_view_mode {
+            // Push current mode to history before transitioning
+            if !self.viewer_ctx.skip_nav_history_update {
+                self.viewer_ctx.navigation_history.push(self.view_mode);
+            }
+            self.viewer_ctx.skip_nav_history_update = false;
+
+            // Run code on the close of a view.
+            match self.view_mode {
+                ViewMode::ComplexBlock => self.complex_block_view.on_view_close(),
+                _ => {},
+            }
+
+            // Run code on the open of a view.
+            match self.next_view_mode {
+                ViewMode::ComplexBlock => self.complex_block_view.on_view_open(&self.architecture),
+                _ => {},
+            }
+
+            self.view_mode = self.next_view_mode;
         }
     }
 }

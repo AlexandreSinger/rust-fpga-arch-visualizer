@@ -301,6 +301,7 @@ pub struct CustomSwitchBlock {
     pub wireconns: Vec<CustomSwitchWireConn>,
 }
 
+#[derive(Debug)]
 pub enum SBType {
     Wilton,
     Subset,
@@ -372,6 +373,7 @@ pub struct DeviceInfo {
     // TODO: default_fc
 }
 
+#[derive(Debug)]
 pub enum SwitchType {
     Mux,
     Tristate,
@@ -404,6 +406,7 @@ pub struct Switch {
     pub t_del_tags: Vec<SwitchTDel>,
 }
 
+#[derive(Debug)]
 pub enum SegmentAxis {
     X,
     Y,
@@ -411,6 +414,7 @@ pub enum SegmentAxis {
     Z,
 }
 
+#[derive(Debug)]
 pub enum SegmentType {
     Bidir,
     Unidir,

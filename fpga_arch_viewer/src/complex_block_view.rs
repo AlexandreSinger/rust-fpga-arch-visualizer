@@ -75,6 +75,7 @@ fn render_complex_block_view(
             let sub_tile_index = if self.complex_block_view_state.selected_sub_tile_index < tile.sub_tiles.len() {
                 self.complex_block_view_state.selected_sub_tile_index
             } else {
+                self.complex_block_view_state.selected_sub_tile_index = 0;
                 0
             };
             intra_tile::render_intra_tile_view(

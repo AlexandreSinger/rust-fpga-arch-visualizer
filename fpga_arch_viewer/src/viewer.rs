@@ -8,7 +8,7 @@ use crate::complex_block_view::ComplexBlockView;
 use crate::settings;
 use crate::summary_view::SummaryView;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
     Summary,
     Grid,
@@ -409,7 +409,7 @@ impl eframe::App for FpgaViewer {
                 _ => {},
             }
 
-            self.view_mode = self.next_view_mode.clone();
+            self.view_mode = self.next_view_mode;
         }
     }
 }

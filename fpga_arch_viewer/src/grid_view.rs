@@ -113,6 +113,11 @@ impl GridView {
                 fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
                     self.grid_state.grid_width = fixed_layout.width as usize;
                     self.grid_state.grid_height = fixed_layout.height as usize;
+                    self.grid_state.aspect_ratio = if fixed_layout.height > 0 {
+                        fixed_layout.width as f32 / fixed_layout.height as f32
+                    } else {
+                        1.0
+                    };
                     DeviceGrid::from_fixed_layout(arch, self.grid_state.selected_layout_index)
                 }
             };

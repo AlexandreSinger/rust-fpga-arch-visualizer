@@ -2,12 +2,25 @@ use egui;
 use crate::viewer::ViewMode;
 use fpga_arch_parser::FPGAArch;
 
-pub fn render_summary_view(
-    ui: &mut egui::Ui,
-    arch: &FPGAArch,
-) -> Option<ViewMode> {
-    let mut view_mode_change: Option<ViewMode> = None;
+pub struct SummaryView {
 
+}
+
+impl Default for SummaryView {
+    fn default() -> Self {
+        Self {
+        }
+    }
+}
+
+impl SummaryView {
+
+pub fn render(
+    &mut self,
+    arch: &FPGAArch,
+    next_view_mode: &mut ViewMode,
+    ui: &mut egui::Ui
+) {
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show(ui, |ui| {
@@ -39,7 +52,7 @@ pub fn render_summary_view(
                 ui.horizontal(|ui| {
                     ui.heading(format!("Tiles ({})", arch.tiles.len()));
                     if ui.button("View Tile Grid").clicked() {
-                        view_mode_change = Some(ViewMode::Grid);
+                        *next_view_mode = ViewMode::Grid;
                     }
                 });
                 ui.separator();
@@ -144,7 +157,7 @@ pub fn render_summary_view(
                 ui.horizontal(|ui| {
                     ui.heading(format!("Complex Blocks ({})", arch.complex_block_list.len()));
                     if ui.button("View Complex Block Details").clicked() {
-                        view_mode_change = Some(ViewMode::IntraTile);
+                        *next_view_mode = ViewMode::IntraTile;
                     }
                 });
                 ui.separator();
@@ -184,6 +197,6 @@ pub fn render_summary_view(
                 });
             }
         });
+}
 
-    view_mode_change
 }

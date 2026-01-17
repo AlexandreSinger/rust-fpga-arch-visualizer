@@ -8,7 +8,7 @@ use crate::grid_view::{self, GridView};
 use crate::intra_tile::{self, IntraTileState};
 use crate::intra_tile_view;
 use crate::settings;
-use crate::summary_view;
+use crate::summary_view::SummaryView;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
@@ -54,6 +54,8 @@ pub struct FpgaViewer {
     pub architecture: Option<FPGAArch>,
     viewer_ctx: ViewerContext,
 
+    summary_view: SummaryView,    
+
     grid_view: GridView,
 
     view_mode: ViewMode,
@@ -81,6 +83,7 @@ impl FpgaViewer {
                 draw_intra_interconnects: true,
                 dark_mode: false,
             },
+            summary_view: SummaryView::default(),
             grid_view: GridView::default(),
             view_mode: ViewMode::Summary,
         }
@@ -388,7 +391,7 @@ impl FpgaViewer {
                 Page::Main => match &self.architecture {
                     None => common_ui::render_welcome_message(ui, &self.view_mode),
                     Some(arch) => match self.view_mode {
-                        ViewMode::Summary => self.render_summary_view(ui),
+                        ViewMode::Summary => self.summary_view.render(arch, &mut self.viewer_ctx.next_view_mode, ui),
                         ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, ui),
                         ViewMode::IntraTile => self.render_intra_tile_view(ui),
                     }
@@ -398,16 +401,6 @@ impl FpgaViewer {
                 },
             }
         });
-    }
-
-    fn render_summary_view(&mut self, ui: &mut egui::Ui) {
-        if self.architecture.is_none() {
-            common_ui::render_welcome_message(ui, &self.view_mode);
-        } else if let Some(arch) = &self.architecture {
-            if let Some(new_view_mode) = summary_view::render_summary_view(ui, arch) {
-                self.viewer_ctx.next_view_mode = new_view_mode;
-            }
-        }
     }
 
     fn render_intra_tile_view(&mut self, ui: &mut egui::Ui) {

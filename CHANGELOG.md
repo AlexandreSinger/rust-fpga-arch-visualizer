@@ -1,3 +1,11 @@
+## [v0.3.0] - 2026-01-17
+
+### Added
+- Summary view for the architecture description
+
+### Infra
+- Refactored large parts of the viewer code to make adding new views easier.
+
 ## [v0.2.0] - 2025-12-15
 
 ### Added

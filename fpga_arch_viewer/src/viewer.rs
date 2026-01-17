@@ -355,7 +355,8 @@ impl FpgaViewer {
                         "A Rust-based visualizer for VTR FPGA architecture description files.",
                     );
                     ui.add_space(10.0);
-                    ui.label("All rights reserved?");
+                    ui.label("Copyright (c) 2025 AlexandreSinger");
+                    ui.label("Licensed under MIT License (SPDX: MIT)");
                     ui.add_space(20.0);
                     if ui.button("Close").clicked() {
                         self.viewer_ctx.show_about = false;

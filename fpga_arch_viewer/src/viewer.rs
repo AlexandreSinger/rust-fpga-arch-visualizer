@@ -39,6 +39,9 @@ pub struct ViewerContext {
     pub window_title: String,
     // Theme setting
     pub dark_mode: bool,
+    // Error window state
+    pub show_error: bool,
+    pub error_message: String,
 }
 
 pub struct FpgaViewer {
@@ -69,6 +72,8 @@ impl FpgaViewer {
                 loaded_file_path: None,
                 window_title: "FPGA Architecture Visualizer".to_string(),
                 dark_mode: false,
+                show_error: false,
+                error_message: String::new(),
             },
             summary_view: SummaryView::default(),
             grid_view: GridView::default(),
@@ -109,7 +114,8 @@ impl FpgaViewer {
                 }
             }
             Err(e) => {
-                eprintln!("Failed to parse architecture file: {:?}", e);
+                self.viewer_ctx.show_error = true;
+                self.viewer_ctx.error_message = format!("Failed to parse architecture file.\n {:?}", e);
             }
         }
     }
@@ -329,6 +335,26 @@ impl FpgaViewer {
         }
     }
 
+    fn render_error_window(&mut self, ctx: &egui::Context) {
+        if !self.viewer_ctx.show_error {
+            return;
+        }
+
+        egui::Window::new("Error")
+            .collapsible(false)
+            .resizable(true)
+            .default_size([400.0, 200.0])
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new(&self.viewer_ctx.error_message).color(egui::Color32::RED));
+                    ui.add_space(20.0);
+                    if ui.button("Close").clicked() {
+                        self.viewer_ctx.show_error = false;
+                    }
+                });
+            });
+    }
+
     fn render_about_window(&mut self, ctx: &egui::Context) {
         if !self.viewer_ctx.show_about {
             return;
@@ -384,6 +410,9 @@ impl eframe::App for FpgaViewer {
 
         // Render the page.
         self.render_page(ctx);
+
+        // Error window
+        self.render_error_window(ctx);
 
         // About window
         self.render_about_window(ctx);

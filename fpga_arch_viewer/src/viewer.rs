@@ -1,5 +1,5 @@
 use eframe::egui;
-use fpga_arch_parser::FPGAArch;
+use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
@@ -56,6 +56,68 @@ pub struct FpgaViewer {
     view_mode: ViewMode,
     next_view_mode: ViewMode,
 
+}
+
+fn format_parse_error(error: &FPGAArchParseError) -> String {
+    match error {
+        FPGAArchParseError::ArchFileOpenError(msg) => {
+            format!("Failed to open architecture file:\n{}", msg)
+        }
+        FPGAArchParseError::MissingRequiredTag(tag) => {
+            format!("Missing required XML tag: <{}>", tag)
+        }
+        FPGAArchParseError::MissingRequiredAttribute(attr, pos) => {
+            format!(
+                "Missing required attribute '{}' at line {}, column {}",
+                attr, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::InvalidTag(tag, pos) => {
+            format!(
+                "Invalid or unexpected tag '{}' at line {}, column {}",
+                tag, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::XMLParseError(msg, pos) => {
+            format!(
+                "XML parsing error at line {}, column {}:\n{}",
+                pos.row, pos.column, msg
+            )
+        }
+        FPGAArchParseError::UnknownAttribute(attr, pos) => {
+            format!(
+                "Unknown attribute '{}' at line {}, column {}",
+                attr, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::DuplicateTag(tag, pos) => {
+            format!(
+                "Duplicate tag '{}' at line {}, column {}",
+                tag, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::DuplicateAttribute(attr, pos) => {
+            format!(
+                "Duplicate attribute '{}' at line {}, column {}",
+                attr, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::UnexpectedEndTag(tag, pos) => {
+            format!(
+                "Unexpected end tag '</{}>' at line {}, column {}",
+                tag, pos.row, pos.column
+            )
+        }
+        FPGAArchParseError::AttributeParseError(msg, pos) => {
+            format!(
+                "Failed to parse attribute at line {}, column {}:\n{}",
+                pos.row, pos.column, msg
+            )
+        }
+        FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
+            format!("Unexpected end of document:\n{}", msg)
+        }
+    }
 }
 
 impl FpgaViewer {
@@ -115,7 +177,7 @@ impl FpgaViewer {
             }
             Err(e) => {
                 self.viewer_ctx.show_error = true;
-                self.viewer_ctx.error_message = format!("Failed to parse architecture file.\n {:?}", e);
+                self.viewer_ctx.error_message = format_parse_error(&e);
             }
         }
     }
@@ -343,14 +405,20 @@ impl FpgaViewer {
         egui::Window::new("Error")
             .collapsible(false)
             .resizable(true)
-            .default_size([400.0, 200.0])
+            .default_size([300.0, 150.0])
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new(&self.viewer_ctx.error_message).color(egui::Color32::RED));
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(&self.viewer_ctx.error_message)
+                            .color(egui::Color32::LIGHT_RED)
+                            .monospace()
+                    );
                     ui.add_space(20.0);
-                    if ui.button("Close").clicked() {
-                        self.viewer_ctx.show_error = false;
-                    }
+                    ui.vertical_centered(|ui| {
+                        if ui.button("Close").clicked() {
+                            self.viewer_ctx.show_error = false;
+                        }
+                    });
                 });
             });
     }

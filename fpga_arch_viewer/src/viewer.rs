@@ -1,5 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
+use std::io::{BufRead, BufReader};
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
@@ -60,15 +61,10 @@ pub struct FpgaViewer {
 }
 
 fn get_file_line(file_path: &std::path::Path, line_num: u64) -> Option<String> {
-    if let Ok(content) = std::fs::read_to_string(file_path) {
-        let line_num = line_num as usize;
-        content
-            .lines()
-            .nth(line_num.saturating_sub(1))
-            .map(|s| s.to_string())
-    } else {
-        None
-    }
+    let file = std::fs::File::open(file_path).ok()?;
+    let reader = BufReader::new(file);
+    let target = line_num.saturating_sub(1) as usize;
+    reader.lines().nth(target).and_then(Result::ok)
 }
 
 fn format_context_line(line: &str, column: u64) -> String {
@@ -247,6 +243,9 @@ impl FpgaViewer {
                 self.viewer_ctx.loaded_file_path = Some(file_path);
                 self.architecture = Some(arch);
                 self.next_view_mode = ViewMode::Summary;
+                self.viewer_ctx.show_error = false;
+                self.viewer_ctx.error_title.clear();
+                self.viewer_ctx.error_message.clear();
 
                 // Print success.
                 if let Some(filename) = self.loaded_arch_filename() {

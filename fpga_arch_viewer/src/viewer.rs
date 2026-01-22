@@ -41,6 +41,7 @@ pub struct ViewerContext {
     pub dark_mode: bool,
     // Error window state
     pub show_error: bool,
+    pub error_title: String,
     pub error_message: String,
 }
 
@@ -58,61 +59,137 @@ pub struct FpgaViewer {
 
 }
 
-fn format_parse_error(error: &FPGAArchParseError) -> String {
+fn get_file_line(file_path: &std::path::Path, line_num: u64) -> Option<String> {
+    if let Ok(content) = std::fs::read_to_string(file_path) {
+        let line_num = line_num as usize;
+        content
+            .lines()
+            .nth(line_num.saturating_sub(1))
+            .map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+
+fn format_context_line(line: &str, column: u64) -> String {
+    let column = column as usize;
+    let mut result = format!("  {}\n", line);
+    let offset = column.saturating_sub(1).min(line.len());
+    result.push_str(&format!("  {}{}", " ".repeat(offset), "^"));
+    result
+}
+
+fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::Path>) -> String {
     match error {
         FPGAArchParseError::ArchFileOpenError(msg) => {
             format!("Failed to open architecture file:\n{}", msg)
         }
         FPGAArchParseError::MissingRequiredTag(tag) => {
-            format!("Missing required XML tag: <{}>", tag)
+            format!("Missing required XML tag: {}", tag)
         }
         FPGAArchParseError::MissingRequiredAttribute(attr, pos) => {
-            format!(
+            let mut msg = format!(
                 "Missing required attribute '{}' at line {}, column {}",
-                attr, pos.row, pos.column
-            )
+                attr, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::InvalidTag(tag, pos) => {
-            format!(
+            let mut msg = format!(
                 "Invalid or unexpected tag '{}' at line {}, column {}",
-                tag, pos.row, pos.column
-            )
+                tag, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
-        FPGAArchParseError::XMLParseError(msg, pos) => {
-            format!(
+        FPGAArchParseError::XMLParseError(msg_text, pos) => {
+            let mut msg = format!(
                 "XML parsing error at line {}, column {}:\n{}",
-                pos.row, pos.column, msg
-            )
+                pos.row + 1, pos.column + 1, msg_text
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::UnknownAttribute(attr, pos) => {
-            format!(
+            let mut msg = format!(
                 "Unknown attribute '{}' at line {}, column {}",
-                attr, pos.row, pos.column
-            )
+                attr, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::DuplicateTag(tag, pos) => {
-            format!(
+            let mut msg = format!(
                 "Duplicate tag '{}' at line {}, column {}",
-                tag, pos.row, pos.column
-            )
+                tag, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::DuplicateAttribute(attr, pos) => {
-            format!(
+            let mut msg = format!(
                 "Duplicate attribute '{}' at line {}, column {}",
-                attr, pos.row, pos.column
-            )
+                attr, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::UnexpectedEndTag(tag, pos) => {
-            format!(
+            let mut msg = format!(
                 "Unexpected end tag '</{}>' at line {}, column {}",
-                tag, pos.row, pos.column
-            )
+                tag, pos.row + 1, pos.column + 1
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
-        FPGAArchParseError::AttributeParseError(msg, pos) => {
-            format!(
+        FPGAArchParseError::AttributeParseError(msg_text, pos) => {
+            let mut msg = format!(
                 "Failed to parse attribute at line {}, column {}:\n{}",
-                pos.row, pos.column, msg
-            )
+                pos.row + 1, pos.column + 1, msg_text
+            );
+            if let Some(path) = file_path {
+                if let Some(line) = get_file_line(path, pos.row + 1) {
+                    msg.push_str("\n\n");
+                    msg.push_str(&format_context_line(&line, pos.column + 1));
+                }
+            }
+            msg
         }
         FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
             format!("Unexpected end of document:\n{}", msg)
@@ -135,6 +212,7 @@ impl FpgaViewer {
                 window_title: "FPGA Architecture Visualizer".to_string(),
                 dark_mode: false,
                 show_error: false,
+                error_title: String::new(),
                 error_message: String::new(),
             },
             summary_view: SummaryView::default(),
@@ -177,7 +255,8 @@ impl FpgaViewer {
             }
             Err(e) => {
                 self.viewer_ctx.show_error = true;
-                self.viewer_ctx.error_message = format_parse_error(&e);
+                self.viewer_ctx.error_title = "Parse Error".to_owned();
+                self.viewer_ctx.error_message = format!("Error loading architecture:\n{:?}\n\n{}", file_path, format_parse_error(&e, Some(&file_path)));
             }
         }
     }
@@ -402,7 +481,7 @@ impl FpgaViewer {
             return;
         }
 
-        egui::Window::new("Error")
+        egui::Window::new(&self.viewer_ctx.error_title)
             .collapsible(false)
             .resizable(true)
             .default_size([300.0, 150.0])

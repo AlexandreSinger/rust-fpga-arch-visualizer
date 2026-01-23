@@ -373,6 +373,24 @@ fn render_grid_controls_panel(
             ui.separator();
             ui.add_space(10.0);
 
+            ui.horizontal(|ui| {
+                ui.label("Zoom:");
+                if ui.small_button("−").clicked() {
+                    state.zoom_out();
+                }
+                ui.label(format!("{:.0}%", state.zoom_factor * 100.0));
+                if ui.small_button("+").clicked() {
+                    state.zoom_in();
+                }
+                if ui.small_button("Reset").clicked() {
+                    state.reset_zoom();
+                }
+            });
+
+            ui.add_space(15.0);
+            ui.separator();
+            ui.add_space(10.0);
+
             // Tile counts table
             ui.heading("Tile Counts");
             ui.add_space(10.0);

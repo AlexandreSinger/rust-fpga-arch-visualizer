@@ -29,13 +29,13 @@ impl Default for GridState {
 
 impl GridState {
     /// Zoom in by multiplying the zoom factor
-    pub fn zoom_in(&mut self) {
-        self.zoom_factor = (self.zoom_factor * 1.1).min(5.0);
+    pub fn zoom_in(&mut self, zoom_scale: f32) {
+        self.zoom_factor = (self.zoom_factor * zoom_scale).min(10.0).max(0.9);
     }
 
     /// Zoom out by dividing the zoom factor
-    pub fn zoom_out(&mut self) {
-        self.zoom_factor = (self.zoom_factor / 1.1).max(0.1);
+    pub fn zoom_out(&mut self, zoom_scale: f32) {
+        self.zoom_factor = (self.zoom_factor / zoom_scale).min(10.0).max(0.9);
     }
 
     /// Reset zoom to 1.0
@@ -123,6 +123,7 @@ impl GridView {
             let grid = match layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                     self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
+                    self.grid_state.grid_height = ((self.grid_state.grid_width as f32 / auto_layout.aspect_ratio) as usize).max(1);
                     DeviceGrid::from_auto_layout_with_dimensions(
                         arch,
                         self.grid_state.grid_width,
@@ -162,17 +163,16 @@ impl GridView {
         let (scroll_delta, zoom_modifier) = input;
         if zoom_modifier && scroll_delta != 0.0 {
             if scroll_delta > 0.0 {
-                self.grid_state.zoom_in();
+                self.grid_state.zoom_in(1.1);
             } else {
-                self.grid_state.zoom_out();
+                self.grid_state.zoom_out(1.1);
             }
         }
 
         // Check for pinch gesture (trackpad zoom on macOS)
         let zoom_delta = ui.input(|i| i.zoom_delta());
         if zoom_delta != 1.0 {
-            self.grid_state.zoom_factor *= zoom_delta;
-            self.grid_state.zoom_factor = self.grid_state.zoom_factor.min(5.0).max(0.1);
+            self.grid_state.zoom_in(zoom_delta);
         }
 
         if let Some(grid) = &self.device_grid {
@@ -376,11 +376,11 @@ fn render_grid_controls_panel(
             ui.horizontal(|ui| {
                 ui.label("Zoom:");
                 if ui.small_button("−").clicked() {
-                    state.zoom_out();
+                    state.zoom_out(1.1);
                 }
                 ui.label(format!("{:.0}%", state.zoom_factor * 100.0));
                 if ui.small_button("+").clicked() {
-                    state.zoom_in();
+                    state.zoom_in(1.1);
                 }
                 if ui.small_button("Reset").clicked() {
                     state.reset_zoom();

@@ -15,9 +15,8 @@ pub fn render_grid(
 ) -> Option<String> {
     // Cell size is based on the available space
     let available_size = ui.available_size();
-    let cell_size =
-        (available_size.x.min(available_size.y) * 0.9) / grid.width.max(grid.height) as f32;
-    let cell_size = (cell_size.max(30.0).min(100.0)) * zoom_factor;
+    let cell_size = available_size.x.min(available_size.y) / grid.width.max(grid.height) as f32;
+    let cell_size = cell_size * zoom_factor;
 
     let mut clicked_tile: Option<String> = None;
 

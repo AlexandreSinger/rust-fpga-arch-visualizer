@@ -11,12 +11,12 @@ pub fn render_grid(
     tile_colors: &HashMap<String, egui::Color32>,
     _dark_mode: bool,
     arch: &FPGAArch,
+    zoom_factor: f32,
 ) -> Option<String> {
     // Cell size is based on the available space
     let available_size = ui.available_size();
-    let cell_size =
-        (available_size.x.min(available_size.y) * 0.9) / grid.width.max(grid.height) as f32;
-    let cell_size = cell_size.max(30.0).min(100.0);
+    let max_dim = grid.width.max(grid.height).max(1) as f32;
+    let cell_size = (available_size.x.min(available_size.y) / max_dim) * zoom_factor;
 
     let mut clicked_tile: Option<String> = None;
 
@@ -76,16 +76,19 @@ pub fn render_grid(
                                     egui::Stroke::new(2.0, outline_color),
                                 );
 
-                                // Draw tile name in center (uppercase)
-                                let tile_name_upper = pb_type.to_uppercase();
-                                let font_size = (cell_size * 0.2).min(tile_height * 0.15);
-                                painter.text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    &tile_name_upper,
-                                    egui::FontId::proportional(font_size),
-                                    egui::Color32::BLACK,
-                                );
+                                // Only draw the text if the tile is large enough.
+                                if rect.width() > 50.0 {
+                                    // Draw tile name in center (uppercase)
+                                    let tile_name_upper = pb_type.to_uppercase();
+                                    let font_size = (cell_size * 0.2).min(tile_height * 0.15);
+                                    painter.text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        &tile_name_upper,
+                                        egui::FontId::proportional(font_size),
+                                        egui::Color32::BLACK,
+                                    );
+                                }
 
                                 // Check if mouse is hovering over this tile
                                 if let Some(hover_pos) = response.hover_pos() {

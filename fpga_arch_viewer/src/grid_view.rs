@@ -12,6 +12,7 @@ pub struct GridState {
     pub grid_height: usize,
     pub aspect_ratio: f32,
     pub selected_layout_index: usize,
+    pub zoom_factor: f32,
 }
 
 impl Default for GridState {
@@ -21,7 +22,28 @@ impl Default for GridState {
             grid_height: 10,
             aspect_ratio: 1.0,
             selected_layout_index: 0,
+            zoom_factor: 1.0,
         }
+    }
+}
+
+impl GridState {
+    const MIN_ZOOM: f32 = 0.9;
+    const MAX_ZOOM: f32 = 10.0;
+
+    /// Zoom in by multiplying the zoom factor
+    pub fn zoom_in(&mut self, zoom_scale: f32) {
+        self.zoom_factor = (self.zoom_factor * zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
+    }
+
+    /// Zoom out by dividing the zoom factor
+    pub fn zoom_out(&mut self, zoom_scale: f32) {
+        self.zoom_factor = (self.zoom_factor / zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
+    }
+
+    /// Reset zoom to 1.0
+    pub fn reset_zoom(&mut self) {
+        self.zoom_factor = 1.0;
     }
 }
 
@@ -104,6 +126,7 @@ impl GridView {
             let grid = match layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                     self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
+                    update_grid_height_from_width(&mut self.grid_state);
                     DeviceGrid::from_auto_layout_with_dimensions(
                         arch,
                         self.grid_state.grid_width,
@@ -133,6 +156,28 @@ impl GridView {
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui
     ) {
+        // Handle zoom input (Cmd + scroll wheel or pinch gesture)
+        let input = ui.input(|i| {
+            let scroll_delta = i.raw_scroll_delta.y;
+            let zoom_modifier = i.modifiers.command;
+            (scroll_delta, zoom_modifier)
+        });
+
+        let (scroll_delta, zoom_modifier) = input;
+        if zoom_modifier && scroll_delta != 0.0 {
+            if scroll_delta > 0.0 {
+                self.grid_state.zoom_in(1.1);
+            } else {
+                self.grid_state.zoom_out(1.1);
+            }
+        }
+
+        // Check for pinch gesture (trackpad zoom on macOS)
+        let zoom_delta = ui.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            self.grid_state.zoom_in(zoom_delta);
+        }
+
         if let Some(grid) = &self.device_grid {
             if let Some(clicked_tile) = grid_renderer::render_grid(
                 ui,
@@ -141,6 +186,7 @@ impl GridView {
                 &self.tile_colors,
                 viewer_ctx.dark_mode,
                 arch,
+                self.grid_state.zoom_factor,
             ) {
                 complex_block_view_state.selected_tile_name = Some(clicked_tile);
                 complex_block_view_state.selected_sub_tile_index = 0;
@@ -325,6 +371,24 @@ fn render_grid_controls_panel(
 
             ui.label(format!("Aspect Ratio: {:.2}", state.aspect_ratio));
             ui.label(format!("Grid Size: {}x{}", state.grid_width, state.grid_height));
+
+            ui.add_space(15.0);
+            ui.separator();
+            ui.add_space(10.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Zoom:");
+                if ui.small_button("−").clicked() {
+                    state.zoom_out(1.1);
+                }
+                ui.label(format!("{:.0}%", state.zoom_factor * 100.0));
+                if ui.small_button("+").clicked() {
+                    state.zoom_in(1.1);
+                }
+                if ui.small_button("Reset").clicked() {
+                    state.reset_zoom();
+                }
+            });
 
             ui.add_space(15.0);
             ui.separator();

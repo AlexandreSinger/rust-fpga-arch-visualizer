@@ -28,14 +28,17 @@ impl Default for GridState {
 }
 
 impl GridState {
+    const MIN_ZOOM: f32 = 0.9;
+    const MAX_ZOOM: f32 = 10.0;
+
     /// Zoom in by multiplying the zoom factor
     pub fn zoom_in(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor * zoom_scale).min(10.0).max(0.9);
+        self.zoom_factor = (self.zoom_factor * zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
     }
 
     /// Zoom out by dividing the zoom factor
     pub fn zoom_out(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor / zoom_scale).min(10.0).max(0.9);
+        self.zoom_factor = (self.zoom_factor / zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
     }
 
     /// Reset zoom to 1.0
@@ -123,7 +126,7 @@ impl GridView {
             let grid = match layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                     self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
-                    self.grid_state.grid_height = ((self.grid_state.grid_width as f32 / auto_layout.aspect_ratio) as usize).max(1);
+                    update_grid_height_from_width(&mut self.grid_state);
                     DeviceGrid::from_auto_layout_with_dimensions(
                         arch,
                         self.grid_state.grid_width,
@@ -153,10 +156,10 @@ impl GridView {
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui
     ) {
-        // Handle zoom input (Ctrl+Cmd + scroll wheel or pinch gesture)
+        // Handle zoom input (Cmd + scroll wheel or pinch gesture)
         let input = ui.input(|i| {
             let scroll_delta = i.raw_scroll_delta.y;
-            let zoom_modifier = i.modifiers.ctrl && i.modifiers.command;
+            let zoom_modifier = i.modifiers.command;
             (scroll_delta, zoom_modifier)
         });
 

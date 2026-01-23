@@ -15,8 +15,8 @@ pub fn render_grid(
 ) -> Option<String> {
     // Cell size is based on the available space
     let available_size = ui.available_size();
-    let cell_size = available_size.x.min(available_size.y) / grid.width.max(grid.height) as f32;
-    let cell_size = cell_size * zoom_factor;
+    let max_dim = grid.width.max(grid.height).max(1) as f32;
+    let cell_size = (available_size.x.min(available_size.y) / max_dim) * zoom_factor;
 
     let mut clicked_tile: Option<String> = None;
 
@@ -76,8 +76,8 @@ pub fn render_grid(
                                     egui::Stroke::new(2.0, outline_color),
                                 );
 
-                                // Only draw the text if the cell size is large enough.
-                                if cell_size > 50.0 {
+                                // Only draw the text if the tile is large enough.
+                                if rect.width() > 50.0 {
                                     // Draw tile name in center (uppercase)
                                     let tile_name_upper = pb_type.to_uppercase();
                                     let font_size = (cell_size * 0.2).min(tile_height * 0.15);

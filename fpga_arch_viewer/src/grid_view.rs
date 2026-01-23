@@ -12,6 +12,7 @@ pub struct GridState {
     pub grid_height: usize,
     pub aspect_ratio: f32,
     pub selected_layout_index: usize,
+    pub zoom_factor: f32,
 }
 
 impl Default for GridState {
@@ -21,7 +22,25 @@ impl Default for GridState {
             grid_height: 10,
             aspect_ratio: 1.0,
             selected_layout_index: 0,
+            zoom_factor: 1.0,
         }
+    }
+}
+
+impl GridState {
+    /// Zoom in by multiplying the zoom factor
+    pub fn zoom_in(&mut self) {
+        self.zoom_factor = (self.zoom_factor * 1.1).min(5.0);
+    }
+
+    /// Zoom out by dividing the zoom factor
+    pub fn zoom_out(&mut self) {
+        self.zoom_factor = (self.zoom_factor / 1.1).max(0.1);
+    }
+
+    /// Reset zoom to 1.0
+    pub fn reset_zoom(&mut self) {
+        self.zoom_factor = 1.0;
     }
 }
 
@@ -133,6 +152,29 @@ impl GridView {
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui
     ) {
+        // Handle zoom input (Ctrl+Cmd + scroll wheel or pinch gesture)
+        let input = ui.input(|i| {
+            let scroll_delta = i.raw_scroll_delta.y;
+            let zoom_modifier = i.modifiers.ctrl && i.modifiers.command;
+            (scroll_delta, zoom_modifier)
+        });
+
+        let (scroll_delta, zoom_modifier) = input;
+        if zoom_modifier && scroll_delta != 0.0 {
+            if scroll_delta > 0.0 {
+                self.grid_state.zoom_in();
+            } else {
+                self.grid_state.zoom_out();
+            }
+        }
+
+        // Check for pinch gesture (trackpad zoom on macOS)
+        let zoom_delta = ui.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            self.grid_state.zoom_factor *= zoom_delta;
+            self.grid_state.zoom_factor = self.grid_state.zoom_factor.min(5.0).max(0.1);
+        }
+
         if let Some(grid) = &self.device_grid {
             if let Some(clicked_tile) = grid_renderer::render_grid(
                 ui,
@@ -141,6 +183,7 @@ impl GridView {
                 &self.tile_colors,
                 viewer_ctx.dark_mode,
                 arch,
+                self.grid_state.zoom_factor,
             ) {
                 complex_block_view_state.selected_tile_name = Some(clicked_tile);
                 complex_block_view_state.selected_sub_tile_index = 0;

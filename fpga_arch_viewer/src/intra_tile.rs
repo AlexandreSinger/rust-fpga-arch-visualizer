@@ -114,7 +114,9 @@ fn render_hierarchy_tree_panel(
         available_rect.min,
         egui::vec2(available_rect.width(), tree_height),
     );
-    ui.allocate_ui_at_rect(tree_rect, |ui| {
+    let _tree_response = ui.scope_builder(
+        egui::UiBuilder::new().max_rect(tree_rect),
+        |ui| {
         ui.set_width(available_rect.width());
         egui::CollapsingHeader::new("Hierarchy Tree")
             .default_open(true)
@@ -133,7 +135,9 @@ fn render_hierarchy_tree_panel(
         egui::pos2(available_rect.min.x, separator_y - 2.0),
         egui::vec2(available_rect.width(), 4.0),
     );
-    let separator_response = ui.allocate_ui_at_rect(separator_rect, |ui| {
+    let separator_response = ui.scope_builder(
+        egui::UiBuilder::new().max_rect(separator_rect),
+        |ui| {
         ui.allocate_response(separator_rect.size(), egui::Sense::drag())
     });
 
@@ -172,11 +176,10 @@ fn render_visual_layout_canvas(
     dark_mode: bool,
 ) {
     egui::ScrollArea::both()
-        .id_source("intra_tile_canvas")
+        .id_salt("intra_tile_canvas")
         .auto_shrink([false, false])
         // Enable "click + drag" panning within the canvas area.
         // This remains confined to the ScrollArea viewport, so it won't overlap other UI panels.
-        .drag_to_scroll(true)
         .show(ui, |ui| {
             // Canvas-local zoom controls (only active when pointer is over this viewport):
             // - Ctrl/Cmd + mouse wheel
@@ -311,7 +314,9 @@ pub fn render_intra_tile_view(
             egui::pos2(available_rect.min.x, separator_y),
             available_rect.max,
         );
-        ui.allocate_ui_at_rect(layout_rect, |ui| {
+        ui.scope_builder(
+            egui::UiBuilder::new().max_rect(layout_rect),
+            |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
             render_visual_layout_controls(ui, state);
@@ -1044,7 +1049,9 @@ fn draw_pb_type(
 
     // Make header clickable if it has children
     if has_children {
-        let header_response = ui.allocate_ui_at_rect(header_rect, |ui| {
+        let header_response = ui.scope_builder(
+            egui::UiBuilder::new().max_rect(header_rect),
+            |ui| {
             ui.allocate_response(header_rect.size(), egui::Sense::click())
         });
 
@@ -1062,9 +1069,10 @@ fn draw_pb_type(
         // Draw just the header background
         painter.rect(
             header_rect,
-            egui::Rounding::ZERO,
+            egui::CornerRadius::ZERO,
             color_scheme::theme_header_bg(dark_mode),
             egui::Stroke::NONE,
+            egui::epaint::StrokeKind::Inside,
         );
 
         // Draw block name in header
@@ -1143,7 +1151,7 @@ fn draw_pb_type(
         ui.put(selector_rect, |ui: &mut egui::Ui| {
             let old_style = apply_local_zoom_style(ui, zoom);
             ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 0.0);
-            let response = egui::ComboBox::from_id_source(format!("mode_sel_{}", instance_path))
+            let response = egui::ComboBox::from_id_salt(format!("mode_sel_{}", instance_path))
                 .width(selector_width)
                 .selected_text(&display_name)
                 .show_ui(ui, |ui| {
@@ -1780,7 +1788,7 @@ fn draw_complete_interconnect(
     let fill_color = color_scheme::theme_block_bg(dark_mode);
     let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
 
-    painter.rect(rect, 3.0 * zoom, fill_color, stroke);
+    painter.rect(rect, egui::CornerRadius::ZERO, fill_color, stroke, egui::epaint::StrokeKind::Inside);
     // Draw a large X across the block instead of text.
     let x_stroke = egui::Stroke::new(2.0 * zoom, stroke_color);
     painter.line_segment([rect.min, rect.max], x_stroke);
@@ -2037,7 +2045,7 @@ fn draw_interconnect_block(
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
         // rectangle with X
-        painter.rect(rect, 2.0 * zoom, fill_color, stroke);
+        painter.rect(rect, egui::CornerRadius::ZERO, fill_color, stroke, egui::epaint::StrokeKind::Inside);
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
             [

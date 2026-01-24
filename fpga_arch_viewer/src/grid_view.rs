@@ -236,7 +236,7 @@ fn render_grid_controls_panel(
             if arch.layouts.len() > 1 {
                 ui.label("Layout:");
                 let mut layout_changed = false;
-                egui::ComboBox::from_id_source("layout_selector")
+                egui::ComboBox::from_id_salt("layout_selector")
                     .selected_text(get_layout_name(arch, state.selected_layout_index))
                     .show_ui(ui, |ui| {
                         for (idx, layout) in arch.layouts.iter().enumerate() {

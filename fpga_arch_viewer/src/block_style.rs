@@ -158,7 +158,12 @@ pub fn draw_block(
                 );
 
                 // Draw outline
-                painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, outline_color));
+                painter.rect_stroke(
+                    rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Stroke::new(2.0, outline_color),
+                    egui::epaint::StrokeKind::Inside,
+                );
             } // Future shapes can be added here
         }
 

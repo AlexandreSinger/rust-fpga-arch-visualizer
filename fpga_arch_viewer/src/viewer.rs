@@ -302,15 +302,13 @@ impl FpgaViewer {
                         [BUTTON_SIZE, BUTTON_SIZE],
                         egui::Button::new(egui::RichText::new("📁").size(30.0))
                             .frame(true)
-                            .rounding(BUTTON_SIZE / 2.0),
+                            .corner_radius(BUTTON_SIZE / 2.0),
                     );
                     if open_button.clicked() {
                         self.open_file_dialog();
                     }
                     if open_button.hovered() {
-                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("open_tooltip"), |ui| {
-                            ui.label("Open architecture file");
-                        });
+                        open_button.on_hover_text("Open architecture file");
                     }
                     ui.add_space(10.0);
 
@@ -320,7 +318,7 @@ impl FpgaViewer {
                             [BUTTON_SIZE, BUTTON_SIZE],
                             egui::Button::new(egui::RichText::new("🔄").size(24.0))
                                 .frame(true)
-                                .rounding(BUTTON_SIZE / 2.0),
+                                .corner_radius(BUTTON_SIZE / 2.0),
                         )
                     });
                     if reload_button.inner.clicked() {
@@ -329,9 +327,7 @@ impl FpgaViewer {
                         }
                     }
                     if reload_button.inner.hovered() {
-                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("reload_tooltip"), |ui| {
-                            ui.label("Reload architecture file");
-                        });
+                        reload_button.inner.on_hover_text("Reload architecture file");
                     }
                     ui.add_space(10.0);
 
@@ -339,19 +335,13 @@ impl FpgaViewer {
                         [BUTTON_SIZE, BUTTON_SIZE],
                         egui::Button::new(egui::RichText::new("⚙").size(24.0))
                             .frame(true)
-                            .rounding(BUTTON_SIZE / 2.0),
+                            .corner_radius(BUTTON_SIZE / 2.0),
                     );
                     if settings_button.clicked() {
                         self.open_settings();
                     }
                     if settings_button.hovered() {
-                        egui::show_tooltip_at_pointer(
-                            ctx,
-                            egui::Id::new("settings_tooltip"),
-                            |ui| {
-                                ui.label("Open settings");
-                            },
-                        );
+                        settings_button.on_hover_text("Open settings");
                     }
                     ui.add_space(10.0);
 
@@ -362,22 +352,20 @@ impl FpgaViewer {
                             [BUTTON_SIZE, BUTTON_SIZE],
                             egui::Button::new(egui::RichText::new("◀").size(24.0))
                                 .frame(true)
-                                .rounding(BUTTON_SIZE / 2.0),
+                                .corner_radius(BUTTON_SIZE / 2.0),
                         )
                     });
                     if back_button.inner.clicked() {
                         self.navigate_back();
                     }
                     if back_button.inner.hovered() {
-                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("back_tooltip"), |ui| {
-                            if self.viewer_ctx.current_page == Page::Settings {
-                                ui.label("Back to main");
-                            } else if self.view_mode == ViewMode::ComplexBlock {
-                                ui.label("Back to grid view");
-                            } else {
-                                ui.label("Go back");
-                            }
-                        });
+                        if self.viewer_ctx.current_page == Page::Settings {
+                            back_button.inner.on_hover_text("Back to main");
+                        } else if self.view_mode == ViewMode::ComplexBlock {
+                            back_button.inner.on_hover_text("Back to grid view");
+                        } else {
+                            back_button.inner.on_hover_text("Go back");
+                        }
                     }
                 });
             });
@@ -385,11 +373,11 @@ impl FpgaViewer {
 
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Architecture File...").clicked() {
                         self.open_file_dialog();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Exit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -399,22 +387,22 @@ impl FpgaViewer {
                 ui.menu_button("View", |ui| {
                     if ui.button("Summary View").clicked() {
                         self.next_view_mode = ViewMode::Summary;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Grid View").clicked() {
                         self.next_view_mode = ViewMode::Grid;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Complex Block View").clicked() {
                         self.next_view_mode = ViewMode::ComplexBlock;
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
 
                 ui.menu_button("Help", |ui| {
                     if ui.button("About").clicked() {
                         self.viewer_ctx.show_about = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
 

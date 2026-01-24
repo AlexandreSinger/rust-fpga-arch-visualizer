@@ -7,8 +7,8 @@ pub fn render_welcome_message(
     view_mode: &ViewMode,
 ) {
     let available_rect = ui.available_rect_before_wrap();
-    ui.allocate_ui_at_rect(
-        egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0)),
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0))),
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("FPGA Architecture Visualizer");
@@ -32,8 +32,8 @@ pub fn render_centered_message(
 ) -> bool {
     let available_rect = ui.available_rect_before_wrap();
     let mut button_clicked = false;
-    ui.allocate_ui_at_rect(
-        egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0)),
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0))),
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading(heading);

@@ -44,8 +44,9 @@ pub fn render_grid(
                                 let rect = egui::Rect::from_min_size(cell_pos, egui::vec2(cell_size, cell_size));
                                 painter.rect_stroke(
                                     rect,
-                                    0.0,
-                                    egui::Stroke::new(1.0, egui::Color32::DARK_GRAY),
+                                    egui::CornerRadius::ZERO,
+                                    egui::Stroke::new(0.5, egui::Color32::DARK_GRAY),
+                                    egui::epaint::StrokeKind::Inside,
                                 );
                             }
                             GridCell::BlockAnchor { pb_type, width, height } => {
@@ -72,8 +73,9 @@ pub fn render_grid(
                                 // Draw outline
                                 painter.rect_stroke(
                                     rect,
-                                    0.0,
-                                    egui::Stroke::new(2.0, outline_color),
+                                    egui::CornerRadius::ZERO,
+                                    egui::Stroke::new(1.0, outline_color),
+                                    egui::epaint::StrokeKind::Inside,
                                 );
 
                                 // Only draw the text if the tile is large enough.
@@ -89,47 +91,50 @@ pub fn render_grid(
                                         egui::Color32::BLACK,
                                     );
                                 }
-
-                                // Check if mouse is hovering over this tile
-                                if let Some(hover_pos) = response.hover_pos() {
-                                    if rect.contains(hover_pos) {
-                                        egui::show_tooltip_at_pointer(
-                                            ui.ctx(),
-                                            egui::Id::new(format!("grid_{}_{}", row, col)),
-                                            |ui| {
-                                                ui.label(format!(
-                                                    "{} [{}, {}]",
-                                                    pb_type, row, col
-                                                ));
-                                                ui.label(format!("Size: {}x{}", width, height));
-                                                if let Some(tile) =
-                                                    arch.tiles.iter().find(|t| t.name == *pb_type)
-                                                {
-                                                    ui.label(format!(
-                                                        "Contains {} sub-tiles",
-                                                        tile.sub_tiles.len()
-                                                    ));
-                                                }
-                                                ui.label("Click to view internal structure");
-                                            },
-                                        );
-                                    }
-                                 }
-
-                                // Check if mouse clicked on this tile
-                                if response.clicked() {
-                                    if let Some(click_pos) = response.interact_pointer_pos() {
-                                        if rect.contains(click_pos) {
-                                            clicked_tile = Some(pb_type.clone());
-                                        }
-                                    }
-                                }
                             }
                             GridCell::BlockOccupied { .. } => {
                                 // Skip - this space is part of an anchor tile and already drawn
                             }
                         }
                     }
+                }
+            }
+
+            // Check for which tile is currently being hovered over.
+            if let Some(hover_pos) = response.hover_pos() {
+                let mut col = ((hover_pos.x - offset.x) / cell_size).floor() as usize;
+                let mut row = grid.height.saturating_sub(1).saturating_sub(((hover_pos.y - offset.y) / cell_size).floor() as usize);
+                match grid.get(row, col) {
+                    Some(GridCell::BlockOccupied { pb_type: _, anchor_row, anchor_col }) => {
+                        col = *anchor_col;
+                        row = *anchor_row;
+                    },
+                    _ => {},
+                }
+
+                if let Some(GridCell::BlockAnchor { pb_type, width, height }) = grid.get(row, col) {
+                    // If a tile has been clicked, mark it as the clicked tile.
+                    if response.clicked() {
+                        clicked_tile = Some(pb_type.clone());
+                    }
+
+                    // On hover, show ui at the pointer.
+                    response.on_hover_ui_at_pointer(|ui| {
+                        ui.label(format!(
+                            "{} [{}, {}]",
+                            pb_type, col, row
+                        ));
+                        ui.label(format!("Size: {}x{}", width, height));
+                        if let Some(tile) =
+                            arch.tiles.iter().find(|t| t.name == *pb_type)
+                        {
+                            ui.label(format!(
+                                "Contains {} sub-tiles",
+                                tile.sub_tiles.len()
+                            ));
+                        }
+                        ui.label("Click to view internal structure");
+                    });
                 }
             }
         });

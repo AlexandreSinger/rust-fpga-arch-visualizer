@@ -30,7 +30,7 @@ fn main() -> Result<(), eframe::Error> {
         "FPGA Architecture Visualizer",
         options,
         Box::new(|_cc| {
-            Box::new(FpgaViewer::new())
+            Ok(Box::new(FpgaViewer::new()))
         }),
     )
 }

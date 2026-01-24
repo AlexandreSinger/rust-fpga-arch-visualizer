@@ -281,9 +281,10 @@ pub fn draw_generic_block(
     let zoom = state.zoom_clamped();
     painter.rect(
         rect,
-        0.0,
+        egui::CornerRadius::ZERO,
         color_scheme::theme_block_bg(dark_mode),
         egui::Stroke::new(1.5 * zoom, color_scheme::theme_border_color(dark_mode)),
+        egui::epaint::StrokeKind::Inside,
     );
 
     // Title bar
@@ -291,9 +292,10 @@ pub fn draw_generic_block(
         egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
     painter.rect(
         title_rect,
-        egui::Rounding::ZERO,
+        egui::CornerRadius::ZERO,
         color_scheme::theme_header_bg(dark_mode),
         egui::Stroke::NONE,
+        egui::epaint::StrokeKind::Inside,
     );
 
     painter.text(
@@ -324,9 +326,10 @@ pub fn draw_lut(
     let colors = color_scheme::lut_colors(dark_mode);
     painter.rect(
         rect,
-        0.0,
+        egui::CornerRadius::ZERO,
         colors.bg,
         egui::Stroke::new(1.5 * zoom, colors.border),
+        egui::epaint::StrokeKind::Inside,
     );
 
     painter.text(
@@ -365,9 +368,10 @@ pub fn draw_flip_flop(
     let colors = color_scheme::flip_flop_colors(dark_mode);
     painter.rect(
         rect,
-        0.0,
+        egui::CornerRadius::ZERO,
         colors.bg,
         egui::Stroke::new(1.5 * zoom, colors.border),
+        egui::epaint::StrokeKind::Inside,
     );
 
     let triangle_size = 8.0 * zoom;
@@ -419,9 +423,10 @@ pub fn draw_memory(
     let colors = color_scheme::memory_colors(dark_mode);
     painter.rect(
         rect,
-        0.0,
+        egui::CornerRadius::ZERO,
         colors.bg,
         egui::Stroke::new(1.5 * zoom, colors.border),
+        egui::epaint::StrokeKind::Inside,
     );
 
     let grid_spacing = 10.0 * zoom;
@@ -473,9 +478,10 @@ pub fn draw_blif_block(
     let colors = color_scheme::blif_colors(dark_mode);
     painter.rect(
         rect,
-        0.0,
+        egui::CornerRadius::ZERO,
         colors.bg,
         egui::Stroke::new(1.5 * zoom, colors.border),
+        egui::epaint::StrokeKind::Inside,
     );
 
     // Title bar
@@ -483,9 +489,10 @@ pub fn draw_blif_block(
         egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), HEADER_HEIGHT * zoom));
     painter.rect(
         title_rect,
-        egui::Rounding::ZERO,
+        egui::CornerRadius::ZERO,
         color_scheme::theme_header_bg(dark_mode),
         egui::Stroke::NONE,
+        egui::epaint::StrokeKind::Inside,
     );
 
     // Display blif_model name in center

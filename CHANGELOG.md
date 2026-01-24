@@ -1,3 +1,13 @@
+## [v0.3.1] - 2026-01-24
+
+### Added
+- An error window now opens when the architecture file fails to parse.
+- Basic zoom controls were added to the grid view.
+- Open and refresh buttons were added to the nav.
+
+### Infra
+- Updated packages to more recent versions.
+
 ## [v0.3.0] - 2026-01-17
 
 ### Added

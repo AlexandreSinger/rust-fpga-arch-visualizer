@@ -10,7 +10,7 @@ fpga_arch_parser = { path = "../fpga_arch_parser" }
 # GUI framework - using egui for cross-platform support
 eframe = "0.32"
 egui = "0.32"
-egui_extras = "0.32"
+egui_extras = "0.33"
 
 # File dialog for opening architecture files
 rfd = "0.17"

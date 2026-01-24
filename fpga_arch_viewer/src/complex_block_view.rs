@@ -202,7 +202,7 @@ fn render_intra_tile_controls_panel(
                 let mut selected_tile_name_str =
                     selected_tile_name.as_deref().unwrap_or("").to_string();
 
-                egui::ComboBox::from_id_source("tile_selector")
+                egui::ComboBox::from_id_salt("tile_selector")
                     .selected_text(if !selected_tile_name_str.is_empty() {
                         selected_tile_name_str.as_str()
                     } else {

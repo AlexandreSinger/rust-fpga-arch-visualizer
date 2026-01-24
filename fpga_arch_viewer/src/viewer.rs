@@ -29,7 +29,6 @@ pub struct ViewerContext {
     pub show_about: bool,
     pub current_page: Page,
     // Navigation state
-    pub show_layer_list: bool,
     pub navigation_history: Vec<ViewMode>,
     pub skip_nav_history_update: bool,
     // Block styles
@@ -200,7 +199,6 @@ impl FpgaViewer {
             viewer_ctx: ViewerContext {
                 show_about: false,
                 current_page: Page::Main,
-                show_layer_list: false,
                 navigation_history: Vec::new(),
                 skip_nav_history_update: false,
                 block_styles: DefaultBlockStyles::new(),
@@ -240,24 +238,25 @@ impl FpgaViewer {
                 self.grid_view.on_architecture_load(&arch);
 
                 // Update viewer context.
-                self.viewer_ctx.loaded_file_path = Some(file_path);
                 self.architecture = Some(arch);
-                self.next_view_mode = ViewMode::Summary;
                 self.viewer_ctx.show_error = false;
                 self.viewer_ctx.error_title.clear();
                 self.viewer_ctx.error_message.clear();
 
                 // Print success.
-                if let Some(filename) = self.loaded_arch_filename() {
-                    println!("Successfully loaded architecture file: {}", filename);
-                }
+                println!("Successfully loaded architecture file: {:?}", file_path);
             }
             Err(e) => {
+                self.architecture = None;
                 self.viewer_ctx.show_error = true;
                 self.viewer_ctx.error_title = "Parse Error".to_owned();
                 self.viewer_ctx.error_message = format!("Error loading architecture:\n{:?}\n\n{}", file_path, format_parse_error(&e, Some(&file_path)));
             }
         }
+
+        // Since this is a tool for debugging architectures, we should remember
+        // the path of the loaded file even if it fails so it can be fixed.
+        self.viewer_ctx.loaded_file_path = Some(file_path);
     }
 
     fn open_file_dialog(&mut self) {
@@ -285,11 +284,6 @@ impl FpgaViewer {
         }
     }
 
-    fn toggle_layer_list(&mut self) {
-        self.viewer_ctx.show_layer_list = !self.viewer_ctx.show_layer_list;
-        self.viewer_ctx.current_page = Page::Main;
-    }
-
     fn open_settings(&mut self) {
         self.viewer_ctx.current_page = Page::Settings;
     }
@@ -304,18 +298,39 @@ impl FpgaViewer {
 
                     const BUTTON_SIZE: f32 = 50.0;
 
-                    let list_button = ui.add_sized(
+                    let open_button = ui.add_sized(
                         [BUTTON_SIZE, BUTTON_SIZE],
-                        egui::Button::new(egui::RichText::new("☰").size(24.0))
+                        egui::Button::new(egui::RichText::new("📁").size(30.0))
                             .frame(true)
                             .rounding(BUTTON_SIZE / 2.0),
                     );
-                    if list_button.clicked() {
-                        self.toggle_layer_list();
+                    if open_button.clicked() {
+                        self.open_file_dialog();
                     }
-                    if list_button.hovered() {
-                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("list_tooltip"), |ui| {
-                            ui.label("Toggle layer list");
+                    if open_button.hovered() {
+                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("open_tooltip"), |ui| {
+                            ui.label("Open architecture file");
+                        });
+                    }
+                    ui.add_space(10.0);
+
+                    let reload_enabled = self.viewer_ctx.loaded_file_path.is_some();
+                    let reload_button = ui.add_enabled_ui(reload_enabled, |ui| {
+                        ui.add_sized(
+                            [BUTTON_SIZE, BUTTON_SIZE],
+                            egui::Button::new(egui::RichText::new("🔄").size(24.0))
+                                .frame(true)
+                                .rounding(BUTTON_SIZE / 2.0),
+                        )
+                    });
+                    if reload_button.inner.clicked() {
+                        if let Some(path) = self.viewer_ctx.loaded_file_path.clone() {
+                            self.load_architecture_file(path);
+                        }
+                    }
+                    if reload_button.inner.hovered() {
+                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("reload_tooltip"), |ui| {
+                            ui.label("Reload architecture file");
                         });
                     }
                     ui.add_space(10.0);
@@ -365,38 +380,6 @@ impl FpgaViewer {
                         });
                     }
                 });
-            });
-    }
-
-    fn render_layer_list_panel(&self, ctx: &egui::Context) {
-        if !self.viewer_ctx.show_layer_list {
-            return;
-        }
-
-        // Layer list panel (toggleable via list button)
-        // This panel will contain expandable layers and navigation to elements
-        egui::SidePanel::left("layer_list")
-            .resizable(true)
-            .default_width(250.0)
-            .min_width(200.0)
-            .show(ctx, |ui| {
-                ui.heading("Layers");
-                ui.separator();
-
-                // TODO: Add expandable layer tree here
-                // Each layer will have:
-                // - Collapse/expand arrow (▼ when expanded, ▶ when collapsed)
-                // - Layer name
-                // - Nested elements when expanded
-                ui.label("No architecture loaded");
-                ui.add_space(10.0);
-                ui.label("Layer list will appear here once an architecture file is loaded.");
-                ui.add_space(20.0);
-                ui.label(
-                    egui::RichText::new(
-                        "! This feature is currently under development and will be implemented in a future update.",
-                    ).color(egui::Color32::RED),
-                );
             });
     }
 
@@ -552,7 +535,6 @@ impl eframe::App for FpgaViewer {
         // Render UI panels and windows
         self.render_menu_bar(ctx);
         self.render_navigation_buttons(ctx);
-        self.render_layer_list_panel(ctx);
 
         // Render the page.
         self.render_page(ctx);

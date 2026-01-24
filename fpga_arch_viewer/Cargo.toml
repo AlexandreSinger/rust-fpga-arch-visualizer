@@ -8,7 +8,7 @@ repository = "https://github.com/AlexandreSinger/rust-fpga-arch-visualizer"
 fpga_arch_parser = { path = "../fpga_arch_parser" }
 
 # GUI framework - using egui for cross-platform support
-eframe = "0.32"
+eframe = "0.33"
 egui = "0.32"
 egui_extras = "0.32"
 

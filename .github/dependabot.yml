@@ -15,3 +15,5 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    exclude-paths:
+      - ".github/workflows/release.yml" # release.yml is managed by cargo dist.

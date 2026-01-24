@@ -244,9 +244,7 @@ impl FpgaViewer {
                 self.viewer_ctx.error_message.clear();
 
                 // Print success.
-                if let Some(filename) = self.loaded_arch_filename() {
-                    println!("Successfully loaded architecture file: {}", filename);
-                }
+                println!("Successfully loaded architecture file: {:?}", file_path);
             }
             Err(e) => {
                 self.architecture = None;

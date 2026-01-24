@@ -238,9 +238,7 @@ impl FpgaViewer {
                 self.grid_view.on_architecture_load(&arch);
 
                 // Update viewer context.
-                self.viewer_ctx.loaded_file_path = Some(file_path);
                 self.architecture = Some(arch);
-                self.next_view_mode = ViewMode::Summary;
                 self.viewer_ctx.show_error = false;
                 self.viewer_ctx.error_title.clear();
                 self.viewer_ctx.error_message.clear();
@@ -251,11 +249,16 @@ impl FpgaViewer {
                 }
             }
             Err(e) => {
+                self.architecture = None;
                 self.viewer_ctx.show_error = true;
                 self.viewer_ctx.error_title = "Parse Error".to_owned();
                 self.viewer_ctx.error_message = format!("Error loading architecture:\n{:?}\n\n{}", file_path, format_parse_error(&e, Some(&file_path)));
             }
         }
+
+        // Since this is a tool for debugging architectures, we should remember
+        // the path of the loaded file even if it fails so it can be fixed.
+        self.viewer_ctx.loaded_file_path = Some(file_path);
     }
 
     fn open_file_dialog(&mut self) {
@@ -309,6 +312,27 @@ impl FpgaViewer {
                     if open_button.hovered() {
                         egui::show_tooltip_at_pointer(ctx, egui::Id::new("open_tooltip"), |ui| {
                             ui.label("Open architecture file");
+                        });
+                    }
+                    ui.add_space(10.0);
+
+                    let reload_enabled = self.viewer_ctx.loaded_file_path.is_some();
+                    let reload_button = ui.add_enabled_ui(reload_enabled, |ui| {
+                        ui.add_sized(
+                            [BUTTON_SIZE, BUTTON_SIZE],
+                            egui::Button::new(egui::RichText::new("🔄").size(24.0))
+                                .frame(true)
+                                .rounding(BUTTON_SIZE / 2.0),
+                        )
+                    });
+                    if reload_button.inner.clicked() {
+                        if let Some(path) = self.viewer_ctx.loaded_file_path.clone() {
+                            self.load_architecture_file(path);
+                        }
+                    }
+                    if reload_button.inner.hovered() {
+                        egui::show_tooltip_at_pointer(ctx, egui::Id::new("reload_tooltip"), |ui| {
+                            ui.label("Reload architecture file");
                         });
                     }
                     ui.add_space(10.0);

@@ -11,7 +11,7 @@ fpga_arch_parser = { path = "../fpga_arch_parser" }
 eframe = "0.27"
 egui = "0.27"
 egui_extras = "0.27"
-egui_plot = "0.27"
+egui_plot = "0.34"
 
 # File dialog for opening architecture files
 rfd = "0.17"

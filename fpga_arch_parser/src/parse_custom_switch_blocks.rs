@@ -205,7 +205,7 @@ fn parse_func(
                         "br" => Some(CustomSwitchFuncType::BottomToRight),
                         _ => {
                             return Err(FPGAArchParseError::AttributeParseError(
-                                format!("{a}: Unknown custom switch block location"),
+                                format!("{a}: Unknown custom switch function type"),
                                 parser.position(),
                             ));
                         }

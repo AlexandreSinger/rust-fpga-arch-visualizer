@@ -299,8 +299,7 @@ fn render_grid_controls_panel(
                 });
             });
 
-            ui.horizontal(|ui| {
-                ui.label("       ");
+            ui.indent("width_entry", |ui| {
                 let mut width_text = state.grid_width.to_string();
                 ui.add_enabled_ui(!is_fixed_layout, |ui| {
                     if ui
@@ -342,8 +341,7 @@ fn render_grid_controls_panel(
                 });
             });
 
-            ui.horizontal(|ui| {
-                ui.label("       ");
+            ui.indent("height_entry", |ui| {
                 let mut height_text = state.grid_height.to_string();
                 ui.add_enabled_ui(!is_fixed_layout, |ui| {
                     if ui

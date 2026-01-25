@@ -92,7 +92,7 @@ fn parse_tile_site(
             },
             Ok(XmlEvent::EndDocument) => {
                 return Err(FPGAArchParseError::UnexpectedEndOfDocument(
-                    "fc".to_string(),
+                    "site".to_string(),
                 ));
             }
             Err(e) => {

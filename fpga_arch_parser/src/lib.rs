@@ -181,11 +181,11 @@ fn parse_architecture(
                     }
                 };
             }
-            Ok(XmlEvent::EndElement { name: _ }) => match name.to_string().as_str() {
+            Ok(XmlEvent::EndElement { name: end_name }) => match end_name.to_string().as_str() {
                 "architecture" => break,
                 _ => {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }

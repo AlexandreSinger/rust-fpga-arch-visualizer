@@ -574,7 +574,7 @@ fn parse_segment(
             },
             Ok(XmlEvent::EndDocument) => {
                 return Err(FPGAArchParseError::UnexpectedEndOfDocument(
-                    name.to_string(),
+                    "segment".to_string(),
                 ));
             }
             Err(e) => {
@@ -612,7 +612,7 @@ fn parse_segment(
                 p
             }
         }
-        None => return Err(FPGAArchParseError::MissingRequiredTag("<sb>".to_string())),
+        None => return Err(FPGAArchParseError::MissingRequiredTag("<cb>".to_string())),
     };
     let switch_points = match segment_type {
         SegmentType::Unidir => match mux {

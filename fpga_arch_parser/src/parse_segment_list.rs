@@ -93,7 +93,7 @@ fn parse_segment_pattern(
                     None => Some(parse_pattern_int_list(&text, parser)?),
                     Some(_) => {
                         return Err(FPGAArchParseError::InvalidTag(
-                            "Duplicate characters within sb.".to_string(),
+                            format!("Duplicate characters within {}.", name),
                             parser.position(),
                         ));
                     }
@@ -104,7 +104,7 @@ fn parse_segment_pattern(
                     break;
                 } else {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }
@@ -186,7 +186,7 @@ fn parse_segment_switch_point_descriptor(
                     break;
                 } else {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }

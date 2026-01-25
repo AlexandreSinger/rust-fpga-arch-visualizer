@@ -154,7 +154,7 @@ fn parse_switchblock_location(
                     break;
                 } else {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }
@@ -270,7 +270,7 @@ fn parse_func(
                     break;
                 } else {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }
@@ -448,7 +448,7 @@ fn parse_conn_point(
                     break;
                 } else {
                     return Err(FPGAArchParseError::UnexpectedEndTag(
-                        name.to_string(),
+                        end_name.to_string(),
                         parser.position(),
                     ));
                 }

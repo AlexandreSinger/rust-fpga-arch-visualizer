@@ -1,17 +1,19 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use xml::common::Position;
-use xml::reader::{EventReader, XmlEvent};
-use xml::name::OwnedName;
 use xml::attribute::OwnedAttribute;
+use xml::common::Position;
+use xml::name::OwnedName;
+use xml::reader::{EventReader, XmlEvent};
 
-use crate::parse_error::*;
 use crate::arch::*;
+use crate::parse_error::*;
 
-pub fn parse_port(tag_name: &OwnedName,
-              attributes: &[OwnedAttribute],
-              parser: &mut EventReader<BufReader<File>>) -> Result<Port, FPGAArchParseError> {
+pub fn parse_port(
+    tag_name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<BufReader<File>>,
+) -> Result<Port, FPGAArchParseError> {
     let mut port_name: Option<String> = None;
     let mut num_pins: Option<i32> = None;
     let mut equivalent: Option<PinEquivalence> = None;
@@ -23,41 +25,82 @@ pub fn parse_port(tag_name: &OwnedName,
             "name" => {
                 port_name = match port_name {
                     None => Some(a.value.clone()),
-                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
                 }
-            },
+            }
             "num_pins" => {
                 num_pins = match num_pins {
                     None => match a.value.parse() {
                         Ok(v) => Some(v),
-                        Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
                     },
-                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
                 }
-            },
+            }
             "equivalent" => {
                 equivalent = match equivalent {
                     None => match a.value.as_str() {
                         "none" => Some(PinEquivalence::None),
                         "full" => Some(PinEquivalence::Full),
                         "instance" => Some(PinEquivalence::Instance),
-                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("Unknown pin equivalence: {}", a.value), parser.position())),
+                        _ => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("Unknown pin equivalence: {}", a.value),
+                                parser.position(),
+                            ));
+                        }
                     },
-                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
                 }
-            },
+            }
             "is_non_clock_global" => {
                 is_non_clock_global = match is_non_clock_global {
                     None => match tag_name.to_string().as_str() {
                         "input" => match a.value.parse() {
                             Ok(v) => Some(v),
-                            Err(e) => return Err(FPGAArchParseError::AttributeParseError(format!("{a}: {e}"), parser.position())),
+                            Err(e) => {
+                                return Err(FPGAArchParseError::AttributeParseError(
+                                    format!("{a}: {e}"),
+                                    parser.position(),
+                                ));
+                            }
                         },
-                        _ => return Err(FPGAArchParseError::AttributeParseError("is_non_clock_global attribute only valid in input tag.".to_string(), parser.position())),
+                        _ => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                "is_non_clock_global attribute only valid in input tag."
+                                    .to_string(),
+                                parser.position(),
+                            ));
+                        }
                     },
-                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
                 }
-            },
+            }
             "port_class" => {
                 port_class = match port_class {
                     None => match a.value.as_str() {
@@ -80,22 +123,47 @@ pub fn parse_port(tag_name: &OwnedName,
                         "data_out2" => Some(PortClass::MemoryDataOutSecond),
                         "read_en1" => Some(PortClass::MemoryReadEnFirst),
                         "read_en2" => Some(PortClass::MemoryReadEnSecond),
-                        _ => return Err(FPGAArchParseError::AttributeParseError(format!("Unknown port class: {}", a.value), parser.position())),
+                        _ => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("Unknown port class: {}", a.value),
+                                parser.position(),
+                            ));
+                        }
                     },
-                    Some(_) => return Err(FPGAArchParseError::DuplicateAttribute(a.to_string(), parser.position())),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
                 }
-            },
-            _ => return Err(FPGAArchParseError::UnknownAttribute(a.to_string(), parser.position())),
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
         };
     }
 
     let port_name = match port_name {
         Some(n) => n,
-        None => return Err(FPGAArchParseError::MissingRequiredAttribute("name".to_string(), parser.position())),
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "name".to_string(),
+                parser.position(),
+            ));
+        }
     };
     let num_pins = match num_pins {
         Some(n) => n,
-        None => return Err(FPGAArchParseError::MissingRequiredAttribute("num_pins".to_string(), parser.position())),
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "num_pins".to_string(),
+                parser.position(),
+            ));
+        }
     };
     let equivalent = equivalent.unwrap_or(PinEquivalence::None);
     let is_non_clock_global = is_non_clock_global.unwrap_or(false);
@@ -104,21 +172,32 @@ pub fn parse_port(tag_name: &OwnedName,
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement { name, .. }) => {
-                return Err(FPGAArchParseError::InvalidTag(name.to_string(), parser.position()));
-            },
+                return Err(FPGAArchParseError::InvalidTag(
+                    name.to_string(),
+                    parser.position(),
+                ));
+            }
             Ok(XmlEvent::EndElement { name }) => {
                 if name.to_string() != tag_name.to_string() {
-                    return Err(FPGAArchParseError::UnexpectedEndTag(name.to_string(), parser.position()));
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
                 }
                 break;
-            },
+            }
             Ok(XmlEvent::EndDocument) => {
-                return Err(FPGAArchParseError::UnexpectedEndOfDocument(tag_name.to_string()));
-            },
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    tag_name.to_string(),
+                ));
+            }
             Err(e) => {
-                return Err(FPGAArchParseError::XMLParseError(format!("{e:?}"), parser.position()));
-            },
-            _ => {},
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
         };
     }
 
@@ -142,7 +221,9 @@ pub fn parse_port(tag_name: &OwnedName,
             equivalent,
             port_class,
         })),
-        _ => Err(FPGAArchParseError::InvalidTag(format!("Unknown port tag: {tag_name}"), parser.position())),
+        _ => Err(FPGAArchParseError::InvalidTag(
+            format!("Unknown port tag: {tag_name}"),
+            parser.position(),
+        )),
     }
 }
-

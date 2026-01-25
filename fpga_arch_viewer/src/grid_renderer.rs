@@ -1,4 +1,4 @@
-use crate::block_style::{darken_color, DefaultBlockStyles};
+use crate::block_style::{DefaultBlockStyles, darken_color};
 use crate::grid::{DeviceGrid, GridCell};
 use eframe::egui;
 use fpga_arch_parser::FPGAArch;
@@ -23,11 +23,12 @@ pub fn render_grid(
     egui::ScrollArea::both()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            let grid_size = egui::vec2(grid.width as f32 * cell_size, grid.height as f32 * cell_size);
-            let (response, painter) = ui.allocate_painter(
-                grid_size,
-                egui::Sense::click().union(egui::Sense::hover()),
+            let grid_size = egui::vec2(
+                grid.width as f32 * cell_size,
+                grid.height as f32 * cell_size,
             );
+            let (response, painter) =
+                ui.allocate_painter(grid_size, egui::Sense::click().union(egui::Sense::hover()));
 
             let offset = response.rect.min;
 
@@ -36,12 +37,19 @@ pub fn render_grid(
                 for col in 0..grid.width {
                     if let Some(cell) = grid.get(row, col) {
                         // Flip y-coordinate so (0,0) is at bottom-left
-                        let cell_pos = offset + egui::vec2(col as f32 * cell_size, (grid.height - 1 - row) as f32 * cell_size);
+                        let cell_pos = offset
+                            + egui::vec2(
+                                col as f32 * cell_size,
+                                (grid.height - 1 - row) as f32 * cell_size,
+                            );
 
                         match cell {
                             GridCell::Empty => {
                                 // Draw empty cell outline
-                                let rect = egui::Rect::from_min_size(cell_pos, egui::vec2(cell_size, cell_size));
+                                let rect = egui::Rect::from_min_size(
+                                    cell_pos,
+                                    egui::vec2(cell_size, cell_size),
+                                );
                                 painter.rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
@@ -49,16 +57,24 @@ pub fn render_grid(
                                     egui::epaint::StrokeKind::Inside,
                                 );
                             }
-                            GridCell::BlockAnchor { pb_type, width, height } => {
+                            GridCell::BlockAnchor {
+                                pb_type,
+                                width,
+                                height,
+                            } => {
                                 // Draw merged rectangle for multi-cell tile
                                 let tile_width = *width as f32 * cell_size;
                                 let tile_height = *height as f32 * cell_size;
 
-                                let visual_top = offset + egui::vec2(
-                                    col as f32 * cell_size,
-                                    (grid.height - row - height) as f32 * cell_size
+                                let visual_top = offset
+                                    + egui::vec2(
+                                        col as f32 * cell_size,
+                                        (grid.height - row - height) as f32 * cell_size,
+                                    );
+                                let rect = egui::Rect::from_min_size(
+                                    visual_top,
+                                    egui::vec2(tile_width, tile_height),
                                 );
-                                let rect = egui::Rect::from_min_size(visual_top, egui::vec2(tile_width, tile_height));
 
                                 let color = tile_colors
                                     .get(pb_type)
@@ -103,13 +119,26 @@ pub fn render_grid(
             // Check for which tile is currently being hovered over.
             if let Some(hover_pos) = response.hover_pos() {
                 let mut col = ((hover_pos.x - offset.x) / cell_size).floor() as usize;
-                let mut row = grid.height.saturating_sub(1).saturating_sub(((hover_pos.y - offset.y) / cell_size).floor() as usize);
-                if let Some(GridCell::BlockOccupied { pb_type: _, anchor_row, anchor_col }) = grid.get(row, col) {
+                let mut row = grid
+                    .height
+                    .saturating_sub(1)
+                    .saturating_sub(((hover_pos.y - offset.y) / cell_size).floor() as usize);
+                if let Some(GridCell::BlockOccupied {
+                    pb_type: _,
+                    anchor_row,
+                    anchor_col,
+                }) = grid.get(row, col)
+                {
                     col = *anchor_col;
                     row = *anchor_row;
                 }
 
-                if let Some(GridCell::BlockAnchor { pb_type, width, height }) = grid.get(row, col) {
+                if let Some(GridCell::BlockAnchor {
+                    pb_type,
+                    width,
+                    height,
+                }) = grid.get(row, col)
+                {
                     // If a tile has been clicked, mark it as the clicked tile.
                     if response.clicked() {
                         clicked_tile = Some(pb_type.clone());
@@ -117,18 +146,10 @@ pub fn render_grid(
 
                     // On hover, show ui at the pointer.
                     response.on_hover_ui_at_pointer(|ui| {
-                        ui.label(format!(
-                            "{} [{}, {}]",
-                            pb_type, col, row
-                        ));
+                        ui.label(format!("{} [{}, {}]", pb_type, col, row));
                         ui.label(format!("Size: {}x{}", width, height));
-                        if let Some(tile) =
-                            arch.tiles.iter().find(|t| t.name == *pb_type)
-                        {
-                            ui.label(format!(
-                                "Contains {} sub-tiles",
-                                tile.sub_tiles.len()
-                            ));
+                        if let Some(tile) = arch.tiles.iter().find(|t| t.name == *pb_type) {
+                            ui.label(format!("Contains {} sub-tiles", tile.sub_tiles.len()));
                         }
                         ui.label("Click to view internal structure");
                     });

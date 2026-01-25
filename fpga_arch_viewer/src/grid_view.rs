@@ -1,7 +1,12 @@
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
-use crate::{grid::{DeviceGrid, GridCell}, grid_renderer, complex_block_view::ComplexBlockViewState, viewer::{ViewMode, ViewerContext}};
+use crate::{
+    complex_block_view::ComplexBlockViewState,
+    grid::{DeviceGrid, GridCell},
+    grid_renderer,
+    viewer::{ViewMode, ViewerContext},
+};
 
 /// State for grid view
 #[derive(Debug, Clone)]
@@ -55,7 +60,6 @@ pub struct GridView {
     pub tile_colors: HashMap<String, egui::Color32>,
 }
 
-
 impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
         // Extract unique tile names from all layouts
@@ -107,7 +111,13 @@ impl GridView {
         self.render_side_panel(arch, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_grid_view(arch, viewer_ctx, complex_block_view_state, next_view_mode, ui);
+            self.render_grid_view(
+                arch,
+                viewer_ctx,
+                complex_block_view_state,
+                next_view_mode,
+                ui,
+            );
         });
     }
 
@@ -144,7 +154,7 @@ impl GridView {
         viewer_ctx: &mut ViewerContext,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
-        ui: &mut egui::Ui
+        ui: &mut egui::Ui,
     ) {
         // Handle zoom input (Cmd + scroll wheel or pinch gesture)
         let input = ui.input(|i| {
@@ -187,11 +197,7 @@ impl GridView {
         }
     }
 
-    fn render_side_panel(
-        &mut self,
-        arch: &FPGAArch,
-        ctx: &egui::Context,
-    ) {
+    fn render_side_panel(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
         let grid_changed = render_grid_controls_panel(
             ctx,
             arch,
@@ -239,7 +245,11 @@ fn render_grid_controls_panel(
                                 }
                             };
                             if ui
-                                .selectable_value(&mut state.selected_layout_index, idx, layout_name)
+                                .selectable_value(
+                                    &mut state.selected_layout_index,
+                                    idx,
+                                    layout_name,
+                                )
                                 .clicked()
                             {
                                 layout_changed = true;
@@ -297,11 +307,13 @@ fn render_grid_controls_panel(
                         .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
                         .changed()
                         && let Ok(new_width) = width_text.parse::<usize>()
-                            && (1..=100).contains(&new_width) && new_width != state.grid_width {
-                                state.grid_width = new_width;
-                                update_grid_height_from_width(state);
-                                grid_changed = true;
-                            }
+                        && (1..=100).contains(&new_width)
+                        && new_width != state.grid_width
+                    {
+                        state.grid_width = new_width;
+                        update_grid_height_from_width(state);
+                        grid_changed = true;
+                    }
                 });
             });
 
@@ -338,13 +350,13 @@ fn render_grid_controls_panel(
                         .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
                         .changed()
                         && let Ok(new_height) = height_text.parse::<usize>()
-                            && (1..=100).contains(&new_height)
-                                && new_height != state.grid_height
-                            {
-                                state.grid_height = new_height;
-                                update_grid_width_from_height(state);
-                                grid_changed = true;
-                            }
+                        && (1..=100).contains(&new_height)
+                        && new_height != state.grid_height
+                    {
+                        state.grid_height = new_height;
+                        update_grid_width_from_height(state);
+                        grid_changed = true;
+                    }
                 });
             });
 
@@ -353,7 +365,10 @@ fn render_grid_controls_panel(
             ui.add_space(10.0);
 
             ui.label(format!("Aspect Ratio: {:.2}", state.aspect_ratio));
-            ui.label(format!("Grid Size: {}x{}", state.grid_width, state.grid_height));
+            ui.label(format!(
+                "Grid Size: {}x{}",
+                state.grid_width, state.grid_height
+            ));
 
             ui.add_space(15.0);
             ui.separator();

@@ -95,18 +95,16 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
             // If there are modes, children are inside modes
             ui.indent("modes", |ui| {
                 for mode in &pb_type.modes {
-                    egui::CollapsingHeader::new(format!("Mode: {}", mode.name))
-                        .show(ui, |ui| {
-                            for child_pb in &mode.pb_types {
-                                render_pb_type_tree_node(ui, child_pb);
-                            }
-                            if !mode.interconnects.is_empty() {
-                                egui::CollapsingHeader::new("Interconnects")
-                                    .show(ui, |ui| {
-                                        render_interconnects(ui, &mode.interconnects);
-                                    });
-                            }
-                        });
+                    egui::CollapsingHeader::new(format!("Mode: {}", mode.name)).show(ui, |ui| {
+                        for child_pb in &mode.pb_types {
+                            render_pb_type_tree_node(ui, child_pb);
+                        }
+                        if !mode.interconnects.is_empty() {
+                            egui::CollapsingHeader::new("Interconnects").show(ui, |ui| {
+                                render_interconnects(ui, &mode.interconnects);
+                            });
+                        }
+                    });
                 }
             });
         } else if !pb_type.pb_types.is_empty() {

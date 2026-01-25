@@ -1,4 +1,4 @@
-use fpga_arch_parser::{AutoLayout, GridLocation, FPGAArch};
+use fpga_arch_parser::{AutoLayout, FPGAArch, GridLocation};
 use std::collections::HashMap;
 
 // A single cell in the FPGA grid
@@ -9,13 +9,13 @@ pub enum GridCell {
     BlockAnchor {
         pb_type: String,
         width: usize,
-        height: usize
+        height: usize,
     },
     // Occupied cell: part of a multi-cell tile, points to the anchor's coordinates
     BlockOccupied {
         pb_type: String,
         anchor_row: usize,
-        anchor_col: usize
+        anchor_col: usize,
     },
 }
 
@@ -46,7 +46,7 @@ impl DeviceGrid {
         for tile in &arch.tiles {
             tile_sizes.insert(
                 tile.name.clone(),
-                (tile.width as usize, tile.height as usize)
+                (tile.width as usize, tile.height as usize),
             );
         }
         tile_sizes
@@ -92,7 +92,8 @@ impl DeviceGrid {
         };
 
         // Sort locations by priority
-        let mut location_indices: Vec<_> = fixed_layout.grid_locations
+        let mut location_indices: Vec<_> = fixed_layout
+            .grid_locations
             .iter()
             .enumerate()
             .map(|(i, loc)| {
@@ -137,7 +138,7 @@ impl DeviceGrid {
         auto_layout: &AutoLayout,
         width: usize,
         height: usize,
-        tile_sizes: HashMap<String, (usize, usize)>
+        tile_sizes: HashMap<String, (usize, usize)>,
     ) -> Self {
         let mut grid = Self {
             width,
@@ -147,7 +148,8 @@ impl DeviceGrid {
         };
 
         // Sort locations by priority
-        let mut location_indices: Vec<_> = auto_layout.grid_locations
+        let mut location_indices: Vec<_> = auto_layout
+            .grid_locations
             .iter()
             .enumerate()
             .map(|(i, loc)| {
@@ -204,7 +206,11 @@ impl DeviceGrid {
                             // Found an anchor that will be overwritten
                             tiles_to_clear.push((check_row, check_col));
                         }
-                        GridCell::BlockOccupied { anchor_row, anchor_col, .. } => {
+                        GridCell::BlockOccupied {
+                            anchor_row,
+                            anchor_col,
+                            ..
+                        } => {
                             // Found an occupied cell - need to clear its anchor
                             tiles_to_clear.push((*anchor_row, *anchor_col));
                         }
@@ -216,7 +222,8 @@ impl DeviceGrid {
 
         // Clear all intersected tiles completely
         for (anchor_row, anchor_col) in tiles_to_clear {
-            if let GridCell::BlockAnchor { width, height, .. } = &self.cells[anchor_row][anchor_col] {
+            if let GridCell::BlockAnchor { width, height, .. } = &self.cells[anchor_row][anchor_col]
+            {
                 let old_width = *width;
                 let old_height = *height;
                 // Clear the entire old tile
@@ -340,10 +347,11 @@ impl DeviceGrid {
                 if let (Some(x), Some(y)) = (
                     self.eval_expr(&single.x_expr, tile_width, tile_height),
                     self.eval_expr(&single.y_expr, tile_width, tile_height),
-                )
-                    && y < self.height && x < self.width {
-                        self.place_tile(y, x, &single.pb_type);
-                    }
+                ) && y < self.height
+                    && x < self.width
+                {
+                    self.place_tile(y, x, &single.pb_type);
+                }
             }
             GridLocation::Col(col_loc) => {
                 let (tile_width, tile_height) = self.get_tile_size(&col_loc.pb_type);
@@ -351,9 +359,12 @@ impl DeviceGrid {
                     self.eval_expr(&col_loc.start_x_expr, tile_width, tile_height),
                     self.eval_expr(&col_loc.start_y_expr, tile_width, tile_height),
                 ) {
-                    let incr_y = self.eval_expr(&col_loc.incr_y_expr, tile_width, tile_height)
+                    let incr_y = self
+                        .eval_expr(&col_loc.incr_y_expr, tile_width, tile_height)
                         .unwrap_or(self.height);
-                    let repeat_x = col_loc.repeat_x_expr.as_ref()
+                    let repeat_x = col_loc
+                        .repeat_x_expr
+                        .as_ref()
                         .and_then(|expr| self.eval_expr(expr, tile_width, tile_height))
                         .unwrap_or(self.width);
 
@@ -370,9 +381,12 @@ impl DeviceGrid {
                     self.eval_expr(&row_loc.start_x_expr, tile_width, tile_height),
                     self.eval_expr(&row_loc.start_y_expr, tile_width, tile_height),
                 ) {
-                    let incr_x = self.eval_expr(&row_loc.incr_x_expr, tile_width, tile_height)
+                    let incr_x = self
+                        .eval_expr(&row_loc.incr_x_expr, tile_width, tile_height)
                         .unwrap_or(self.width);
-                    let repeat_y = row_loc.repeat_y_expr.as_ref()
+                    let repeat_y = row_loc
+                        .repeat_y_expr
+                        .as_ref()
                         .and_then(|expr| self.eval_expr(expr, tile_width, tile_height))
                         .unwrap_or(self.height);
 
@@ -391,9 +405,11 @@ impl DeviceGrid {
                     self.eval_expr(&region.start_y_expr, tile_width, tile_height),
                     self.eval_expr(&region.end_y_expr, tile_width, tile_height),
                 ) {
-                    let incr_x = self.eval_expr(&region.incr_x_expr, tile_width, tile_height)
+                    let incr_x = self
+                        .eval_expr(&region.incr_x_expr, tile_width, tile_height)
                         .unwrap_or(end_x - start_x + 1);
-                    let incr_y = self.eval_expr(&region.incr_y_expr, tile_width, tile_height)
+                    let incr_y = self
+                        .eval_expr(&region.incr_y_expr, tile_width, tile_height)
                         .unwrap_or(end_y - start_y + 1);
 
                     for y in (start_y..=end_y.min(self.height - 1)).step_by(incr_y) {
@@ -428,69 +444,73 @@ impl DeviceGrid {
 }
 
 fn eval_expr_recursive(expr: &str) -> Option<usize> {
-        let expr = expr.trim();
+    let expr = expr.trim();
 
-        if let Ok(val) = expr.parse::<i32>() {
-            return if val >= 0 { Some(val as usize) } else { None };
-        }
-
-        let chars: Vec<char> = expr.chars().collect();
-        let len = chars.len();
-
-        // Addition and subtraction (lowest precedence)
-        let mut depth = 0;
-        for i in (0..len).rev() {
-            let ch = chars[i];
-            match ch {
-                ')' => depth += 1,
-                '(' => depth -= 1,
-                '+' | '-' if depth == 0 && i > 0 => {
-                    let left: String = chars[..i].iter().collect();
-                    let right: String = chars[i + 1..].iter().collect();
-
-                    if let (Some(l), Some(r)) = (eval_expr_recursive(&left), eval_expr_recursive(&right)) {
-                        return if ch == '+' {
-                            Some(l + r)
-                        } else if l >= r {
-                            Some(l - r)
-                        } else {
-                            None
-                        };
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Multiplication and division (higher precedence)
-        depth = 0;
-        for i in (0..len).rev() {
-            let ch = chars[i];
-            match ch {
-                ')' => depth += 1,
-                '(' => depth -= 1,
-                '*' | '/' if depth == 0 && i > 0 => {
-                    let left: String = chars[..i].iter().collect();
-                    let right: String = chars[i + 1..].iter().collect();
-
-                    if let (Some(l), Some(r)) = (eval_expr_recursive(&left), eval_expr_recursive(&right)) {
-                        return if ch == '*' {
-                            Some(l * r)
-                        } else if r > 0 {
-                            Some(l / r)
-                        } else {
-                            None
-                        };
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Handle parentheses
-        if expr.starts_with('(') && expr.ends_with(')') {
-            return eval_expr_recursive(&expr[1..expr.len() - 1]);
-        }
-
-        None
+    if let Ok(val) = expr.parse::<i32>() {
+        return if val >= 0 { Some(val as usize) } else { None };
     }
+
+    let chars: Vec<char> = expr.chars().collect();
+    let len = chars.len();
+
+    // Addition and subtraction (lowest precedence)
+    let mut depth = 0;
+    for i in (0..len).rev() {
+        let ch = chars[i];
+        match ch {
+            ')' => depth += 1,
+            '(' => depth -= 1,
+            '+' | '-' if depth == 0 && i > 0 => {
+                let left: String = chars[..i].iter().collect();
+                let right: String = chars[i + 1..].iter().collect();
+
+                if let (Some(l), Some(r)) =
+                    (eval_expr_recursive(&left), eval_expr_recursive(&right))
+                {
+                    return if ch == '+' {
+                        Some(l + r)
+                    } else if l >= r {
+                        Some(l - r)
+                    } else {
+                        None
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Multiplication and division (higher precedence)
+    depth = 0;
+    for i in (0..len).rev() {
+        let ch = chars[i];
+        match ch {
+            ')' => depth += 1,
+            '(' => depth -= 1,
+            '*' | '/' if depth == 0 && i > 0 => {
+                let left: String = chars[..i].iter().collect();
+                let right: String = chars[i + 1..].iter().collect();
+
+                if let (Some(l), Some(r)) =
+                    (eval_expr_recursive(&left), eval_expr_recursive(&right))
+                {
+                    return if ch == '*' {
+                        Some(l * r)
+                    } else if r > 0 {
+                        Some(l / r)
+                    } else {
+                        None
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Handle parentheses
+    if expr.starts_with('(') && expr.ends_with(')') {
+        return eval_expr_recursive(&expr[1..expr.len() - 1]);
+    }
+
+    None
+}

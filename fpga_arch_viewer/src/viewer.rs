@@ -4,8 +4,8 @@ use std::io::{BufRead, BufReader};
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
-use crate::grid_view::GridView;
 use crate::complex_block_view::ComplexBlockView;
+use crate::grid_view::GridView;
 use crate::settings;
 use crate::summary_view::SummaryView;
 
@@ -50,13 +50,12 @@ pub struct FpgaViewer {
     pub architecture: Option<FPGAArch>,
     viewer_ctx: ViewerContext,
 
-    summary_view: SummaryView,    
+    summary_view: SummaryView,
     grid_view: GridView,
     complex_block_view: ComplexBlockView,
 
     view_mode: ViewMode,
     next_view_mode: ViewMode,
-
 }
 
 fn get_file_line(file_path: &std::path::Path, line_num: u64) -> Option<String> {
@@ -85,97 +84,121 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
         FPGAArchParseError::MissingRequiredAttribute(attr, pos) => {
             let mut msg = format!(
                 "Missing required attribute '{}' at line {}, column {}",
-                attr, pos.row + 1, pos.column + 1
+                attr,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::InvalidTag(tag, pos) => {
             let mut msg = format!(
                 "Invalid or unexpected tag '{}' at line {}, column {}",
-                tag, pos.row + 1, pos.column + 1
+                tag,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::XMLParseError(msg_text, pos) => {
             let mut msg = format!(
                 "XML parsing error at line {}, column {}:\n{}",
-                pos.row + 1, pos.column + 1, msg_text
+                pos.row + 1,
+                pos.column + 1,
+                msg_text
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::UnknownAttribute(attr, pos) => {
             let mut msg = format!(
                 "Unknown attribute '{}' at line {}, column {}",
-                attr, pos.row + 1, pos.column + 1
+                attr,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::DuplicateTag(tag, pos) => {
             let mut msg = format!(
                 "Duplicate tag '{}' at line {}, column {}",
-                tag, pos.row + 1, pos.column + 1
+                tag,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::DuplicateAttribute(attr, pos) => {
             let mut msg = format!(
                 "Duplicate attribute '{}' at line {}, column {}",
-                attr, pos.row + 1, pos.column + 1
+                attr,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::UnexpectedEndTag(tag, pos) => {
             let mut msg = format!(
                 "Unexpected end tag '</{}>' at line {}, column {}",
-                tag, pos.row + 1, pos.column + 1
+                tag,
+                pos.row + 1,
+                pos.column + 1
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::AttributeParseError(msg_text, pos) => {
             let mut msg = format!(
                 "Failed to parse attribute at line {}, column {}:\n{}",
-                pos.row + 1, pos.column + 1, msg_text
+                pos.row + 1,
+                pos.column + 1,
+                msg_text
             );
             if let Some(path) = file_path
-                && let Some(line) = get_file_line(path, pos.row + 1) {
-                    msg.push_str("\n\n");
-                    msg.push_str(&format_context_line(&line, pos.column + 1));
-                }
+                && let Some(line) = get_file_line(path, pos.row + 1)
+            {
+                msg.push_str("\n\n");
+                msg.push_str(&format_context_line(&line, pos.column + 1));
+            }
             msg
         }
         FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
@@ -210,7 +233,8 @@ impl FpgaViewer {
     }
 
     fn loaded_arch_filename(&self) -> Option<String> {
-        self.viewer_ctx.loaded_file_path
+        self.viewer_ctx
+            .loaded_file_path
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().to_string())
@@ -242,7 +266,11 @@ impl FpgaViewer {
                 self.architecture = None;
                 self.viewer_ctx.show_error = true;
                 self.viewer_ctx.error_title = "Parse Error".to_owned();
-                self.viewer_ctx.error_message = format!("Error loading architecture:\n{:?}\n\n{}", file_path, format_parse_error(&e, Some(&file_path)));
+                self.viewer_ctx.error_message = format!(
+                    "Error loading architecture:\n{:?}\n\n{}",
+                    file_path,
+                    format_parse_error(&e, Some(&file_path))
+                );
             }
         }
 
@@ -312,11 +340,14 @@ impl FpgaViewer {
                         )
                     });
                     if reload_button.inner.clicked()
-                        && let Some(path) = self.viewer_ctx.loaded_file_path.clone() {
-                            self.load_architecture_file(path);
-                        }
+                        && let Some(path) = self.viewer_ctx.loaded_file_path.clone()
+                    {
+                        self.load_architecture_file(path);
+                    }
                     if reload_button.inner.hovered() {
-                        reload_button.inner.on_hover_text("Reload architecture file");
+                        reload_button
+                            .inner
+                            .on_hover_text("Reload architecture file");
                     }
                     ui.add_space(10.0);
 
@@ -410,28 +441,45 @@ impl FpgaViewer {
         match self.viewer_ctx.current_page {
             Page::Main => {
                 self.render_main_page(ctx);
-            },
+            }
             Page::Settings => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    settings::render_settings_page(ui, &self.viewer_ctx.block_styles, &mut self.viewer_ctx.dark_mode);
+                    settings::render_settings_page(
+                        ui,
+                        &self.viewer_ctx.block_styles,
+                        &mut self.viewer_ctx.dark_mode,
+                    );
                 });
-            },
+            }
         }
     }
 
     fn render_main_page(&mut self, ctx: &egui::Context) {
         match &self.architecture {
             Some(arch) => match self.view_mode {
-                ViewMode::Summary => self.summary_view.render(arch, &mut self.next_view_mode, ctx),
-                ViewMode::Grid => self.grid_view.render(arch, &mut self.viewer_ctx, &mut self.complex_block_view.complex_block_view_state, &mut self.next_view_mode, ctx),
-                ViewMode::ComplexBlock => self.complex_block_view.render(arch, &mut self.next_view_mode, self.viewer_ctx.dark_mode, ctx),
+                ViewMode::Summary => self
+                    .summary_view
+                    .render(arch, &mut self.next_view_mode, ctx),
+                ViewMode::Grid => self.grid_view.render(
+                    arch,
+                    &mut self.viewer_ctx,
+                    &mut self.complex_block_view.complex_block_view_state,
+                    &mut self.next_view_mode,
+                    ctx,
+                ),
+                ViewMode::ComplexBlock => self.complex_block_view.render(
+                    arch,
+                    &mut self.next_view_mode,
+                    self.viewer_ctx.dark_mode,
+                    ctx,
+                ),
             },
             None => {
                 // If no architecture is loaded, no view can be seen, so show a welcome message.
                 egui::CentralPanel::default().show(ctx, |ui| {
                     common_ui::render_welcome_message(ui, &self.view_mode);
                 });
-            },
+            }
         }
     }
 
@@ -449,7 +497,7 @@ impl FpgaViewer {
                     ui.label(
                         egui::RichText::new(&self.viewer_ctx.error_message)
                             .color(egui::Color32::LIGHT_RED)
-                            .monospace()
+                            .monospace(),
                     );
                     ui.add_space(20.0);
                     ui.vertical_centered(|ui| {
@@ -507,7 +555,9 @@ impl eframe::App for FpgaViewer {
             self.viewer_ctx.window_title = desired_title;
         }
 
-        self.viewer_ctx.block_styles.update_colors(self.viewer_ctx.dark_mode);
+        self.viewer_ctx
+            .block_styles
+            .update_colors(self.viewer_ctx.dark_mode);
 
         // Render UI panels and windows
         self.render_menu_bar(ctx);
@@ -531,10 +581,14 @@ impl eframe::App for FpgaViewer {
             self.viewer_ctx.skip_nav_history_update = false;
 
             // Run code on the close of a view.
-            if self.view_mode == ViewMode::ComplexBlock { self.complex_block_view.on_view_close() }
+            if self.view_mode == ViewMode::ComplexBlock {
+                self.complex_block_view.on_view_close()
+            }
 
             // Run code on the open of a view.
-            if self.next_view_mode == ViewMode::ComplexBlock { self.complex_block_view.on_view_open(&self.architecture) }
+            if self.next_view_mode == ViewMode::ComplexBlock {
+                self.complex_block_view.on_view_open(&self.architecture)
+            }
 
             self.view_mode = self.next_view_mode;
         }

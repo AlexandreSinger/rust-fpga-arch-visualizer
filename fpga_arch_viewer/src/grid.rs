@@ -340,11 +340,10 @@ impl DeviceGrid {
                 if let (Some(x), Some(y)) = (
                     self.eval_expr(&single.x_expr, tile_width, tile_height),
                     self.eval_expr(&single.y_expr, tile_width, tile_height),
-                ) {
-                    if y < self.height && x < self.width {
+                )
+                    && y < self.height && x < self.width {
                         self.place_tile(y, x, &single.pb_type);
                     }
-                }
             }
             GridLocation::Col(col_loc) => {
                 let (tile_width, tile_height) = self.get_tile_size(&col_loc.pb_type);
@@ -416,10 +415,19 @@ impl DeviceGrid {
         let expr = expr.replace('W', &self.width.to_string());
         let expr = expr.replace('H', &self.height.to_string());
         let expr = expr.replace(' ', "");
-        self.eval_expr_recursive(&expr)
+        eval_expr_recursive(&expr)
     }
 
-    fn eval_expr_recursive(&self, expr: &str) -> Option<usize> {
+    pub fn get(&self, row: usize, col: usize) -> Option<&GridCell> {
+        if row < self.height && col < self.width {
+            Some(&self.cells[row][col])
+        } else {
+            None
+        }
+    }
+}
+
+fn eval_expr_recursive(expr: &str) -> Option<usize> {
         let expr = expr.trim();
 
         if let Ok(val) = expr.parse::<i32>() {
@@ -440,7 +448,7 @@ impl DeviceGrid {
                     let left: String = chars[..i].iter().collect();
                     let right: String = chars[i + 1..].iter().collect();
 
-                    if let (Some(l), Some(r)) = (self.eval_expr_recursive(&left), self.eval_expr_recursive(&right)) {
+                    if let (Some(l), Some(r)) = (eval_expr_recursive(&left), eval_expr_recursive(&right)) {
                         return if ch == '+' {
                             Some(l + r)
                         } else if l >= r {
@@ -465,7 +473,7 @@ impl DeviceGrid {
                     let left: String = chars[..i].iter().collect();
                     let right: String = chars[i + 1..].iter().collect();
 
-                    if let (Some(l), Some(r)) = (self.eval_expr_recursive(&left), self.eval_expr_recursive(&right)) {
+                    if let (Some(l), Some(r)) = (eval_expr_recursive(&left), eval_expr_recursive(&right)) {
                         return if ch == '*' {
                             Some(l * r)
                         } else if r > 0 {
@@ -481,17 +489,8 @@ impl DeviceGrid {
 
         // Handle parentheses
         if expr.starts_with('(') && expr.ends_with(')') {
-            return self.eval_expr_recursive(&expr[1..expr.len() - 1]);
+            return eval_expr_recursive(&expr[1..expr.len() - 1]);
         }
 
         None
     }
-
-    pub fn get(&self, row: usize, col: usize) -> Option<&GridCell> {
-        if row < self.height && col < self.width {
-            Some(&self.cells[row][col])
-        } else {
-            None
-        }
-    }
-}

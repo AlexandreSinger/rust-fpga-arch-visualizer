@@ -1,5 +1,3 @@
-use egui;
-use egui_extras;
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
@@ -33,12 +31,12 @@ impl GridState {
 
     /// Zoom in by multiplying the zoom factor
     pub fn zoom_in(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor * zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
+        self.zoom_factor = (self.zoom_factor * zoom_scale).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
     }
 
     /// Zoom out by dividing the zoom factor
     pub fn zoom_out(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor / zoom_scale).min(Self::MAX_ZOOM).max(Self::MIN_ZOOM);
+        self.zoom_factor = (self.zoom_factor / zoom_scale).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
     }
 
     /// Reset zoom to 1.0
@@ -47,6 +45,7 @@ impl GridState {
     }
 }
 
+#[derive(Default)]
 pub struct GridView {
     // Device grid and grid view state
     pub device_grid: Option<DeviceGrid>,
@@ -56,15 +55,6 @@ pub struct GridView {
     pub tile_colors: HashMap<String, egui::Color32>,
 }
 
-impl Default for GridView {
-    fn default() -> Self {
-        Self {
-            grid_state: GridState::default(),
-            device_grid: None,
-            tile_colors: HashMap::new(),
-        }
-    }
-}
 
 impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
@@ -306,15 +296,12 @@ fn render_grid_controls_panel(
                     if ui
                         .add(egui::TextEdit::singleline(&mut width_text).desired_width(60.0))
                         .changed()
-                    {
-                        if let Ok(new_width) = width_text.parse::<usize>() {
-                            if new_width >= 1 && new_width <= 100 && new_width != state.grid_width {
+                        && let Ok(new_width) = width_text.parse::<usize>()
+                            && (1..=100).contains(&new_width) && new_width != state.grid_width {
                                 state.grid_width = new_width;
                                 update_grid_height_from_width(state);
                                 grid_changed = true;
                             }
-                        }
-                    }
                 });
             });
 
@@ -350,18 +337,14 @@ fn render_grid_controls_panel(
                     if ui
                         .add(egui::TextEdit::singleline(&mut height_text).desired_width(60.0))
                         .changed()
-                    {
-                        if let Ok(new_height) = height_text.parse::<usize>() {
-                            if new_height >= 1
-                                && new_height <= 100
+                        && let Ok(new_height) = height_text.parse::<usize>()
+                            && (1..=100).contains(&new_height)
                                 && new_height != state.grid_height
                             {
                                 state.grid_height = new_height;
                                 update_grid_width_from_height(state);
                                 grid_changed = true;
                             }
-                        }
-                    }
                 });
             });
 

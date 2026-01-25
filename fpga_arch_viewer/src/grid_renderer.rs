@@ -104,12 +104,9 @@ pub fn render_grid(
             if let Some(hover_pos) = response.hover_pos() {
                 let mut col = ((hover_pos.x - offset.x) / cell_size).floor() as usize;
                 let mut row = grid.height.saturating_sub(1).saturating_sub(((hover_pos.y - offset.y) / cell_size).floor() as usize);
-                match grid.get(row, col) {
-                    Some(GridCell::BlockOccupied { pb_type: _, anchor_row, anchor_col }) => {
-                        col = *anchor_col;
-                        row = *anchor_row;
-                    },
-                    _ => {},
+                if let Some(GridCell::BlockOccupied { pb_type: _, anchor_row, anchor_col }) = grid.get(row, col) {
+                    col = *anchor_col;
+                    row = *anchor_row;
                 }
 
                 if let Some(GridCell::BlockAnchor { pb_type, width, height }) = grid.get(row, col) {

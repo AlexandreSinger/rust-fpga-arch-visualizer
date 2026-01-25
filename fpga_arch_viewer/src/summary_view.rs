@@ -1,17 +1,11 @@
-use egui;
 use crate::viewer::ViewMode;
 use fpga_arch_parser::FPGAArch;
 
+#[derive(Default)]
 pub struct SummaryView {
 
 }
 
-impl Default for SummaryView {
-    fn default() -> Self {
-        Self {
-        }
-    }
-}
 
 impl SummaryView {
 

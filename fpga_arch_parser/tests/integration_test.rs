@@ -19,6 +19,7 @@ use fpga_arch_parser::{
 };
 
 #[test]
+#[allow(clippy::excessive_precision)]
 fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k4_N4_90nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
@@ -87,15 +88,15 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     assert_eq!(switch1.c_in, 0.0);
     assert_eq!(switch1.c_out, 0.0);
     assert_eq!(switch1.t_del, Some(6.244e-11));
-    assert_eq!(switch1.mux_trans_size, Some(1.835460));
+    assert_eq!(switch1.mux_trans_size, Some(1.835_46));
     match switch1.buf_size {
-        SwitchBufSize::Val(v) => assert_eq!(v, 10.498600),
+        SwitchBufSize::Val(v) => assert_eq!(v, 10.498_6),
         SwitchBufSize::Auto => panic!("switch1 buf size expected to be Val"),
     };
     let switch2 = &res.switch_list[1];
     assert!(matches!(switch2.sw_type, SwitchType::Mux));
     assert_eq!(switch2.name, "ipin_cblock");
-    assert_eq!(switch2.resistance, 1055.232544);
+    assert_eq!(switch2.resistance, 1_055.232_544);
     assert_eq!(switch2.c_in, 0.0);
     assert_eq!(switch2.c_out, 0.0);
     assert_eq!(switch2.t_del, Some(8.045e-11));

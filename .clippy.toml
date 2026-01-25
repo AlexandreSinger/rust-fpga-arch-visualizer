@@ -1,0 +1,2 @@
+# Set the maximum number of arguments to 12
+too-many-arguments-threshold = 12

@@ -1,4 +1,3 @@
-use egui;
 use crate::viewer::ViewMode;
 
 /// Renders a welcome message when no architecture is loaded

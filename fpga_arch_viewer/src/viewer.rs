@@ -87,12 +87,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Missing required attribute '{}' at line {}, column {}",
                 attr, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::InvalidTag(tag, pos) => {
@@ -100,12 +99,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Invalid or unexpected tag '{}' at line {}, column {}",
                 tag, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::XMLParseError(msg_text, pos) => {
@@ -113,12 +111,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "XML parsing error at line {}, column {}:\n{}",
                 pos.row + 1, pos.column + 1, msg_text
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::UnknownAttribute(attr, pos) => {
@@ -126,12 +123,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Unknown attribute '{}' at line {}, column {}",
                 attr, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::DuplicateTag(tag, pos) => {
@@ -139,12 +135,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Duplicate tag '{}' at line {}, column {}",
                 tag, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::DuplicateAttribute(attr, pos) => {
@@ -152,12 +147,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Duplicate attribute '{}' at line {}, column {}",
                 attr, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::UnexpectedEndTag(tag, pos) => {
@@ -165,12 +159,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Unexpected end tag '</{}>' at line {}, column {}",
                 tag, pos.row + 1, pos.column + 1
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::AttributeParseError(msg_text, pos) => {
@@ -178,12 +171,11 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
                 "Failed to parse attribute at line {}, column {}:\n{}",
                 pos.row + 1, pos.column + 1, msg_text
             );
-            if let Some(path) = file_path {
-                if let Some(line) = get_file_line(path, pos.row + 1) {
+            if let Some(path) = file_path
+                && let Some(line) = get_file_line(path, pos.row + 1) {
                     msg.push_str("\n\n");
                     msg.push_str(&format_context_line(&line, pos.column + 1));
                 }
-            }
             msg
         }
         FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
@@ -276,12 +268,11 @@ impl FpgaViewer {
         }
 
         // Navigate back in view mode history
-        if !self.viewer_ctx.navigation_history.is_empty() {
-            if let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
+        if !self.viewer_ctx.navigation_history.is_empty()
+            && let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
                 self.next_view_mode = previous_mode;
                 self.viewer_ctx.skip_nav_history_update = true;
             }
-        }
     }
 
     fn open_settings(&mut self) {
@@ -321,11 +312,10 @@ impl FpgaViewer {
                                 .corner_radius(BUTTON_SIZE / 2.0),
                         )
                     });
-                    if reload_button.inner.clicked() {
-                        if let Some(path) = self.viewer_ctx.loaded_file_path.clone() {
+                    if reload_button.inner.clicked()
+                        && let Some(path) = self.viewer_ctx.loaded_file_path.clone() {
                             self.load_architecture_file(path);
                         }
-                    }
                     if reload_button.inner.hovered() {
                         reload_button.inner.on_hover_text("Reload architecture file");
                     }
@@ -542,16 +532,10 @@ impl eframe::App for FpgaViewer {
             self.viewer_ctx.skip_nav_history_update = false;
 
             // Run code on the close of a view.
-            match self.view_mode {
-                ViewMode::ComplexBlock => self.complex_block_view.on_view_close(),
-                _ => {},
-            }
+            if self.view_mode == ViewMode::ComplexBlock { self.complex_block_view.on_view_close() }
 
             // Run code on the open of a view.
-            match self.next_view_mode {
-                ViewMode::ComplexBlock => self.complex_block_view.on_view_open(&self.architecture),
-                _ => {},
-            }
+            if self.next_view_mode == ViewMode::ComplexBlock { self.complex_block_view.on_view_open(&self.architecture) }
 
             self.view_mode = self.next_view_mode;
         }

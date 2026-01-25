@@ -1,4 +1,3 @@
-use egui;
 use fpga_arch_parser::FPGAArch;
 
 use crate::{common_ui, intra_tile::{self, IntraTileState}, viewer::ViewMode};
@@ -89,25 +88,21 @@ fn render_complex_block_view(
                 self.complex_block_view_state.draw_intra_interconnects,
                 dark_mode,
             );
-        } else {
-            if common_ui::render_centered_message(
-                ui,
-                "Tile not found",
-                &format!("Could not find tile: {}", tile_name),
-                Some("Back to Grid View"),
-            ) {
-                *next_view_mode = ViewMode::Grid;
-            }
-        }
-    } else {
-        if common_ui::render_centered_message(
+        } else if common_ui::render_centered_message(
             ui,
-            "No tile selected",
-            "Please select a tile from the dropdown or click on a tile in the grid view.",
+            "Tile not found",
+            &format!("Could not find tile: {}", tile_name),
             Some("Back to Grid View"),
         ) {
             *next_view_mode = ViewMode::Grid;
         }
+    } else if common_ui::render_centered_message(
+        ui,
+        "No tile selected",
+        "Please select a tile from the dropdown or click on a tile in the grid view.",
+        Some("Back to Grid View"),
+    ) {
+        *next_view_mode = ViewMode::Grid;
     }
 }
 
@@ -132,12 +127,12 @@ fn render_side_panel(
 
 fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
     if self.complex_block_view_state.all_blocks_expanded {
-        if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name {
-            if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                if self.complex_block_view_state.selected_sub_tile_index < tile.sub_tiles.len() {
+        if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name
+            && let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name)
+                && self.complex_block_view_state.selected_sub_tile_index < tile.sub_tiles.len() {
                     let sub_tile = &tile.sub_tiles[self.complex_block_view_state.selected_sub_tile_index];
-                    if let Some(site) = sub_tile.equivalent_sites.first() {
-                        if let Some(root_pb) = arch
+                    if let Some(site) = sub_tile.equivalent_sites.first()
+                        && let Some(root_pb) = arch
                             .complex_block_list
                             .iter()
                             .find(|pb| pb.name == site.pb_type)
@@ -148,10 +143,7 @@ fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
                                 &root_pb.name,
                             );
                         }
-                    }
                 }
-            }
-        }
     } else {
         intra_tile::collapse_all_blocks(&mut self.complex_block_view_state.intra_tile_state);
     }

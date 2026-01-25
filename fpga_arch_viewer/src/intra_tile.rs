@@ -82,9 +82,9 @@ fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::
         .collect();
 
     // Scale a few key spacing values so the widget chrome scales too.
-    style.spacing.item_spacing = style.spacing.item_spacing * zoom;
-    style.spacing.button_padding = style.spacing.button_padding * zoom;
-    style.spacing.interact_size = style.spacing.interact_size * zoom;
+    style.spacing.item_spacing *= zoom;
+    style.spacing.button_padding *= zoom;
+    style.spacing.interact_size *= zoom;
     style.spacing.icon_width *= zoom;
     style.spacing.icon_width_inner *= zoom;
     style.spacing.icon_spacing *= zoom;
@@ -102,7 +102,7 @@ fn render_hierarchy_tree_panel(
     available_height: f32,
 ) -> Option<f32> {
     // Initialize hierarchy tree height
-    let default_tree_height = (available_height * 0.3).min(400.0).max(100.0);
+    let default_tree_height = (available_height * 0.3).clamp(100.0, 400.0);
     let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
 
     let min_tree_height = 50.0;
@@ -637,7 +637,7 @@ fn measure_pb_type(
     let is_clock_complete = pb_type
         .interconnects
         .iter()
-        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
+        .any(|i| is_clock_complete_interconnect(i, pb_type, children));
 
     let mux_count = get_interconnects_for_mode(pb_type, mode_index)
         .iter()
@@ -871,11 +871,10 @@ fn resolve_port_pos(
     children_ports: &HashMap<String, egui::Pos2>,
 ) -> Option<egui::Pos2> {
     // clb.I -> I
-    if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name)) {
-        if let Some(pos) = my_ports.get(stripped) {
+    if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name))
+        && let Some(pos) = my_ports.get(stripped) {
             return Some(*pos);
         }
-    }
 
     // I
     if let Some(pos) = my_ports.get(port_ref) {
@@ -972,8 +971,8 @@ fn expand_port_list(port_list_str: &str) -> Vec<String> {
                     let prefix = &part[..abs_open];
                     let suffix = &part[abs_close + 1..];
 
-                    if let Some((msb_str, lsb_str)) = content.split_once(':') {
-                        if let (Ok(msb), Ok(lsb)) = (msb_str.parse::<i32>(), lsb_str.parse::<i32>())
+                    if let Some((msb_str, lsb_str)) = content.split_once(':')
+                        && let (Ok(msb), Ok(lsb)) = (msb_str.parse::<i32>(), lsb_str.parse::<i32>())
                         {
                             let step = if msb >= lsb { -1 } else { 1 };
                             let mut current = msb;
@@ -990,7 +989,6 @@ fn expand_port_list(port_list_str: &str) -> Vec<String> {
                             expanded = true;
                             break;
                         }
-                    }
                 }
                 start_search = abs_close + 1;
             } else {
@@ -1040,7 +1038,7 @@ fn draw_pb_type(
     let _is_clock_complete = pb_type
         .interconnects
         .iter()
-        .any(|i| is_clock_complete_interconnect(i, pb_type, &children));
+        .any(|i| is_clock_complete_interconnect(i, pb_type, children));
     let is_expanded = state.expanded_blocks.contains(instance_path);
 
     // Draw header with expand/collapse indicator
@@ -1519,11 +1517,11 @@ fn draw_clock_wire_segment(
     channel_y: f32,
 ) {
     let _ = parent_rect;
-    let mut points = Vec::new();
-    points.push(start);
-    points.push(egui::pos2(start.x, channel_y));
-    points.push(egui::pos2(end.x, channel_y));
-    points.push(end);
+    let points = vec![
+        start,
+        egui::pos2(start.x, channel_y),
+        egui::pos2(end.x, channel_y),
+        end];
 
     // Minimal hover highlight reuse from draw_wire_segment
     if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
@@ -1631,7 +1629,7 @@ fn draw_complete_interconnect(
         if let Some(pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
             // Extract prefix: everything before first '.' or '['
             let prefix = src
-                .split(|c| c == '.' || c == '[')
+                .split(['.', '['])
                 .next()
                 .unwrap_or(src)
                 .to_string();
@@ -1744,10 +1742,10 @@ fn draw_complete_interconnect(
             sink_rect_max = sink_max_x;
         }
 
-        let center = ((sink_rect_max + parent_rect.max.x) * 0.5)
+        
+        ((sink_rect_max + parent_rect.max.x) * 0.5)
             .max(parent_rect.min.x + width * 0.5 + 6.0 * zoom)
-            .min(parent_rect.max.x - width * 0.5 - 6.0 * zoom);
-        center
+            .min(parent_rect.max.x - width * 0.5 - 6.0 * zoom)
     } else {
         // Position the block based on the actual gap between sources and sinks.
         let gap = sink_min_x - source_max_x;

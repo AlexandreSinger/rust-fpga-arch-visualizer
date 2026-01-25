@@ -2,8 +2,6 @@
 //!
 //! A Rust-based visualizer for VTR FPGA architecture description files.
 
-use eframe::egui;
-
 mod block_style;
 mod color_scheme;
 mod common_ui;
@@ -18,17 +16,26 @@ mod settings;
 mod summary_view;
 mod viewer;
 
-use viewer::FpgaViewer;
-
 fn main() -> Result<(), eframe::Error> {
+    // Load the icon data.
+    let icon_data =
+        eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..]);
+    // If the icon fails to load for any reason, use the default icon for the system.
+    let icon_data = match icon_data {
+        Ok(icon) => icon,
+        Err(_) => egui::IconData::default(),
+    };
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_icon(icon_data),
         ..Default::default()
     };
 
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|_cc| Ok(Box::new(FpgaViewer::new()))),
+        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new()))),
     )
 }

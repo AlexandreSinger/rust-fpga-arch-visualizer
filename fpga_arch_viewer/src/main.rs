@@ -7,13 +7,13 @@ use eframe::egui;
 mod block_style;
 mod color_scheme;
 mod common_ui;
+mod complex_block_view;
 mod grid;
 mod grid_renderer;
+mod grid_view;
 mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
-mod grid_view;
-mod complex_block_view;
 mod settings;
 mod summary_view;
 mod viewer;
@@ -29,8 +29,6 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|_cc| {
-            Ok(Box::new(FpgaViewer::new()))
-        }),
+        Box::new(|_cc| Ok(Box::new(FpgaViewer::new()))),
     )
 }

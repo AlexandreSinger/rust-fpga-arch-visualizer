@@ -1,21 +1,9 @@
-
 use std::path::{PathBuf, absolute};
 
 use fpga_arch_parser::{
-    FPGAArchParseError,
-    Layout,
-    GridLocation,
-    Port,
-    SubTileIOFC,
+    ChanWDist, CustomSwitchBlockLocation, CustomSwitchBlockType, FPGAArchParseError, GridLocation,
+    Layout, Port, SBType, SegmentType, SubTileIOFC, SubTilePinLocations, SwitchBufSize, SwitchType,
     TileSitePinMapping,
-    SubTilePinLocations,
-    SBType,
-    ChanWDist,
-    SegmentType,
-    SwitchType,
-    SwitchBufSize,
-    CustomSwitchBlockType,
-    CustomSwitchBlockLocation,
 };
 
 #[test]
@@ -31,50 +19,92 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 2);
-    assert_eq!(res.tiles[0].name,"io");
-    assert_eq!(res.tiles[1].name,"clb");
+    assert_eq!(res.tiles[0].name, "io");
+    assert_eq!(res.tiles[1].name, "clb");
     assert_eq!(res.tiles[0].sub_tiles.len(), 1);
     assert_eq!(res.tiles[0].sub_tiles[0].name, "io");
     assert_eq!(res.tiles[0].sub_tiles[0].capacity, 3);
     assert_eq!(res.tiles[0].sub_tiles[0].equivalent_sites.len(), 1);
     assert_eq!(res.tiles[0].sub_tiles[0].equivalent_sites[0].pb_type, "io");
-    assert!(matches!(res.tiles[0].sub_tiles[0].equivalent_sites[0].pin_mapping, TileSitePinMapping::Direct));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].equivalent_sites[0].pin_mapping,
+        TileSitePinMapping::Direct
+    ));
     assert_eq!(res.tiles[0].sub_tiles[0].ports.len(), 3);
-    assert!(matches!(res.tiles[0].sub_tiles[0].ports[0], Port::Input { .. }));
-    assert!(matches!(res.tiles[0].sub_tiles[0].ports[1], Port::Output { .. }));
-    assert!(matches!(res.tiles[0].sub_tiles[0].ports[2], Port::Clock { .. }));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].ports[0],
+        Port::Input { .. }
+    ));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].ports[1],
+        Port::Output { .. }
+    ));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].ports[2],
+        Port::Clock { .. }
+    ));
     // TODO: Add stronger tests for ports.
-    assert!(matches!(res.tiles[0].sub_tiles[0].fc.in_fc, SubTileIOFC::Frac { .. }));
-    assert!(matches!(res.tiles[0].sub_tiles[0].fc.out_fc, SubTileIOFC::Frac { .. }));
-    assert!(matches!(res.tiles[0].sub_tiles[0].pin_locations, SubTilePinLocations::Custom { .. }));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].fc.in_fc,
+        SubTileIOFC::Frac { .. }
+    ));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].fc.out_fc,
+        SubTileIOFC::Frac { .. }
+    ));
+    assert!(matches!(
+        res.tiles[0].sub_tiles[0].pin_locations,
+        SubTilePinLocations::Custom { .. }
+    ));
     assert_eq!(res.tiles[1].sub_tiles.len(), 1);
     assert_eq!(res.tiles[1].sub_tiles[0].name, "clb");
     assert_eq!(res.tiles[1].sub_tiles[0].capacity, 1);
     assert_eq!(res.tiles[1].sub_tiles[0].equivalent_sites.len(), 1);
     assert_eq!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pb_type, "clb");
-    assert!(matches!(res.tiles[1].sub_tiles[0].equivalent_sites[0].pin_mapping, TileSitePinMapping::Direct));
-    assert!(matches!(res.tiles[1].sub_tiles[0].pin_locations, SubTilePinLocations::Spread));
+    assert!(matches!(
+        res.tiles[1].sub_tiles[0].equivalent_sites[0].pin_mapping,
+        TileSitePinMapping::Direct
+    ));
+    assert!(matches!(
+        res.tiles[1].sub_tiles[0].pin_locations,
+        SubTilePinLocations::Spread
+    ));
 
     // Check layouts.
     assert_eq!(res.layouts.len(), 1);
     assert!(matches!(res.layouts[0], Layout::AutoLayout { .. }));
     match &res.layouts[0] {
-        Layout::AutoLayout( auto_layout ) => {
+        Layout::AutoLayout(auto_layout) => {
             assert_eq!(auto_layout.aspect_ratio, 1.0);
             assert_eq!(auto_layout.grid_locations.len(), 3);
-            assert!(matches!(auto_layout.grid_locations[0], GridLocation::Perimeter { .. }));
-            assert!(matches!(auto_layout.grid_locations[1], GridLocation::Corners { .. }));
-            assert!(matches!(auto_layout.grid_locations[2], GridLocation::Fill { .. }));
+            assert!(matches!(
+                auto_layout.grid_locations[0],
+                GridLocation::Perimeter { .. }
+            ));
+            assert!(matches!(
+                auto_layout.grid_locations[1],
+                GridLocation::Corners { .. }
+            ));
+            assert!(matches!(
+                auto_layout.grid_locations[2],
+                GridLocation::Fill { .. }
+            ));
             // TODO: Check the priority and the pb_types are correct.
-        },
-        _ => panic!("Should never hit this.")
+        }
+        _ => panic!("Should never hit this."),
     }
 
     // Check device.
     assert_eq!(res.device.sizing.r_min_w_nmos, 4_220.93);
     assert_eq!(res.device.sizing.r_min_w_pmos, 11_207.6);
-    assert!(matches!(res.device.chan_width_distr.x_distr, ChanWDist::Uniform { .. }));
-    assert!(matches!(res.device.chan_width_distr.y_distr, ChanWDist::Uniform { .. }));
+    assert!(matches!(
+        res.device.chan_width_distr.x_distr,
+        ChanWDist::Uniform { .. }
+    ));
+    assert!(matches!(
+        res.device.chan_width_distr.y_distr,
+        ChanWDist::Uniform { .. }
+    ));
     assert!(matches!(res.device.switch_block.sb_type, SBType::Wilton));
     assert_eq!(res.device.switch_block.sb_fs, Some(3));
     assert_eq!(res.device.connection_block.input_switch_name, "ipin_cblock");
@@ -107,7 +137,10 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     assert_eq!(res.segment_list.len(), 1);
     assert_eq!(res.segment_list[0].freq, 1.0);
     assert_eq!(res.segment_list[0].length, 1);
-    assert!(matches!(res.segment_list[0].segment_type, SegmentType::Unidir));
+    assert!(matches!(
+        res.segment_list[0].segment_type,
+        SegmentType::Unidir
+    ));
     assert_eq!(res.segment_list[0].r_metal, 0.0);
     assert_eq!(res.segment_list[0].c_metal, 0.0);
 
@@ -310,7 +343,10 @@ fn test_z1000() -> Result<(), FPGAArchParseError> {
     let custom_sb0 = &res.custom_switch_blocks[0];
     assert_eq!(custom_sb0.name, "custom_switch_block_0_0");
     assert!(matches!(custom_sb0.sb_type, CustomSwitchBlockType::Unidir));
-    assert!(matches!(custom_sb0.switchblock_location, CustomSwitchBlockLocation::XYSpecified { x: 0, y: 0}));
+    assert!(matches!(
+        custom_sb0.switchblock_location,
+        CustomSwitchBlockLocation::XYSpecified { x: 0, y: 0 }
+    ));
     assert_eq!(custom_sb0.switch_funcs.len(), 12);
 
     Ok(())

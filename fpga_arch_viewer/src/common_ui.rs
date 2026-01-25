@@ -1,13 +1,13 @@
 use crate::viewer::ViewMode;
 
 /// Renders a welcome message when no architecture is loaded
-pub fn render_welcome_message(
-    ui: &mut egui::Ui,
-    view_mode: &ViewMode,
-) {
+pub fn render_welcome_message(ui: &mut egui::Ui, view_mode: &ViewMode) {
     let available_rect = ui.available_rect_before_wrap();
     ui.scope_builder(
-        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(available_rect.center(), egui::vec2(500.0, 200.0))),
+        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(
+            available_rect.center(),
+            egui::vec2(500.0, 200.0),
+        )),
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("FPGA Architecture Visualizer");
@@ -32,7 +32,10 @@ pub fn render_centered_message(
     let available_rect = ui.available_rect_before_wrap();
     let mut button_clicked = false;
     ui.scope_builder(
-        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(available_rect.center(), egui::vec2(400.0, 150.0))),
+        egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(
+            available_rect.center(),
+            egui::vec2(400.0, 150.0),
+        )),
         |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading(heading);

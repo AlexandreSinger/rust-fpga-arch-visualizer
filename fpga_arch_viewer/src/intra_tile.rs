@@ -114,9 +114,7 @@ fn render_hierarchy_tree_panel(
         available_rect.min,
         egui::vec2(available_rect.width(), tree_height),
     );
-    let _tree_response = ui.scope_builder(
-        egui::UiBuilder::new().max_rect(tree_rect),
-        |ui| {
+    let _tree_response = ui.scope_builder(egui::UiBuilder::new().max_rect(tree_rect), |ui| {
         ui.set_width(available_rect.width());
         egui::CollapsingHeader::new("Hierarchy Tree")
             .default_open(true)
@@ -135,11 +133,10 @@ fn render_hierarchy_tree_panel(
         egui::pos2(available_rect.min.x, separator_y - 2.0),
         egui::vec2(available_rect.width(), 4.0),
     );
-    let separator_response = ui.scope_builder(
-        egui::UiBuilder::new().max_rect(separator_rect),
-        |ui| {
-        ui.allocate_response(separator_rect.size(), egui::Sense::drag())
-    });
+    let separator_response = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(separator_rect), |ui| {
+            ui.allocate_response(separator_rect.size(), egui::Sense::drag())
+        });
 
     ui.painter().rect_filled(
         separator_rect,
@@ -314,9 +311,7 @@ pub fn render_intra_tile_view(
             egui::pos2(available_rect.min.x, separator_y),
             available_rect.max,
         );
-        ui.scope_builder(
-            egui::UiBuilder::new().max_rect(layout_rect),
-            |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(layout_rect), |ui| {
             ui.set_width(available_rect.width());
             ui.heading("Visual Layout");
             render_visual_layout_controls(ui, state);
@@ -335,7 +330,16 @@ pub fn render_intra_tile_view(
         ui.set_width(available_rect.width());
         ui.heading("Visual Layout");
         render_visual_layout_controls(ui, state);
-        render_visual_layout_canvas(ui, arch, tile, state, sub_tile_index, expand_all, draw_interconnects, dark_mode);
+        render_visual_layout_canvas(
+            ui,
+            arch,
+            tile,
+            state,
+            sub_tile_index,
+            expand_all,
+            draw_interconnects,
+            dark_mode,
+        );
     }
 }
 
@@ -872,9 +876,10 @@ fn resolve_port_pos(
 ) -> Option<egui::Pos2> {
     // clb.I -> I
     if let Some(stripped) = port_ref.strip_prefix(&format!("{}.", current_pb_name))
-        && let Some(pos) = my_ports.get(stripped) {
-            return Some(*pos);
-        }
+        && let Some(pos) = my_ports.get(stripped)
+    {
+        return Some(*pos);
+    }
 
     // I
     if let Some(pos) = my_ports.get(port_ref) {
@@ -973,22 +978,22 @@ fn expand_port_list(port_list_str: &str) -> Vec<String> {
 
                     if let Some((msb_str, lsb_str)) = content.split_once(':')
                         && let (Ok(msb), Ok(lsb)) = (msb_str.parse::<i32>(), lsb_str.parse::<i32>())
-                        {
-                            let step = if msb >= lsb { -1 } else { 1 };
-                            let mut current = msb;
-                            let mut new_items = Vec::new();
-                            loop {
-                                new_items.push(format!("{}[{}]{}", prefix, current, suffix));
-                                if current == lsb {
-                                    break;
-                                }
-                                current += step;
+                    {
+                        let step = if msb >= lsb { -1 } else { 1 };
+                        let mut current = msb;
+                        let mut new_items = Vec::new();
+                        loop {
+                            new_items.push(format!("{}[{}]{}", prefix, current, suffix));
+                            if current == lsb {
+                                break;
                             }
-
-                            parts.splice(i..i + 1, new_items);
-                            expanded = true;
-                            break;
+                            current += step;
                         }
+
+                        parts.splice(i..i + 1, new_items);
+                        expanded = true;
+                        break;
+                    }
                 }
                 start_search = abs_close + 1;
             } else {
@@ -1047,11 +1052,10 @@ fn draw_pb_type(
 
     // Make header clickable if it has children
     if has_children {
-        let header_response = ui.scope_builder(
-            egui::UiBuilder::new().max_rect(header_rect),
-            |ui| {
-            ui.allocate_response(header_rect.size(), egui::Sense::click())
-        });
+        let header_response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(header_rect), |ui| {
+                ui.allocate_response(header_rect.size(), egui::Sense::click())
+            });
 
         if header_response.inner.clicked() {
             if is_expanded {
@@ -1521,7 +1525,8 @@ fn draw_clock_wire_segment(
         start,
         egui::pos2(start.x, channel_y),
         egui::pos2(end.x, channel_y),
-        end];
+        end,
+    ];
 
     // Minimal hover highlight reuse from draw_wire_segment
     if let Some(pointer_pos) = ui.ctx().pointer_latest_pos() {
@@ -1628,11 +1633,7 @@ fn draw_complete_interconnect(
     for src in sources {
         if let Some(pos) = resolve_port_pos(src, &current_pb.name, my_ports, children_ports) {
             // Extract prefix: everything before first '.' or '['
-            let prefix = src
-                .split(['.', '['])
-                .next()
-                .unwrap_or(src)
-                .to_string();
+            let prefix = src.split(['.', '[']).next().unwrap_or(src).to_string();
 
             match current_group.as_mut() {
                 Some((last_prefix, group)) if *last_prefix == prefix => {
@@ -1742,7 +1743,6 @@ fn draw_complete_interconnect(
             sink_rect_max = sink_max_x;
         }
 
-        
         ((sink_rect_max + parent_rect.max.x) * 0.5)
             .max(parent_rect.min.x + width * 0.5 + 6.0 * zoom)
             .min(parent_rect.max.x - width * 0.5 - 6.0 * zoom)
@@ -1786,7 +1786,13 @@ fn draw_complete_interconnect(
     let fill_color = color_scheme::theme_block_bg(dark_mode);
     let stroke = egui::Stroke::new(1.5 * zoom, stroke_color);
 
-    painter.rect(rect, egui::CornerRadius::ZERO, fill_color, stroke, egui::epaint::StrokeKind::Inside);
+    painter.rect(
+        rect,
+        egui::CornerRadius::ZERO,
+        fill_color,
+        stroke,
+        egui::epaint::StrokeKind::Inside,
+    );
     // Draw a large X across the block instead of text.
     let x_stroke = egui::Stroke::new(2.0 * zoom, stroke_color);
     painter.line_segment([rect.min, rect.max], x_stroke);
@@ -2043,7 +2049,13 @@ fn draw_interconnect_block(
         painter.add(egui::Shape::convex_polygon(trap_points, fill_color, stroke));
     } else {
         // rectangle with X
-        painter.rect(rect, egui::CornerRadius::ZERO, fill_color, stroke, egui::epaint::StrokeKind::Inside);
+        painter.rect(
+            rect,
+            egui::CornerRadius::ZERO,
+            fill_color,
+            stroke,
+            egui::epaint::StrokeKind::Inside,
+        );
         painter.line_segment([rect.min, rect.max], stroke);
         painter.line_segment(
             [

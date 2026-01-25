@@ -1,4 +1,3 @@
-
 pub struct ModelPort {
     pub name: String,
     pub is_clock: bool,
@@ -248,10 +247,7 @@ pub enum CustomSwitchBlockLocation {
     Fringe,
     Core,
     // FIXME: This is undocumented!
-    XYSpecified {
-        x: i32,
-        y: i32,
-    }
+    XYSpecified { x: i32, y: i32 },
 }
 
 pub enum CustomSwitchFuncType {

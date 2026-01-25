@@ -268,11 +268,10 @@ impl FpgaViewer {
         }
 
         // Navigate back in view mode history
-        if !self.viewer_ctx.navigation_history.is_empty()
-            && let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
-                self.next_view_mode = previous_mode;
-                self.viewer_ctx.skip_nav_history_update = true;
-            }
+        if let Some(previous_mode) = self.viewer_ctx.navigation_history.pop() {
+            self.next_view_mode = previous_mode;
+            self.viewer_ctx.skip_nav_history_update = true;
+        }
     }
 
     fn open_settings(&mut self) {

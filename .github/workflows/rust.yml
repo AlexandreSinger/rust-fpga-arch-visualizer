@@ -25,8 +25,18 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
     - name: Run clippy
       run: cargo clippy --all-features --all-targets -- -D warnings
 
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
     - name: Check formatting
       run: cargo fmt --all -- --check

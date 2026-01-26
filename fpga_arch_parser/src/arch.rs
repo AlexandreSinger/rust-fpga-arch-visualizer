@@ -30,21 +30,12 @@ pub enum PortClass {
     FlipFlopD,
     FlipFlopQ,
     Clock,
-    MemoryAddress,
-    MemoryDataIn,
-    MemoryWriteEn,
-    MemoryDataOut,
-    MemoryAddressFirst,
-    MemoryDataInFirst,
-    MemoryWriteEnFirst,
-    MemoryDataOutFirst,
-    MemoryAddressSecond,
-    MemoryDataInSecond,
-    MemoryWriteEnSecond,
-    MemoryDataOutSecond,
-    // FIXME: These are not documented by VTR. Documentation needs to be updated.
-    MemoryReadEnFirst,
-    MemoryReadEnSecond,
+    // FIXME: These are not document well in VTR. Documentation needs to be updated.
+    MemoryAddress(i32),
+    MemoryDataIn(i32),
+    MemoryWriteEn(i32),
+    MemoryDataOut(i32),
+    MemoryReadEn(i32),
 }
 
 pub struct InputPort {

@@ -29,7 +29,7 @@ impl SummaryView {
                     ui.separator();
 
                     ui.label(format!(
-                        "Grid Logic Tile Area: {:.2}",
+                        "Grid Logic Tile Area: {:e}",
                         arch.device.area.grid_logic_tile_area
                     ));
                     ui.label(format!(
@@ -116,7 +116,7 @@ impl SummaryView {
                     ui.collapsing("Switches", |ui| {
                         for switch in &arch.switch_list {
                             ui.label(format!(
-                                "{}: {:?} (R: {}, C_in: {}, C_out: {})",
+                                "{}: {:?} (R: {}, C_in: {:e}, C_out: {:e})",
                                 switch.name,
                                 switch.sw_type,
                                 switch.resistance,
@@ -144,7 +144,7 @@ impl SummaryView {
                                     ui.label(format!("Length: {}", segment.length));
                                     ui.label(format!("Frequency: {:.2}", segment.freq));
                                     ui.label(format!(
-                                        "Metal: R={:.2}, C={:.2}",
+                                        "Metal: R={}, C={:e}",
                                         segment.r_metal, segment.c_metal
                                     ));
                                 },

@@ -41,6 +41,12 @@ fn parse_port_class(value: &str, position: TextPosition) -> Result<PortClass, FP
                     }
                 }
             };
+            if port_num < 1 {
+                return Err(FPGAArchParseError::AttributeParseError(
+                    format!("Port class index must be >= 1: {}", value),
+                    position,
+                ));
+            }
 
             return Ok(match *prefix {
                 "address" => PortClass::MemoryAddress(port_num),

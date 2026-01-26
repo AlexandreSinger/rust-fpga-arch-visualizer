@@ -2,12 +2,68 @@ use std::fs::File;
 use std::io::BufReader;
 
 use xml::attribute::OwnedAttribute;
-use xml::common::Position;
+use xml::common::{Position, TextPosition};
 use xml::name::OwnedName;
 use xml::reader::{EventReader, XmlEvent};
 
 use crate::arch::*;
 use crate::parse_error::*;
+
+fn parse_port_class(value: &str, position: TextPosition) -> Result<PortClass, FPGAArchParseError> {
+    // Try to parse as simple port class first
+    match value {
+        "lut_in" => return Ok(PortClass::LutIn),
+        "lut_out" => return Ok(PortClass::LutOut),
+        "D" => return Ok(PortClass::FlipFlopD),
+        "Q" => return Ok(PortClass::FlipFlopQ),
+        "clock" => return Ok(PortClass::Clock),
+        _ => {}
+    }
+
+    // Try to parse as memory port class with optional integer suffix
+    // Memory classes: address, data_in, write_en, data_out, read_en
+    let memory_prefixes = ["address", "data_in", "write_en", "data_out", "read_en"];
+
+    for prefix in &memory_prefixes {
+        if let Some(suffix) = value.strip_prefix(prefix) {
+            let port_num = if suffix.is_empty() {
+                // Default to 1 if no number suffix
+                1
+            } else {
+                // Parse the numeric suffix
+                match suffix.parse::<i32>() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        return Err(FPGAArchParseError::AttributeParseError(
+                            format!("Unknown port class: {}", value),
+                            position,
+                        ));
+                    }
+                }
+            };
+            if port_num < 1 {
+                return Err(FPGAArchParseError::AttributeParseError(
+                    format!("Port class index must be >= 1: {}", value),
+                    position,
+                ));
+            }
+
+            return Ok(match *prefix {
+                "address" => PortClass::MemoryAddress(port_num),
+                "data_in" => PortClass::MemoryDataIn(port_num),
+                "write_en" => PortClass::MemoryWriteEn(port_num),
+                "data_out" => PortClass::MemoryDataOut(port_num),
+                "read_en" => PortClass::MemoryReadEn(port_num),
+                _ => unreachable!(),
+            });
+        }
+    }
+
+    Err(FPGAArchParseError::AttributeParseError(
+        format!("Unknown port class: {}", value),
+        position,
+    ))
+}
 
 pub fn parse_port(
     tag_name: &OwnedName,
@@ -103,32 +159,9 @@ pub fn parse_port(
             }
             "port_class" => {
                 port_class = match port_class {
-                    None => match a.value.as_str() {
-                        "lut_in" => Some(PortClass::LutIn),
-                        "lut_out" => Some(PortClass::LutOut),
-                        "D" => Some(PortClass::FlipFlopD),
-                        "Q" => Some(PortClass::FlipFlopQ),
-                        "clock" => Some(PortClass::Clock),
-                        "address" => Some(PortClass::MemoryAddress),
-                        "data_in" => Some(PortClass::MemoryDataIn),
-                        "write_en" => Some(PortClass::MemoryWriteEn),
-                        "data_out" => Some(PortClass::MemoryDataOut),
-                        "address1" => Some(PortClass::MemoryAddressFirst),
-                        "data_in1" => Some(PortClass::MemoryDataInFirst),
-                        "write_en1" => Some(PortClass::MemoryWriteEnFirst),
-                        "data_out1" => Some(PortClass::MemoryDataOutFirst),
-                        "address2" => Some(PortClass::MemoryAddressSecond),
-                        "data_in2" => Some(PortClass::MemoryDataInSecond),
-                        "write_en2" => Some(PortClass::MemoryWriteEnSecond),
-                        "data_out2" => Some(PortClass::MemoryDataOutSecond),
-                        "read_en1" => Some(PortClass::MemoryReadEnFirst),
-                        "read_en2" => Some(PortClass::MemoryReadEnSecond),
-                        _ => {
-                            return Err(FPGAArchParseError::AttributeParseError(
-                                format!("Unknown port class: {}", a.value),
-                                parser.position(),
-                            ));
-                        }
+                    None => match parse_port_class(&a.value, parser.position()) {
+                        Ok(pc) => Some(pc),
+                        Err(e) => return Err(e),
                     },
                     Some(_) => {
                         return Err(FPGAArchParseError::DuplicateAttribute(

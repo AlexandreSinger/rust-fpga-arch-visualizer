@@ -32,6 +32,9 @@ pub fn render_grid(
 
             let offset = response.rect.min;
 
+            // FIXME: Make this a member of the grid state and then pre-computed.
+            let mut grid_shapes: Vec<egui::Shape> = Vec::new();
+
             // Draw grid
             for row in 0..grid.height {
                 for col in 0..grid.width {
@@ -50,12 +53,12 @@ pub fn render_grid(
                                     cell_pos,
                                     egui::vec2(cell_size, cell_size),
                                 );
-                                painter.rect_stroke(
+                                grid_shapes.push(egui::Shape::rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
                                     egui::Stroke::new(0.5, egui::Color32::DARK_GRAY),
                                     egui::epaint::StrokeKind::Inside,
-                                );
+                                ));
                             }
                             GridCell::BlockAnchor {
                                 pb_type,
@@ -84,28 +87,36 @@ pub fn render_grid(
                                 let outline_color = darken_color(color, 0.5);
 
                                 // Draw filled rectangle
-                                painter.rect_filled(rect, 0.0, color);
+                                grid_shapes.push(egui::Shape::rect_filled(
+                                    rect,
+                                    egui::CornerRadius::ZERO,
+                                    color,
+                                ));
 
                                 // Draw outline
-                                painter.rect_stroke(
+                                // TODO: This can probably be combined with the filled rectangle.
+                                grid_shapes.push(egui::Shape::rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
                                     egui::Stroke::new(1.0, outline_color),
                                     egui::epaint::StrokeKind::Inside,
-                                );
+                                ));
 
                                 // Only draw the text if the tile is large enough.
                                 if rect.width() > 50.0 {
                                     // Draw tile name in center (uppercase)
                                     let tile_name_upper = pb_type.to_uppercase();
                                     let font_size = (cell_size * 0.2).min(tile_height * 0.15);
-                                    painter.text(
-                                        rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        &tile_name_upper,
-                                        egui::FontId::proportional(font_size),
-                                        egui::Color32::BLACK,
-                                    );
+                                    ui.fonts(|fonts| {
+                                        grid_shapes.push(egui::Shape::text(
+                                            fonts,
+                                            rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            &tile_name_upper,
+                                            egui::FontId::proportional(font_size),
+                                            egui::Color32::BLACK,
+                                        ));
+                                    });
                                 }
                             }
                             GridCell::BlockOccupied { .. } => {
@@ -115,6 +126,9 @@ pub fn render_grid(
                     }
                 }
             }
+
+            // Paint all of the shapes.
+            painter.extend(grid_shapes);
 
             // Check for which tile is currently being hovered over.
             if let Some(hover_pos) = response.hover_pos() {

@@ -21,6 +21,7 @@ pub struct GridState {
 
     pub grid_changed: bool,
     pub zoom_changed: bool,
+    pub last_available_size: egui::Vec2,
 }
 
 impl Default for GridState {
@@ -34,6 +35,7 @@ impl Default for GridState {
             max_zoom: 10.0,
             grid_changed: false,
             zoom_changed: false,
+            last_available_size: egui::Vec2::ZERO,
         }
     }
 }
@@ -204,13 +206,16 @@ impl GridView {
         }
 
         if let Some(grid) = &self.device_grid {
-            if self.grid_state.grid_changed || self.grid_state.zoom_changed {
+            let current_available_size = ui.available_size();
+            let size_changed = current_available_size != self.grid_state.last_available_size;
+            if self.grid_state.grid_changed || self.grid_state.zoom_changed || size_changed {
                 self.grid_renderer.prerender_grid(
                     grid,
                     &self.tile_colors,
                     self.grid_state.zoom_factor,
                     ui,
                 );
+                self.grid_state.last_available_size = current_available_size;
             }
             if let Some(clicked_tile) =
                 self.grid_renderer

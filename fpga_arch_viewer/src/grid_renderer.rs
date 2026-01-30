@@ -13,6 +13,8 @@ pub struct GridRenderer {
 }
 
 impl GridRenderer {
+    const MIN_CELL_SIZE_FOR_TEXT: f32 = 50.0;
+
     pub fn prerender_grid(
         &mut self,
         grid: &DeviceGrid,
@@ -90,8 +92,7 @@ impl GridRenderer {
                             ));
 
                             // Only draw the text if the tile is large enough.
-                            // TODO: Unify with the render code so we only generate when we need it.
-                            if cell_size > 50.0 {
+                            if cell_size > Self::MIN_CELL_SIZE_FOR_TEXT {
                                 // Draw tile name in center (uppercase)
                                 let tile_name_upper = pb_type.to_uppercase();
                                 let font_size = (cell_size * 0.2).min(tile_height * 0.15);
@@ -142,6 +143,8 @@ impl GridRenderer {
 
                 // Load the prerendered grid shapes. These are precalculated
                 // to allow us to render very large FPGAs.
+                // TODO: This clone can be wasteful. Should consider using egui::Context::set_transform_layer()
+                //       in the future.
                 let mut shapes = self.grid_shapes.clone();
                 for shape in &mut shapes {
                     shape.translate(offset.to_vec2());
@@ -151,7 +154,7 @@ impl GridRenderer {
                 painter.extend(shapes);
 
                 // If the cells are large enough, draw the text.
-                if cell_size > 50.0 {
+                if cell_size > Self::MIN_CELL_SIZE_FOR_TEXT {
                     // Collect the pre-rendered text shapes; however, since
                     // we are so zoomed in, we only collect the visible text
                     // shapes. This greatly improves performance.

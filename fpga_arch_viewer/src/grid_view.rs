@@ -41,25 +41,31 @@ impl Default for GridState {
 impl GridState {
     const MIN_ZOOM: f32 = 0.9;
 
+    /// Apply zoom delta from user input.
+    pub fn apply_zoom_delta(&mut self, zoom_delta: f32) {
+        self.zoom_factor *= zoom_delta;
+        self.update_zoom();
+    }
+
     /// Zoom in by multiplying the zoom factor
     pub fn zoom_in(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor * zoom_scale).clamp(Self::MIN_ZOOM, self.max_zoom);
-        self.zoom_changed = true;
+        self.zoom_factor *= zoom_scale;
+        self.update_zoom();
     }
 
     /// Zoom out by dividing the zoom factor
     pub fn zoom_out(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor / zoom_scale).clamp(Self::MIN_ZOOM, self.max_zoom);
-        self.zoom_changed = true;
+        self.zoom_factor /= zoom_scale;
+        self.update_zoom();
     }
 
     /// Reset zoom to 1.0
     pub fn reset_zoom(&mut self) {
         self.zoom_factor = 1.0;
-        self.zoom_changed = true;
+        self.update_zoom();
     }
 
-    /// Update the zoom. This is usefull if the zoom bounds have changed.
+    /// Update the zoom. This is useful if the zoom bounds have changed.
     pub fn update_zoom(&mut self) {
         self.zoom_factor = self.zoom_factor.clamp(Self::MIN_ZOOM, self.max_zoom);
         self.zoom_changed = true;
@@ -194,7 +200,7 @@ impl GridView {
         // Check for pinch gesture (trackpad zoom on macOS)
         let zoom_delta = ui.input(|i| i.zoom_delta());
         if zoom_delta != 1.0 {
-            self.grid_state.zoom_in(zoom_delta);
+            self.grid_state.apply_zoom_delta(zoom_delta);
         }
 
         if let Some(grid) = &self.device_grid {

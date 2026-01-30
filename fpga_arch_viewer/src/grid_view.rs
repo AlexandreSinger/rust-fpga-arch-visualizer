@@ -1,11 +1,11 @@
 use fpga_arch_parser::FPGAArch;
-use std::collections::HashMap;
+use std::{cmp::max, collections::HashMap};
 
 use crate::{
     complex_block_view::ComplexBlockViewState,
     grid::{DeviceGrid, GridCell},
-    grid_renderer,
-    viewer::{ViewMode, ViewerContext},
+    grid_renderer::GridRenderer,
+    viewer::ViewMode,
 };
 
 /// State for grid view
@@ -16,6 +16,11 @@ pub struct GridState {
     pub aspect_ratio: f32,
     pub selected_layout_index: usize,
     pub zoom_factor: f32,
+
+    pub max_zoom: f32,
+
+    pub grid_changed: bool,
+    pub zoom_changed: bool,
 }
 
 impl Default for GridState {
@@ -26,27 +31,38 @@ impl Default for GridState {
             aspect_ratio: 1.0,
             selected_layout_index: 0,
             zoom_factor: 1.0,
+            max_zoom: 10.0,
+            grid_changed: false,
+            zoom_changed: false,
         }
     }
 }
 
 impl GridState {
     const MIN_ZOOM: f32 = 0.9;
-    const MAX_ZOOM: f32 = 10.0;
 
     /// Zoom in by multiplying the zoom factor
     pub fn zoom_in(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor * zoom_scale).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+        self.zoom_factor = (self.zoom_factor * zoom_scale).clamp(Self::MIN_ZOOM, self.max_zoom);
+        self.zoom_changed = true;
     }
 
     /// Zoom out by dividing the zoom factor
     pub fn zoom_out(&mut self, zoom_scale: f32) {
-        self.zoom_factor = (self.zoom_factor / zoom_scale).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+        self.zoom_factor = (self.zoom_factor / zoom_scale).clamp(Self::MIN_ZOOM, self.max_zoom);
+        self.zoom_changed = true;
     }
 
     /// Reset zoom to 1.0
     pub fn reset_zoom(&mut self) {
         self.zoom_factor = 1.0;
+        self.zoom_changed = true;
+    }
+
+    /// Update the zoom. This is usefull if the zoom bounds have changed.
+    pub fn update_zoom(&mut self) {
+        self.zoom_factor = self.zoom_factor.clamp(Self::MIN_ZOOM, self.max_zoom);
+        self.zoom_changed = true;
     }
 }
 
@@ -58,6 +74,9 @@ pub struct GridView {
 
     // Tile name to color mapping
     pub tile_colors: HashMap<String, egui::Color32>,
+
+    // Renderer object in charge of the grid.
+    pub grid_renderer: GridRenderer,
 }
 
 impl GridView {
@@ -103,7 +122,6 @@ impl GridView {
     pub fn render(
         &mut self,
         arch: &FPGAArch,
-        viewer_ctx: &mut ViewerContext,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         ctx: &egui::Context,
@@ -113,12 +131,14 @@ impl GridView {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_grid_view(
                 arch,
-                viewer_ctx,
                 complex_block_view_state,
                 next_view_mode,
                 ui,
             );
         });
+
+        self.grid_state.zoom_changed = false;
+        self.grid_state.grid_changed = false;
     }
 
     fn rebuild_grid(&mut self, arch: &FPGAArch) {
@@ -144,14 +164,18 @@ impl GridView {
                     DeviceGrid::from_fixed_layout(arch, self.grid_state.selected_layout_index)
                 }
             };
+
+            let max_dim = max(grid.width, grid.height);
             self.device_grid = Some(grid);
+            self.grid_state.grid_changed = true;
+            self.grid_state.max_zoom = (max_dim as f32 / 10.0).max(1.0);
+            self.grid_state.update_zoom();
         }
     }
 
     fn render_grid_view(
         &mut self,
         arch: &FPGAArch,
-        viewer_ctx: &mut ViewerContext,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui,
@@ -179,12 +203,12 @@ impl GridView {
         }
 
         if let Some(grid) = &self.device_grid {
-            if let Some(clicked_tile) = grid_renderer::render_grid(
+            if self.grid_state.grid_changed || self.grid_state.zoom_changed {
+                self.grid_renderer.prerender_grid(grid, &self.tile_colors, self.grid_state.zoom_factor, ui);
+            }
+            if let Some(clicked_tile) = self.grid_renderer.render_grid(
                 ui,
                 grid,
-                &viewer_ctx.block_styles,
-                &self.tile_colors,
-                viewer_ctx.dark_mode,
                 arch,
                 self.grid_state.zoom_factor,
             ) {

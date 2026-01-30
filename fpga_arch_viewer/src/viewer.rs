@@ -462,7 +462,6 @@ impl FpgaViewer {
                     .render(arch, &mut self.next_view_mode, ctx),
                 ViewMode::Grid => self.grid_view.render(
                     arch,
-                    &mut self.viewer_ctx,
                     &mut self.complex_block_view.complex_block_view_state,
                     &mut self.next_view_mode,
                     ctx,

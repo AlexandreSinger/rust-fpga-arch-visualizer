@@ -140,15 +140,21 @@ impl GridRenderer {
 
                 let offset = response.rect.min;
 
+                // Load the prerendered grid shapes. These are precalculated
+                // to allow us to render very large FPGAs.
                 let mut shapes = self.grid_shapes.clone();
                 for shape in &mut shapes {
                     shape.translate(offset.to_vec2());
                 }
 
-                // Paint all of the shapes.
+                // Paint all of the grid shapes.
                 painter.extend(shapes);
 
+                // If the cells are large enough, draw the text.
                 if cell_size > 50.0 {
+                    // Collect the pre-rendered text shapes; however, since
+                    // we are so zoomed in, we only collect the visible text
+                    // shapes. This greatly improves performance.
                     let mut text_shapes = Vec::new();
                     for shape in &self.text_shapes {
                         if ui.is_rect_visible(
@@ -160,6 +166,7 @@ impl GridRenderer {
                         }
                     }
 
+                    // Paint the text shapes.
                     painter.extend(text_shapes);
                 }
 

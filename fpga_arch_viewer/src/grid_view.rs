@@ -129,12 +129,7 @@ impl GridView {
         self.render_side_panel(arch, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_grid_view(
-                arch,
-                complex_block_view_state,
-                next_view_mode,
-                ui,
-            );
+            self.render_grid_view(arch, complex_block_view_state, next_view_mode, ui);
         });
 
         self.grid_state.zoom_changed = false;
@@ -204,14 +199,17 @@ impl GridView {
 
         if let Some(grid) = &self.device_grid {
             if self.grid_state.grid_changed || self.grid_state.zoom_changed {
-                self.grid_renderer.prerender_grid(grid, &self.tile_colors, self.grid_state.zoom_factor, ui);
+                self.grid_renderer.prerender_grid(
+                    grid,
+                    &self.tile_colors,
+                    self.grid_state.zoom_factor,
+                    ui,
+                );
             }
-            if let Some(clicked_tile) = self.grid_renderer.render_grid(
-                ui,
-                grid,
-                arch,
-                self.grid_state.zoom_factor,
-            ) {
+            if let Some(clicked_tile) =
+                self.grid_renderer
+                    .render_grid(ui, grid, arch, self.grid_state.zoom_factor)
+            {
                 complex_block_view_state.selected_tile_name = Some(clicked_tile);
                 complex_block_view_state.selected_sub_tile_index = 0;
                 *next_view_mode = ViewMode::ComplexBlock;

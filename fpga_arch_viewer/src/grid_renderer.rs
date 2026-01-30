@@ -135,8 +135,8 @@ impl GridRenderer {
                     grid.width as f32 * cell_size,
                     grid.height as f32 * cell_size,
                 );
-                let (response, painter) =
-                    ui.allocate_painter(grid_size, egui::Sense::click().union(egui::Sense::hover()));
+                let (response, painter) = ui
+                    .allocate_painter(grid_size, egui::Sense::click().union(egui::Sense::hover()));
 
                 let offset = response.rect.min;
 
@@ -151,7 +151,9 @@ impl GridRenderer {
                 if cell_size > 50.0 {
                     let mut text_shapes = Vec::new();
                     for shape in &self.text_shapes {
-                        if ui.is_rect_visible(shape.visual_bounding_rect().translate(offset.to_vec2())) {
+                        if ui.is_rect_visible(
+                            shape.visual_bounding_rect().translate(offset.to_vec2()),
+                        ) {
                             let mut new_shape = shape.clone();
                             new_shape.translate(offset.to_vec2());
                             text_shapes.push(new_shape);
@@ -204,14 +206,9 @@ impl GridRenderer {
 
         clicked_tile
     }
-
 }
 
-pub fn get_cell_size(
-    grid: &DeviceGrid,
-    zoom_factor: f32,
-    ui: &egui::Ui,
-) -> f32 {
+pub fn get_cell_size(grid: &DeviceGrid, zoom_factor: f32, ui: &egui::Ui) -> f32 {
     let available_size = ui.available_size();
     let max_dim = grid.width.max(grid.height).max(1) as f32;
     (available_size.x.min(available_size.y) / max_dim) * zoom_factor

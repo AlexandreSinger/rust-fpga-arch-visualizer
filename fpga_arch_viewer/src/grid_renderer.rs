@@ -4,20 +4,12 @@ use eframe::egui;
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
+#[derive(Default)]
 pub struct GridRenderer {
     // Prerendered shapes that make up the grid.
     grid_shapes: Vec<egui::Shape>,
     // Prerendered shapes that make up the text on the grid.
     text_shapes: Vec<egui::Shape>,
-}
-
-impl Default for GridRenderer {
-    fn default() -> Self {
-        Self {
-            grid_shapes: Vec::new(),
-            text_shapes: Vec::new(),
-        }
-    }
 }
 
 impl GridRenderer {
@@ -222,7 +214,5 @@ pub fn get_cell_size(
 ) -> f32 {
     let available_size = ui.available_size();
     let max_dim = grid.width.max(grid.height).max(1) as f32;
-    let cell_size = (available_size.x.min(available_size.y) / max_dim) * zoom_factor;
-
-    return cell_size;
+    (available_size.x.min(available_size.y) / max_dim) * zoom_factor
 }

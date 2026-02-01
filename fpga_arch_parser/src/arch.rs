@@ -250,9 +250,25 @@ pub struct FixedLayout {
     pub grid_locations: Vec<GridLocation>,
 }
 
+#[derive(Clone)]
+pub struct TileableLayoutConfig {
+    pub tileable: bool,
+    pub through_channel: bool,
+    pub shrink_boundary: bool,
+    pub perimeter_cb: bool,
+    pub opin2all_sides: bool,
+    pub concat_wire: bool,
+    pub concat_pass_wire: bool,
+}
+
 pub enum Layout {
     AutoLayout(AutoLayout),
     FixedLayout(FixedLayout),
+}
+
+pub struct LayoutWithTileableConfig {
+    pub layout: Layout,
+    pub tileable_config: Option<TileableLayoutConfig>,
 }
 
 pub enum CustomSwitchBlockType {
@@ -589,7 +605,7 @@ pub struct PBType {
 pub struct FPGAArch {
     pub models: Vec<Model>,
     pub tiles: Vec<Tile>,
-    pub layouts: Vec<Layout>,
+    pub layouts: Vec<LayoutWithTileableConfig>,
     pub device: DeviceInfo,
     pub switch_list: Vec<Switch>,
     pub segment_list: Vec<Segment>,

@@ -82,25 +82,27 @@ impl SummaryView {
                     ui.heading(format!("Layouts ({})", arch.layouts.len()));
                     ui.separator();
 
-                    for (idx, layout) in arch.layouts.iter().enumerate() {
-                        let layout_name = match layout {
+                    for (idx, layout_config) in arch.layouts.iter().enumerate() {
+                        let layout_name = match &layout_config.layout {
                             fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout",
                             fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
                                 &fixed_layout.name
                             }
                         };
-                        ui.collapsing(format!("[{}] {}", idx, layout_name), |ui| match layout {
-                            fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
-                                ui.label(format!(
-                                    "Auto Layout - Aspect Ratio: {:.2}",
-                                    auto_layout.aspect_ratio
-                                ));
-                            }
-                            fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
-                                ui.label(format!(
-                                    "Fixed Layout: {} ({}x{})",
-                                    fixed_layout.name, fixed_layout.width, fixed_layout.height
-                                ));
+                        ui.collapsing(format!("[{}] {}", idx, layout_name), |ui| {
+                            match &layout_config.layout {
+                                fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
+                                    ui.label(format!(
+                                        "Auto Layout - Aspect Ratio: {:.2}",
+                                        auto_layout.aspect_ratio
+                                    ));
+                                }
+                                fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
+                                    ui.label(format!(
+                                        "Fixed Layout: {} ({}x{})",
+                                        fixed_layout.name, fixed_layout.width, fixed_layout.height
+                                    ));
+                                }
                             }
                         });
                     }

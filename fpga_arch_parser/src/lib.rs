@@ -50,7 +50,7 @@ fn parse_architecture(
 
     let mut models: Option<Vec<Model>> = None;
     let mut tiles: Option<Vec<Tile>> = None;
-    let mut layouts: Option<Vec<Layout>> = None;
+    let mut layouts: Option<Vec<LayoutWithTileableConfig>> = None;
     let mut device: Option<DeviceInfo> = None;
     let mut switch_list: Option<Vec<Switch>> = None;
     let mut segment_list: Option<Vec<Segment>> = None;

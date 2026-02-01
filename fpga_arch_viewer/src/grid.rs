@@ -55,7 +55,10 @@ impl DeviceGrid {
     #[allow(dead_code)]
     pub fn from_auto_layout(arch: &FPGAArch, default_size: usize) -> Self {
         let auto_layout = match arch.layouts.first() {
-            Some(fpga_arch_parser::Layout::AutoLayout(al)) => al,
+            Some(fpga_arch_parser::LayoutWithTileableConfig {
+                layout: fpga_arch_parser::Layout::AutoLayout(al),
+                ..
+            }) => al,
             _ => panic!("Expected AutoLayout"),
         };
 
@@ -66,7 +69,10 @@ impl DeviceGrid {
 
     pub fn from_auto_layout_with_dimensions(arch: &FPGAArch, width: usize, height: usize) -> Self {
         let auto_layout = match arch.layouts.first() {
-            Some(fpga_arch_parser::Layout::AutoLayout(al)) => al,
+            Some(fpga_arch_parser::LayoutWithTileableConfig {
+                layout: fpga_arch_parser::Layout::AutoLayout(al),
+                ..
+            }) => al,
             _ => panic!("Expected AutoLayout"),
         };
 
@@ -76,7 +82,10 @@ impl DeviceGrid {
 
     pub fn from_fixed_layout(arch: &FPGAArch, layout_index: usize) -> Self {
         let fixed_layout = match arch.layouts.get(layout_index) {
-            Some(fpga_arch_parser::Layout::FixedLayout(fl)) => fl,
+            Some(fpga_arch_parser::LayoutWithTileableConfig {
+                layout: fpga_arch_parser::Layout::FixedLayout(fl),
+                ..
+            }) => fl,
             _ => panic!("Expected FixedLayout at index {}", layout_index),
         };
 

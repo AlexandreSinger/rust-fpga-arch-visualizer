@@ -1,3 +1,14 @@
+## [v0.3.2] - 2026-02-01
+
+### Added
+- Visualizer app now has a basic icon.
+- Added support for the Stratix-10 and 7-Series architecture captures.
+- Added basic support for tileable architectures.
+- Optimized grid rendering to allow for larger grids to be visualized.
+
+### Infra
+- Improved CI infrastructure
+
 ## [v0.3.1] - 2026-01-24
 
 ### Added

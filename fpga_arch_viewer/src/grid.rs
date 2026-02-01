@@ -122,7 +122,8 @@ impl DeviceGrid {
                 let check_row = row + dy;
                 let check_col = col + dx;
                 if check_row < self.height && check_col < self.width {
-                    max_priority = std::cmp::max(max_priority, self.grid_priorities[check_row][check_col]);
+                    max_priority =
+                        std::cmp::max(max_priority, self.grid_priorities[check_row][check_col]);
                 }
             }
         }
@@ -249,7 +250,12 @@ impl DeviceGrid {
                 if self.height > 1 {
                     let mut col = 0;
                     while col < self.width {
-                        if self.place_tile(self.height - 1, col, &perimeter.pb_type, perimeter.priority) {
+                        if self.place_tile(
+                            self.height - 1,
+                            col,
+                            &perimeter.pb_type,
+                            perimeter.priority,
+                        ) {
                             col += tile_width;
                         } else {
                             col += 1;
@@ -271,7 +277,12 @@ impl DeviceGrid {
                 if self.width > 1 {
                     let mut row = 0;
                     while row < self.height {
-                        if self.place_tile(row, self.width - 1, &perimeter.pb_type, perimeter.priority) {
+                        if self.place_tile(
+                            row,
+                            self.width - 1,
+                            &perimeter.pb_type,
+                            perimeter.priority,
+                        ) {
                             row += tile_height;
                         } else {
                             row += 1;

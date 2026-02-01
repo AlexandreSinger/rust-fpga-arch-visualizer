@@ -266,8 +266,8 @@ pub enum Layout {
     FixedLayout(FixedLayout),
 }
 
-pub struct LayoutWithTileableConfig {
-    pub layout: Layout,
+pub struct DeviceLayouts {
+    pub layout_list: Vec<Layout>,
     pub tileable_config: Option<TileableLayoutConfig>,
 }
 
@@ -605,7 +605,7 @@ pub struct PBType {
 pub struct FPGAArch {
     pub models: Vec<Model>,
     pub tiles: Vec<Tile>,
-    pub layouts: Vec<LayoutWithTileableConfig>,
+    pub layouts: DeviceLayouts,
     pub device: DeviceInfo,
     pub switch_list: Vec<Switch>,
     pub segment_list: Vec<Segment>,

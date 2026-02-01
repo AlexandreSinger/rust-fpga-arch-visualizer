@@ -79,18 +79,18 @@ impl SummaryView {
 
                 // Layouts Section
                 ui.group(|ui| {
-                    ui.heading(format!("Layouts ({})", arch.layouts.len()));
+                    ui.heading(format!("Layouts ({})", arch.layouts.layout_list.len()));
                     ui.separator();
 
-                    for (idx, layout_config) in arch.layouts.iter().enumerate() {
-                        let layout_name = match &layout_config.layout {
+                    for (idx, layout) in arch.layouts.layout_list.iter().enumerate() {
+                        let layout_name = match &layout {
                             fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout",
                             fpga_arch_parser::Layout::FixedLayout(fixed_layout) => {
                                 &fixed_layout.name
                             }
                         };
                         ui.collapsing(format!("[{}] {}", idx, layout_name), |ui| {
-                            match &layout_config.layout {
+                            match &layout {
                                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                                     ui.label(format!(
                                         "Auto Layout - Aspect Ratio: {:.2}",

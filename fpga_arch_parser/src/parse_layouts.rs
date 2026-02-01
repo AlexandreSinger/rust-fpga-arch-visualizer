@@ -554,7 +554,7 @@ pub fn parse_layouts(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
     parser: &mut EventReader<BufReader<File>>,
-) -> Result<Vec<LayoutWithTileableConfig>, FPGAArchParseError> {
+) -> Result<DeviceLayouts, FPGAArchParseError> {
     assert!(name.to_string() == "layout");
 
     // Parse tileable configuration attributes from the layout tag
@@ -729,14 +729,8 @@ pub fn parse_layouts(
         }
     }
 
-    // Wrap each layout with its tileable config
-    let layouts_with_config = layouts
-        .into_iter()
-        .map(|layout| LayoutWithTileableConfig {
-            layout,
-            tileable_config: tileable_config.clone(),
-        })
-        .collect();
-
-    Ok(layouts_with_config)
+    Ok(DeviceLayouts {
+        layout_list: layouts,
+        tileable_config,
+    })
 }

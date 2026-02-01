@@ -91,8 +91,8 @@ impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
         // Extract unique tile names from all layouts
         let mut tile_names = std::collections::HashSet::new();
-        for layout_config in &arch.layouts {
-            let grid_locations = match &layout_config.layout {
+        for layout in &arch.layouts.layout_list {
+            let grid_locations = match &layout {
                 fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
                 fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
             };
@@ -145,8 +145,8 @@ impl GridView {
     }
 
     fn rebuild_grid(&mut self, arch: &FPGAArch) {
-        if let Some(layout_config) = arch.layouts.get(self.grid_state.selected_layout_index) {
-            let grid = match &layout_config.layout {
+        if let Some(layout) = arch.layouts.layout_list.get(self.grid_state.selected_layout_index) {
+            let grid = match &layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                     self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
                     update_grid_height_from_width(&mut self.grid_state);
@@ -262,14 +262,14 @@ fn render_grid_controls_panel(
             ui.add_space(10.0);
 
             // Layout selection dropdown
-            if arch.layouts.len() > 1 {
+            if arch.layouts.layout_list.len() > 1 {
                 ui.label("Layout:");
                 let mut layout_changed = false;
                 egui::ComboBox::from_id_salt("layout_selector")
                     .selected_text(get_layout_name(arch, state.selected_layout_index))
                     .show_ui(ui, |ui| {
-                        for (idx, layout_config) in arch.layouts.iter().enumerate() {
-                            let layout_name = match &layout_config.layout {
+                        for (idx, layout) in arch.layouts.layout_list.iter().enumerate() {
+                            let layout_name = match &layout {
                                 fpga_arch_parser::Layout::AutoLayout(_) => {
                                     "Auto Layout".to_string()
                                 }
@@ -298,11 +298,8 @@ fn render_grid_controls_panel(
 
             // Check if current layout is fixed
             let is_fixed_layout = matches!(
-                arch.layouts.get(state.selected_layout_index),
-                Some(fpga_arch_parser::LayoutWithTileableConfig {
-                    layout: fpga_arch_parser::Layout::FixedLayout(_),
-                    ..
-                })
+                arch.layouts.layout_list.get(state.selected_layout_index),
+                Some(fpga_arch_parser::Layout::FixedLayout {..})
             );
 
             ui.label(if is_fixed_layout {
@@ -483,8 +480,8 @@ fn render_grid_controls_panel(
 }
 
 fn get_layout_name(arch: &FPGAArch, index: usize) -> String {
-    if let Some(layout_config) = arch.layouts.get(index) {
-        match &layout_config.layout {
+    if let Some(layout) = arch.layouts.layout_list.get(index) {
+        match &layout {
             fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
             fpga_arch_parser::Layout::FixedLayout(fl) => format!("Fixed: {}", fl.name),
         }

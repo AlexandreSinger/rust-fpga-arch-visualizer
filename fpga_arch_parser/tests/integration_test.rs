@@ -71,9 +71,9 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     ));
 
     // Check layouts.
-    assert_eq!(res.layouts.len(), 1);
-    assert!(matches!(res.layouts[0].layout, Layout::AutoLayout { .. }));
-    match &res.layouts[0].layout {
+    assert_eq!(res.layouts.layout_list.len(), 1);
+    assert!(matches!(res.layouts.layout_list[0], Layout::AutoLayout { .. }));
+    match &res.layouts.layout_list[0] {
         Layout::AutoLayout(auto_layout) => {
             assert_eq!(auto_layout.aspect_ratio, 1.0);
             assert_eq!(auto_layout.grid_locations.len(), 3);
@@ -303,7 +303,7 @@ fn test_stratix_iv_parse() -> Result<(), FPGAArchParseError> {
     assert_eq!(res.tiles.len(), 6);
 
     // Check layouts
-    assert_eq!(res.layouts.len(), 7);
+    assert_eq!(res.layouts.layout_list.len(), 7);
 
     // Check segments
     assert_eq!(res.segment_list.len(), 2);
@@ -463,6 +463,32 @@ fn test_custom_sbloc() -> Result<(), FPGAArchParseError> {
         SwitchBlockLocationsPattern::External
     ));
     assert!(mem_sbloc.internal_switch.is_none());
+
+    Ok(())
+}
+
+#[test]
+fn test_vtr_flagship_tileable() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm_tileable.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    // Check tiles.
+    assert_eq!(res.tiles.len(), 4);
+
+    // Check that the tileable config is correct.
+    if let Some(tileable_config) = res.layouts.tileable_config {
+        assert_eq!(tileable_config.tileable, true);
+        assert_eq!(tileable_config.through_channel, true);
+        assert_eq!(tileable_config.concat_pass_wire, true);
+        assert_eq!(tileable_config.shrink_boundary, false);
+        assert_eq!(tileable_config.perimeter_cb, false);
+        assert_eq!(tileable_config.opin2all_sides, false);
+        assert_eq!(tileable_config.concat_wire, false);
+    } else {
+        panic!("Expected tileable layout");
+    }
 
     Ok(())
 }

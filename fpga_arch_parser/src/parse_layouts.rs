@@ -11,6 +11,20 @@ use crate::parse_error::*;
 
 use crate::parse_metadata::parse_metadata;
 
+fn parse_bool_attribute(
+    value: &str,
+    parser: &EventReader<BufReader<File>>,
+) -> Result<bool, FPGAArchParseError> {
+    match value.to_lowercase().as_str() {
+        "true" | "on" | "1" | "yes" => Ok(true),
+        "false" | "off" | "0" | "no" => Ok(false),
+        _ => Err(FPGAArchParseError::AttributeParseError(
+            format!("Invalid boolean value: {}", value),
+            parser.position(),
+        )),
+    }
+}
+
 fn parse_grid_location(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
@@ -540,14 +554,127 @@ pub fn parse_layouts(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
     parser: &mut EventReader<BufReader<File>>,
-) -> Result<Vec<Layout>, FPGAArchParseError> {
+) -> Result<DeviceLayouts, FPGAArchParseError> {
     assert!(name.to_string() == "layout");
-    if !attributes.is_empty() {
-        return Err(FPGAArchParseError::UnknownAttribute(
-            String::from("Expected to be empty"),
-            parser.position(),
-        ));
+
+    // Parse tileable configuration attributes from the layout tag
+    let mut tileable: Option<bool> = None;
+    let mut through_channel: Option<bool> = None;
+    let mut shrink_boundary: Option<bool> = None;
+    let mut perimeter_cb: Option<bool> = None;
+    let mut opin2all_sides: Option<bool> = None;
+    let mut concat_wire: Option<bool> = None;
+    let mut concat_pass_wire: Option<bool> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "tileable" => {
+                tileable = match tileable {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "through_channel" => {
+                through_channel = match through_channel {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "shrink_boundary" => {
+                shrink_boundary = match shrink_boundary {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "perimeter_cb" => {
+                perimeter_cb = match perimeter_cb {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "opin2all_sides" => {
+                opin2all_sides = match opin2all_sides {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "concat_wire" => {
+                concat_wire = match concat_wire {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "concat_pass_wire" => {
+                concat_pass_wire = match concat_pass_wire {
+                    None => Some(parse_bool_attribute(&a.value, parser)?),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
     }
+
+    // Create tileable config if any tileable attributes were specified
+    let tileable_config = if tileable.is_some()
+        || through_channel.is_some()
+        || shrink_boundary.is_some()
+        || perimeter_cb.is_some()
+        || opin2all_sides.is_some()
+        || concat_wire.is_some()
+        || concat_pass_wire.is_some()
+    {
+        Some(TileableLayoutConfig {
+            tileable: tileable.unwrap_or(false),
+            through_channel: through_channel.unwrap_or(false),
+            shrink_boundary: shrink_boundary.unwrap_or(false),
+            perimeter_cb: perimeter_cb.unwrap_or(false),
+            opin2all_sides: opin2all_sides.unwrap_or(false),
+            concat_wire: concat_wire.unwrap_or(false),
+            concat_pass_wire: concat_pass_wire.unwrap_or(false),
+        })
+    } else {
+        None
+    };
 
     let mut layouts: Vec<Layout> = Vec::new();
     loop {
@@ -602,5 +729,8 @@ pub fn parse_layouts(
         }
     }
 
-    Ok(layouts)
+    Ok(DeviceLayouts {
+        layout_list: layouts,
+        tileable_config,
+    })
 }

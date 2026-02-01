@@ -197,7 +197,9 @@ fn parse_switchblock_locations(
     let pattern_str = pattern_str.unwrap_or_else(|| "external_full_internal_straight".to_string());
 
     let pattern = match pattern_str.as_str() {
-        "external_full_internal_straight" => SwitchBlockLocationsPattern::ExternalFullInternalStraight,
+        "external_full_internal_straight" => {
+            SwitchBlockLocationsPattern::ExternalFullInternalStraight
+        }
         "all" => SwitchBlockLocationsPattern::All,
         "external" => SwitchBlockLocationsPattern::External,
         "internal" => SwitchBlockLocationsPattern::Internal,
@@ -209,19 +211,17 @@ fn parse_switchblock_locations(
                 match parser.next() {
                     Ok(XmlEvent::StartElement {
                         name, attributes, ..
-                    }) => {
-                        match name.to_string().as_str() {
-                            "sb_loc" => {
-                                custom_locations.push(parse_sb_loc(&name, &attributes, parser)?);
-                            }
-                            _ => {
-                                return Err(FPGAArchParseError::InvalidTag(
-                                    name.to_string(),
-                                    parser.position(),
-                                ));
-                            }
+                    }) => match name.to_string().as_str() {
+                        "sb_loc" => {
+                            custom_locations.push(parse_sb_loc(&name, &attributes, parser)?);
                         }
-                    }
+                        _ => {
+                            return Err(FPGAArchParseError::InvalidTag(
+                                name.to_string(),
+                                parser.position(),
+                            ));
+                        }
+                    },
                     Ok(XmlEvent::EndElement { name }) => match name.to_string().as_str() {
                         "switchblock_locations" => {
                             return Ok(SwitchBlockLocations {

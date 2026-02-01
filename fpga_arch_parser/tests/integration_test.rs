@@ -2,8 +2,8 @@ use std::path::{PathBuf, absolute};
 
 use fpga_arch_parser::{
     ChanWDist, CustomSwitchBlockLocation, CustomSwitchBlockType, FPGAArchParseError, GridLocation,
-    Layout, Port, SBType, SegmentType, SubTileIOFC, SubTilePinLocations, SwitchBufSize, SwitchType,
-    TileSitePinMapping, SwitchBlockLocationsPattern, SwitchBlockLocationType,
+    Layout, Port, SBType, SegmentType, SubTileIOFC, SubTilePinLocations, SwitchBlockLocationType,
+    SwitchBlockLocationsPattern, SwitchBufSize, SwitchType, TileSitePinMapping,
 };
 
 #[test]
@@ -401,38 +401,50 @@ fn test_custom_sbloc() -> Result<(), FPGAArchParseError> {
     let mult_sbloc = res.tiles[2].switchblock_locations.as_ref();
     assert!(mult_sbloc.is_some());
     let mult_sbloc = mult_sbloc.unwrap();
-    
+
     // Check pattern is custom
     assert!(matches!(
         mult_sbloc.pattern,
         SwitchBlockLocationsPattern::Custom(_)
     ));
-    
+
     // Check internal_switch is None
     assert!(mult_sbloc.internal_switch.is_none());
-    
+
     // Check custom sb_loc entries
     if let SwitchBlockLocationsPattern::Custom(custom_locs) = &mult_sbloc.pattern {
         assert_eq!(custom_locs.len(), 9); // 5 full + 1 full + 1 straight + 1 turns + 1 none
-        
+
         // Check first sb_loc (full, xoffset=0, yoffset=2)
-        assert!(matches!(custom_locs[0].sb_type, SwitchBlockLocationType::Full));
+        assert!(matches!(
+            custom_locs[0].sb_type,
+            SwitchBlockLocationType::Full
+        ));
         assert_eq!(custom_locs[0].xoffset, 0);
         assert_eq!(custom_locs[0].yoffset, 2);
         assert!(custom_locs[0].switch_override.is_none());
-        
+
         // Check straight sb_loc (straight, xoffset=0, yoffset=1)
-        assert!(matches!(custom_locs[6].sb_type, SwitchBlockLocationType::Straight));
+        assert!(matches!(
+            custom_locs[6].sb_type,
+            SwitchBlockLocationType::Straight
+        ));
         assert_eq!(custom_locs[6].xoffset, 0);
         assert_eq!(custom_locs[6].yoffset, 1);
-        
+
         // Check turns sb_loc (turns, xoffset=1, yoffset=0)
-        assert!(matches!(custom_locs[7].sb_type, SwitchBlockLocationType::Turns));
+        assert!(matches!(
+            custom_locs[7].sb_type,
+            SwitchBlockLocationType::Turns
+        ));
         assert_eq!(custom_locs[7].xoffset, 1);
         assert_eq!(custom_locs[7].yoffset, 0);
-        
+
         // Check none sb_loc (none, xoffset=1, yoffset=1)
-        assert!(matches!(custom_locs[8].sb_type, SwitchBlockLocationType::None));
+        assert!(matches!(
+            custom_locs[8].sb_type,
+            SwitchBlockLocationType::None
+        ));
         assert_eq!(custom_locs[8].xoffset, 1);
         assert_eq!(custom_locs[8].yoffset, 1);
     } else {
@@ -444,7 +456,7 @@ fn test_custom_sbloc() -> Result<(), FPGAArchParseError> {
     let mem_sbloc = res.tiles[3].switchblock_locations.as_ref();
     assert!(mem_sbloc.is_some());
     let mem_sbloc = mem_sbloc.unwrap();
-    
+
     // Check pattern is external
     assert!(matches!(
         mem_sbloc.pattern,

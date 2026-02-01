@@ -127,6 +127,34 @@ pub struct SubTile {
     pub pin_locations: SubTilePinLocations,
 }
 
+pub enum SwitchBlockLocationType {
+    Full,
+    Straight,
+    Turns,
+    None,
+}
+
+pub struct SwitchBlockLocation {
+    pub sb_type: SwitchBlockLocationType,
+    pub xoffset: i32,
+    pub yoffset: i32,
+    pub switch_override: Option<String>,
+}
+
+pub enum SwitchBlockLocationsPattern {
+    ExternalFullInternalStraight,
+    All,
+    External,
+    Internal,
+    None,
+    Custom(Vec<SwitchBlockLocation>),
+}
+
+pub struct SwitchBlockLocations {
+    pub pattern: SwitchBlockLocationsPattern,
+    pub internal_switch: Option<String>,
+}
+
 pub struct Tile {
     pub name: String,
     // FIXME: Documentation. It is not clear from the documentation if tiles should
@@ -136,6 +164,7 @@ pub struct Tile {
     pub width: i32,
     pub height: i32,
     pub area: Option<f32>,
+    pub switchblock_locations: Option<SwitchBlockLocations>,
 }
 
 // TODO: pb_type and priority is better served as a trait.

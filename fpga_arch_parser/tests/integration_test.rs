@@ -377,3 +377,16 @@ fn test_z1060() -> Result<(), FPGAArchParseError> {
 
     Ok(())
 }
+
+#[test]
+fn test_custom_sbloc() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/custom_sbloc.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    // Check tiles.
+    assert_eq!(res.tiles.len(), 4);
+
+    Ok(())
+}

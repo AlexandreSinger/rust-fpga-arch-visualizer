@@ -72,10 +72,7 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 
     // Check layouts.
     assert_eq!(res.layouts.layout_list.len(), 1);
-    assert!(matches!(
-        res.layouts.layout_list[0],
-        Layout::AutoLayout(_)
-    ));
+    assert!(matches!(res.layouts.layout_list[0], Layout::AutoLayout(_)));
     match &res.layouts.layout_list[0] {
         Layout::AutoLayout(auto_layout) => {
             assert_eq!(auto_layout.aspect_ratio, 1.0);

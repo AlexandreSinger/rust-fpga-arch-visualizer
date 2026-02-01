@@ -145,7 +145,11 @@ impl GridView {
     }
 
     fn rebuild_grid(&mut self, arch: &FPGAArch) {
-        if let Some(layout) = arch.layouts.layout_list.get(self.grid_state.selected_layout_index) {
+        if let Some(layout) = arch
+            .layouts
+            .layout_list
+            .get(self.grid_state.selected_layout_index)
+        {
             let grid = match &layout {
                 fpga_arch_parser::Layout::AutoLayout(auto_layout) => {
                     self.grid_state.aspect_ratio = auto_layout.aspect_ratio;
@@ -299,7 +303,7 @@ fn render_grid_controls_panel(
             // Check if current layout is fixed
             let is_fixed_layout = matches!(
                 arch.layouts.layout_list.get(state.selected_layout_index),
-                Some(fpga_arch_parser::Layout::FixedLayout {..})
+                Some(fpga_arch_parser::Layout::FixedLayout { .. })
             );
 
             ui.label(if is_fixed_layout {

@@ -72,7 +72,10 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
 
     // Check layouts.
     assert_eq!(res.layouts.layout_list.len(), 1);
-    assert!(matches!(res.layouts.layout_list[0], Layout::AutoLayout { .. }));
+    assert!(matches!(
+        res.layouts.layout_list[0],
+        Layout::AutoLayout { .. }
+    ));
     match &res.layouts.layout_list[0] {
         Layout::AutoLayout(auto_layout) => {
             assert_eq!(auto_layout.aspect_ratio, 1.0);
@@ -479,13 +482,13 @@ fn test_vtr_flagship_tileable() -> Result<(), FPGAArchParseError> {
 
     // Check that the tileable config is correct.
     if let Some(tileable_config) = res.layouts.tileable_config {
-        assert_eq!(tileable_config.tileable, true);
-        assert_eq!(tileable_config.through_channel, true);
-        assert_eq!(tileable_config.concat_pass_wire, true);
-        assert_eq!(tileable_config.shrink_boundary, false);
-        assert_eq!(tileable_config.perimeter_cb, false);
-        assert_eq!(tileable_config.opin2all_sides, false);
-        assert_eq!(tileable_config.concat_wire, false);
+        assert!(tileable_config.tileable);
+        assert!(tileable_config.through_channel);
+        assert!(tileable_config.concat_pass_wire);
+        assert!(!tileable_config.shrink_boundary);
+        assert!(!tileable_config.perimeter_cb);
+        assert!(!tileable_config.opin2all_sides);
+        assert!(!tileable_config.concat_wire);
     } else {
         panic!("Expected tileable layout");
     }

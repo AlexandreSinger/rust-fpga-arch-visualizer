@@ -11,6 +11,295 @@ use crate::parse_error::*;
 
 use crate::parse_port::parse_port;
 
+fn parse_sb_loc(
+    name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<BufReader<File>>,
+) -> Result<SwitchBlockLocation, FPGAArchParseError> {
+    assert!(name.to_string() == "sb_loc");
+
+    let mut sb_type: Option<SwitchBlockLocationType> = None;
+    let mut xoffset: Option<i32> = None;
+    let mut yoffset: Option<i32> = None;
+    let mut switch_override: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "type" => {
+                sb_type = match sb_type {
+                    None => match a.value.as_str() {
+                        "full" => Some(SwitchBlockLocationType::Full),
+                        "straight" => Some(SwitchBlockLocationType::Straight),
+                        "turns" => Some(SwitchBlockLocationType::Turns),
+                        "none" => Some(SwitchBlockLocationType::None),
+                        _ => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("Unknown switchblock location type: {}", a.value),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "xoffset" => {
+                xoffset = match xoffset {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "yoffset" => {
+                yoffset = match yoffset {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "switch_override" => {
+                switch_override = match switch_override {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
+    }
+
+    let sb_type = sb_type.unwrap_or(SwitchBlockLocationType::Full);
+    let xoffset = xoffset.unwrap_or(0);
+    let yoffset = yoffset.unwrap_or(0);
+
+    // Parse the closing tag
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(
+                    name.to_string(),
+                    parser.position(),
+                ));
+            }
+            Ok(XmlEvent::EndElement { name }) => match name.to_string().as_str() {
+                "sb_loc" => break,
+                _ => {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    "sb_loc".to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(SwitchBlockLocation {
+        sb_type,
+        xoffset,
+        yoffset,
+        switch_override,
+    })
+}
+
+fn parse_switchblock_locations(
+    name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<BufReader<File>>,
+) -> Result<SwitchBlockLocations, FPGAArchParseError> {
+    assert!(name.to_string() == "switchblock_locations");
+
+    let mut pattern_str: Option<String> = None;
+    let mut internal_switch: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_str() {
+            "pattern" => {
+                pattern_str = match pattern_str {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "internal_switch" => {
+                internal_switch = match internal_switch {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
+    }
+
+    // Default pattern is external_full_internal_straight
+    let pattern_str = pattern_str.unwrap_or_else(|| "external_full_internal_straight".to_string());
+
+    let pattern = match pattern_str.as_str() {
+        "external_full_internal_straight" => {
+            SwitchBlockLocationsPattern::ExternalFullInternalStraight
+        }
+        "all" => SwitchBlockLocationsPattern::All,
+        "external" => SwitchBlockLocationsPattern::External,
+        "internal" => SwitchBlockLocationsPattern::Internal,
+        "none" => SwitchBlockLocationsPattern::None,
+        "custom" => {
+            // Parse custom sb_loc entries
+            let mut custom_locations: Vec<SwitchBlockLocation> = Vec::new();
+            loop {
+                match parser.next() {
+                    Ok(XmlEvent::StartElement {
+                        name, attributes, ..
+                    }) => match name.to_string().as_str() {
+                        "sb_loc" => {
+                            custom_locations.push(parse_sb_loc(&name, &attributes, parser)?);
+                        }
+                        _ => {
+                            return Err(FPGAArchParseError::InvalidTag(
+                                name.to_string(),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Ok(XmlEvent::EndElement { name }) => match name.to_string().as_str() {
+                        "switchblock_locations" => {
+                            return Ok(SwitchBlockLocations {
+                                pattern: SwitchBlockLocationsPattern::Custom(custom_locations),
+                                internal_switch,
+                            });
+                        }
+                        _ => {
+                            return Err(FPGAArchParseError::UnexpectedEndTag(
+                                name.to_string(),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Ok(XmlEvent::EndDocument) => {
+                        return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                            "switchblock_locations".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        return Err(FPGAArchParseError::XMLParseError(
+                            format!("{e:?}"),
+                            parser.position(),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {
+            return Err(FPGAArchParseError::AttributeParseError(
+                format!("Unknown switchblock_locations pattern: {}", pattern_str),
+                parser.position(),
+            ));
+        }
+    };
+
+    // For non-custom patterns, consume the end tag
+    if !matches!(pattern, SwitchBlockLocationsPattern::Custom(_)) {
+        loop {
+            match parser.next() {
+                Ok(XmlEvent::StartElement { name, .. }) => {
+                    return Err(FPGAArchParseError::InvalidTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+                Ok(XmlEvent::EndElement { name }) => match name.to_string().as_str() {
+                    "switchblock_locations" => break,
+                    _ => {
+                        return Err(FPGAArchParseError::UnexpectedEndTag(
+                            name.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                },
+                Ok(XmlEvent::EndDocument) => {
+                    return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                        "switchblock_locations".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(FPGAArchParseError::XMLParseError(
+                        format!("{e:?}"),
+                        parser.position(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(SwitchBlockLocations {
+        pattern,
+        internal_switch,
+    })
+}
+
 fn parse_tile_site(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
@@ -1020,6 +1309,7 @@ fn parse_tile(
 
     let mut ports: Vec<Port> = Vec::new();
     let mut sub_tiles: Vec<SubTile> = Vec::new();
+    let mut switchblock_locations: Option<SwitchBlockLocations> = None;
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement {
@@ -1031,6 +1321,17 @@ fn parse_tile(
                     }
                     "input" | "output" | "clock" => {
                         ports.push(parse_port(&name, &attributes, parser)?);
+                    }
+                    "switchblock_locations" => {
+                        switchblock_locations = match switchblock_locations {
+                            None => Some(parse_switchblock_locations(&name, &attributes, parser)?),
+                            Some(_) => {
+                                return Err(FPGAArchParseError::DuplicateTag(
+                                    "switchblock_locations".to_string(),
+                                    parser.position(),
+                                ));
+                            }
+                        }
                     }
                     _ => {
                         return Err(FPGAArchParseError::InvalidTag(
@@ -1071,6 +1372,7 @@ fn parse_tile(
         width,
         height,
         area,
+        switchblock_locations,
     })
 }
 

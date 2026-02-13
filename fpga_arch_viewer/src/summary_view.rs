@@ -1,19 +1,26 @@
-use crate::viewer::ViewMode;
+use crate::{complex_block_view::ComplexBlockViewState, viewer::ViewMode};
 use fpga_arch_parser::FPGAArch;
 
 #[derive(Default)]
 pub struct SummaryView {}
 
 impl SummaryView {
-    pub fn render(&mut self, arch: &FPGAArch, next_view_mode: &mut ViewMode, ctx: &egui::Context) {
+    pub fn render(
+        &mut self,
+        arch: &FPGAArch,
+        complex_block_view_state: &mut ComplexBlockViewState,
+        next_view_mode: &mut ViewMode,
+        ctx: &egui::Context,
+    ) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_summary(arch, next_view_mode, ui);
+            self.render_summary(arch, complex_block_view_state, next_view_mode, ui);
         });
     }
 
     fn render_summary(
         &mut self,
         arch: &FPGAArch,
+        complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui,
     ) {
@@ -162,7 +169,7 @@ impl SummaryView {
                             "Complex Blocks ({})",
                             arch.complex_block_list.len()
                         ));
-                        if ui.button("View Complex Block Details").clicked() {
+                        if ui.button("View All Complex Block Details").clicked() {
                             *next_view_mode = ViewMode::ComplexBlock;
                         }
                     });
@@ -170,14 +177,27 @@ impl SummaryView {
 
                     ui.collapsing("Complex Blocks", |ui| {
                         for (pb_idx, pb_type) in arch.complex_block_list.iter().enumerate() {
-                            ui.collapsing(
-                                format!("[{}] Complex Block: {}", pb_idx, &pb_type.name),
-                                |ui| {
-                                    ui.label(format!("Number of blocks: {}", pb_type.num_pb));
-                                    ui.label(format!("Modes: {}", pb_type.modes.len()));
-                                    ui.label(format!("Ports: {}", pb_type.ports.len()));
-                                },
-                            );
+                            ui.horizontal(|ui| {
+                                ui.collapsing(
+                                    format!("[{}] Complex Block: {}", pb_idx, &pb_type.name),
+                                    |ui| {
+                                        ui.label(format!("Number of blocks: {}", pb_type.num_pb));
+                                        ui.label(format!("Modes: {}", pb_type.modes.len()));
+                                        ui.label(format!("Ports: {}", pb_type.ports.len()));
+                                    },
+                                );
+                                if ui
+                                    .button(format!("View {} Block Details", pb_type.name))
+                                    .clicked()
+                                {
+                                    // TODO: The complex block view uses tile names to select the complex block in view.
+                                    //       We should have a tile view as well as a complex block view.
+                                    complex_block_view_state.selected_tile_name =
+                                        Some(pb_type.name.clone());
+                                    complex_block_view_state.selected_sub_tile_index = 0;
+                                    *next_view_mode = ViewMode::ComplexBlock;
+                                }
+                            });
                         }
                     });
                 });

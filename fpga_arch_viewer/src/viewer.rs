@@ -457,9 +457,12 @@ impl FpgaViewer {
     fn render_main_page(&mut self, ctx: &egui::Context) {
         match &self.architecture {
             Some(arch) => match self.view_mode {
-                ViewMode::Summary => self
-                    .summary_view
-                    .render(arch, &mut self.next_view_mode, ctx),
+                ViewMode::Summary => self.summary_view.render(
+                    arch,
+                    &mut self.complex_block_view.complex_block_view_state,
+                    &mut self.next_view_mode,
+                    ctx,
+                ),
                 ViewMode::Grid => self.grid_view.render(
                     arch,
                     &mut self.complex_block_view.complex_block_view_state,

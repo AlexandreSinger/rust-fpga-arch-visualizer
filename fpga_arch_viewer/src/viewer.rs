@@ -472,7 +472,7 @@ impl FpgaViewer {
                 ),
                 ViewMode::Grid => self.grid_view.render(
                     arch,
-                    &mut self.complex_block_view.complex_block_view_state,
+                    &mut self.tile_view.selected_tile_name,
                     &mut self.next_view_mode,
                     ctx,
                 ),

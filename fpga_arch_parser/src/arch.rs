@@ -66,6 +66,7 @@ pub enum Port {
     Clock(ClockPort),
 }
 
+#[derive(Debug)]
 pub enum TileSitePinMapping {
     Direct,
     Custom,

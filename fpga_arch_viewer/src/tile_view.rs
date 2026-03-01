@@ -1,6 +1,8 @@
 use fpga_arch_parser::FPGAArch;
 
-use crate::{common_ui, complex_block_view::ComplexBlockViewState, viewer::ViewMode};
+use crate::{
+    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree, viewer::ViewMode,
+};
 
 #[derive(Default)]
 pub struct TileView {
@@ -76,7 +78,7 @@ impl TileView {
         match &self.selected_tile_name {
             Some(tile_name) => {
                 if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                    self.render_tile(tile, complex_block_view_state, next_view_mode, ui);
+                    self.render_tile(tile, complex_block_view_state, next_view_mode, arch, ui);
                 } else if common_ui::render_centered_message(
                     ui,
                     "Tile not found",
@@ -104,6 +106,7 @@ impl TileView {
         tile: &fpga_arch_parser::Tile,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
+        arch: &FPGAArch,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::vertical()
@@ -234,6 +237,19 @@ impl TileView {
                         ui.label("Switch block locations configured for this tile");
                     });
                 }
+
+                ui.add_space(10.0);
+
+                // Heirarchy Tree Section
+                ui.group(|ui| {
+                    ui.heading("Hierarchy Tree");
+                    ui.separator();
+                    egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
+                        });
+                });
             });
     }
 }

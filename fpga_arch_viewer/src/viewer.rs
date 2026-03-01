@@ -466,6 +466,7 @@ impl FpgaViewer {
             Some(arch) => match self.view_mode {
                 ViewMode::Summary => self.summary_view.render(
                     arch,
+                    &mut self.tile_view.selected_tile_name,
                     &mut self.complex_block_view.complex_block_view_state,
                     &mut self.next_view_mode,
                     ctx,

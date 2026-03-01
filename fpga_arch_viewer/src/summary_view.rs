@@ -8,18 +8,26 @@ impl SummaryView {
     pub fn render(
         &mut self,
         arch: &FPGAArch,
+        selected_tile_name: &mut Option<String>,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         ctx: &egui::Context,
     ) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_summary(arch, complex_block_view_state, next_view_mode, ui);
+            self.render_summary(
+                arch,
+                selected_tile_name,
+                complex_block_view_state,
+                next_view_mode,
+                ui,
+            );
         });
     }
 
     fn render_summary(
         &mut self,
         arch: &FPGAArch,
+        selected_tile_name: &mut Option<String>,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui,
@@ -61,22 +69,32 @@ impl SummaryView {
                     ui.separator();
 
                     for (tile_idx, tile) in arch.tiles.iter().enumerate() {
-                        ui.collapsing(format!("[{}] Tile: {}", tile_idx, &tile.name), |ui| {
-                            ui.label(format!(
-                                "Dimensions: {}x{} (Area: {})",
-                                tile.width,
-                                tile.height,
-                                tile.area
-                                    .map(|a| format!("{:.2}", a))
-                                    .unwrap_or_else(|| "N/A".to_string())
-                            ));
-                            ui.label(format!("Sub-tiles: {}", tile.sub_tiles.len()));
-
-                            for (idx, sub_tile) in tile.sub_tiles.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.collapsing(format!("[{}] Tile: {}", tile_idx, &tile.name), |ui| {
                                 ui.label(format!(
-                                    "  [{}] {} (capacity: {})",
-                                    idx, sub_tile.name, sub_tile.capacity
+                                    "Dimensions: {}x{} (Area: {})",
+                                    tile.width,
+                                    tile.height,
+                                    tile.area
+                                        .map(|a| format!("{:.2}", a))
+                                        .unwrap_or_else(|| "N/A".to_string())
                                 ));
+                                ui.label(format!("Sub-tiles: {}", tile.sub_tiles.len()));
+
+                                for (idx, sub_tile) in tile.sub_tiles.iter().enumerate() {
+                                    ui.label(format!(
+                                        "  [{}] {} (capacity: {})",
+                                        idx, sub_tile.name, sub_tile.capacity
+                                    ));
+                                }
+                            });
+
+                            if ui
+                                .button(format!("View {} Tile Details", &tile.name))
+                                .clicked()
+                            {
+                                *selected_tile_name = Some(tile.name.clone());
+                                *next_view_mode = ViewMode::Tile;
                             }
                         });
                     }

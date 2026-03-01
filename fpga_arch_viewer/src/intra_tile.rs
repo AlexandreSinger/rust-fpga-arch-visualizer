@@ -8,7 +8,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::color_scheme;
 use crate::intra_block_drawing;
-use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
 // Constants
@@ -31,7 +30,6 @@ pub struct IntraTileState {
     pub selected_modes: HashMap<String, usize>,
     pub highlighted_positions_this_frame: Vec<egui::Pos2>,
     pub highlighted_positions_next_frame: Vec<egui::Pos2>,
-    pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
     pub pb_rects: HashMap<String, egui::Rect>,
     /// Zoom factor for the intra-tile canvas (1.0 = 100%).
@@ -46,7 +44,6 @@ impl Default for IntraTileState {
             selected_modes: HashMap::new(),
             highlighted_positions_this_frame: Vec::new(),
             highlighted_positions_next_frame: Vec::new(),
-            hierarchy_tree_height: None,
             expanded_blocks: HashSet::new(),
             pb_rects: HashMap::new(),
             zoom: 1.0,
@@ -91,75 +88,6 @@ fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::
 
     ui.set_style(std::sync::Arc::new(style));
     old
-}
-
-fn render_hierarchy_tree_panel(
-    ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
-    state: &mut IntraTileState,
-    available_rect: egui::Rect,
-    available_height: f32,
-) -> Option<f32> {
-    // Initialize hierarchy tree height
-    let default_tree_height = (available_height * 0.3).clamp(100.0, 400.0);
-    let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
-
-    let min_tree_height = 50.0;
-    let max_tree_height = available_height - 100.0;
-    let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
-
-    // Allocate space for hierarchy tree
-    let tree_rect = egui::Rect::from_min_size(
-        available_rect.min,
-        egui::vec2(available_rect.width(), tree_height),
-    );
-    let _tree_response = ui.scope_builder(egui::UiBuilder::new().max_rect(tree_rect), |ui| {
-        ui.set_width(available_rect.width());
-        egui::CollapsingHeader::new("Hierarchy Tree")
-            .default_open(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
-                    });
-            });
-    });
-
-    // Draw resizable separator between hierarchy tree and visual layout
-    let separator_y = tree_rect.max.y;
-    let separator_rect = egui::Rect::from_min_size(
-        egui::pos2(available_rect.min.x, separator_y - 2.0),
-        egui::vec2(available_rect.width(), 4.0),
-    );
-    let separator_response = ui
-        .scope_builder(egui::UiBuilder::new().max_rect(separator_rect), |ui| {
-            ui.allocate_response(separator_rect.size(), egui::Sense::drag())
-        });
-
-    ui.painter().rect_filled(
-        separator_rect,
-        0.0,
-        ui.style().visuals.widgets.inactive.bg_fill,
-    );
-    ui.painter().line_segment(
-        [separator_rect.left_top(), separator_rect.right_top()],
-        ui.style().visuals.widgets.inactive.bg_stroke,
-    );
-
-    if separator_response.inner.dragged() {
-        let delta_y = separator_response.inner.drag_delta().y;
-        let new_height = (tree_height + delta_y).clamp(min_tree_height, max_tree_height);
-        state.hierarchy_tree_height = Some(new_height);
-    }
-
-    // Update stored height if it's not set or if window was resized
-    if state.hierarchy_tree_height.is_none() || separator_response.inner.drag_stopped() {
-        state.hierarchy_tree_height = Some(tree_height);
-    }
-
-    Some(separator_rect.max.y)
 }
 
 fn render_visual_layout_canvas(
@@ -279,7 +207,6 @@ pub fn render_intra_tile_view(
     arch: &FPGAArch,
     tile: &Tile,
     state: &mut IntraTileState,
-    show_hierarchy_tree: bool,
     sub_tile_index: usize,
     expand_all: bool,
     draw_interconnects: bool,
@@ -297,50 +224,21 @@ pub fn render_intra_tile_view(
     ui.separator();
 
     let available_rect = ui.available_rect_before_wrap();
-    let available_height = available_rect.height();
-
-    let separator_bottom = if show_hierarchy_tree {
-        render_hierarchy_tree_panel(ui, arch, tile, state, available_rect, available_height)
-    } else {
-        None
-    };
 
     // Allocate space for visual layout
-    if let Some(separator_y) = separator_bottom {
-        let layout_rect = egui::Rect::from_min_max(
-            egui::pos2(available_rect.min.x, separator_y),
-            available_rect.max,
-        );
-        ui.scope_builder(egui::UiBuilder::new().max_rect(layout_rect), |ui| {
-            ui.set_width(available_rect.width());
-            ui.heading("Visual Layout");
-            render_visual_layout_controls(ui, state);
-            render_visual_layout_canvas(
-                ui,
-                arch,
-                tile,
-                state,
-                sub_tile_index,
-                expand_all,
-                draw_interconnects,
-                dark_mode,
-            );
-        });
-    } else {
-        ui.set_width(available_rect.width());
-        ui.heading("Visual Layout");
-        render_visual_layout_controls(ui, state);
-        render_visual_layout_canvas(
-            ui,
-            arch,
-            tile,
-            state,
-            sub_tile_index,
-            expand_all,
-            draw_interconnects,
-            dark_mode,
-        );
-    }
+    ui.set_width(available_rect.width());
+    ui.heading("Visual Layout");
+    render_visual_layout_controls(ui, state);
+    render_visual_layout_canvas(
+        ui,
+        arch,
+        tile,
+        state,
+        sub_tile_index,
+        expand_all,
+        draw_interconnects,
+        dark_mode,
+    );
 }
 
 // ------------------------------------------------------------

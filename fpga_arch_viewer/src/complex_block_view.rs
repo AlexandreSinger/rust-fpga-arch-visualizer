@@ -9,7 +9,6 @@ use crate::{
 pub struct ComplexBlockViewState {
     pub selected_tile_name: Option<String>,
     pub selected_sub_tile_index: usize,
-    pub show_hierarchy_tree: bool,
     pub intra_tile_state: IntraTileState,
     pub all_blocks_expanded: bool,
     pub draw_intra_interconnects: bool,
@@ -25,7 +24,6 @@ impl Default for ComplexBlockView {
             complex_block_view_state: ComplexBlockViewState {
                 selected_tile_name: None,
                 selected_sub_tile_index: 0,
-                show_hierarchy_tree: false,
                 intra_tile_state: IntraTileState::default(),
                 all_blocks_expanded: false,
                 draw_intra_interconnects: true,
@@ -81,7 +79,6 @@ impl ComplexBlockView {
                     arch,
                     tile,
                     &mut self.complex_block_view_state.intra_tile_state,
-                    self.complex_block_view_state.show_hierarchy_tree,
                     sub_tile_index,
                     self.complex_block_view_state.all_blocks_expanded,
                     self.complex_block_view_state.draw_intra_interconnects,
@@ -109,7 +106,6 @@ impl ComplexBlockView {
         let should_expand_all = render_intra_tile_controls_panel(
             ctx,
             arch,
-            &mut self.complex_block_view_state.show_hierarchy_tree,
             &mut self.complex_block_view_state.all_blocks_expanded,
             &mut self.complex_block_view_state.draw_intra_interconnects,
             &mut self.complex_block_view_state.selected_tile_name,
@@ -151,7 +147,6 @@ impl ComplexBlockView {
 fn render_intra_tile_controls_panel(
     ctx: &egui::Context,
     arch: &FPGAArch,
-    show_hierarchy_tree: &mut bool,
     all_blocks_expanded: &mut bool,
     draw_intra_interconnects: &mut bool,
     selected_tile_name: &mut Option<String>,
@@ -164,9 +159,6 @@ fn render_intra_tile_controls_panel(
         .show(ctx, |ui| {
             ui.heading("Complex Block View");
             ui.add_space(10.0);
-
-            // Hierarchy tree toggle
-            ui.checkbox(show_hierarchy_tree, "Show Hierarchy Tree");
 
             // Expand All toggle
             let mut expand_all_toggle_val = *all_blocks_expanded;

@@ -153,10 +153,8 @@ impl TileView {
                                     .button(format!("View {} Block Details", pb_type))
                                     .clicked()
                                 {
-                                    complex_block_view_state.selected_tile_name =
+                                    complex_block_view_state.selected_complex_block_name =
                                         Some(pb_type.clone());
-                                    // FIXME: This should be removed.
-                                    complex_block_view_state.selected_sub_tile_index = 0;
                                     *next_view_mode = ViewMode::ComplexBlock;
                                 }
                             });

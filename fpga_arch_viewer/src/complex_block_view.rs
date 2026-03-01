@@ -7,8 +7,7 @@ use crate::{
 };
 
 pub struct ComplexBlockViewState {
-    pub selected_tile_name: Option<String>,
-    pub selected_sub_tile_index: usize,
+    pub selected_complex_block_name: Option<String>,
     pub intra_tile_state: IntraTileState,
     pub all_blocks_expanded: bool,
     pub draw_intra_interconnects: bool,
@@ -22,8 +21,7 @@ impl Default for ComplexBlockView {
     fn default() -> Self {
         Self {
             complex_block_view_state: ComplexBlockViewState {
-                selected_tile_name: None,
-                selected_sub_tile_index: 0,
+                selected_complex_block_name: None,
                 intra_tile_state: IntraTileState::default(),
                 all_blocks_expanded: false,
                 draw_intra_interconnects: true,
@@ -54,7 +52,7 @@ impl ComplexBlockView {
     }
 
     pub fn on_view_close(&mut self) {
-        self.complex_block_view_state.selected_tile_name = None;
+        self.complex_block_view_state.selected_complex_block_name = None;
     }
 
     fn render_complex_block_view(
@@ -64,38 +62,32 @@ impl ComplexBlockView {
         dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
-        if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name {
-            if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                let sub_tile_index = if self.complex_block_view_state.selected_sub_tile_index
-                    < tile.sub_tiles.len()
-                {
-                    self.complex_block_view_state.selected_sub_tile_index
-                } else {
-                    self.complex_block_view_state.selected_sub_tile_index = 0;
-                    0
-                };
+        if let Some(pb_type_name) = &self.complex_block_view_state.selected_complex_block_name {
+            if let Some(root_pb) = arch
+                .complex_block_list
+                .iter()
+                .find(|b| b.name == *pb_type_name)
+            {
                 intra_tile::render_intra_tile_view(
                     ui,
-                    arch,
-                    tile,
+                    root_pb,
                     &mut self.complex_block_view_state.intra_tile_state,
-                    sub_tile_index,
                     self.complex_block_view_state.all_blocks_expanded,
                     self.complex_block_view_state.draw_intra_interconnects,
                     dark_mode,
                 );
             } else if common_ui::render_centered_message(
                 ui,
-                "Tile not found",
-                &format!("Could not find tile: {}", tile_name),
+                "Complex block not found",
+                &format!("Could not find complex block: {}", pb_type_name),
                 Some("Back to Grid View"),
             ) {
                 *next_view_mode = ViewMode::Grid;
             }
         } else if common_ui::render_centered_message(
             ui,
-            "No tile selected",
-            "Please select a tile from the dropdown or click on a tile in the grid view.",
+            "No complex block selected",
+            "Please select a complex block from the dropdown or click on a tile in the grid view.",
             Some("Back to Grid View"),
         ) {
             *next_view_mode = ViewMode::Grid;
@@ -108,8 +100,7 @@ impl ComplexBlockView {
             arch,
             &mut self.complex_block_view_state.all_blocks_expanded,
             &mut self.complex_block_view_state.draw_intra_interconnects,
-            &mut self.complex_block_view_state.selected_tile_name,
-            &mut self.complex_block_view_state.selected_sub_tile_index,
+            &mut self.complex_block_view_state.selected_complex_block_name,
         );
         if should_expand_all {
             self.apply_expand_all_state(arch);
@@ -118,24 +109,17 @@ impl ComplexBlockView {
 
     fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
         if self.complex_block_view_state.all_blocks_expanded {
-            if let Some(tile_name) = &self.complex_block_view_state.selected_tile_name
-                && let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name)
-                && self.complex_block_view_state.selected_sub_tile_index < tile.sub_tiles.len()
+            if let Some(pb_type_name) = &self.complex_block_view_state.selected_complex_block_name
+                && let Some(root_pb) = arch
+                    .complex_block_list
+                    .iter()
+                    .find(|b| b.name == *pb_type_name)
             {
-                let sub_tile =
-                    &tile.sub_tiles[self.complex_block_view_state.selected_sub_tile_index];
-                if let Some(site) = sub_tile.equivalent_sites.first()
-                    && let Some(root_pb) = arch
-                        .complex_block_list
-                        .iter()
-                        .find(|pb| pb.name == site.pb_type)
-                {
-                    intra_tile::expand_all_blocks(
-                        &mut self.complex_block_view_state.intra_tile_state,
-                        root_pb,
-                        &root_pb.name,
-                    );
-                }
+                intra_tile::expand_all_blocks(
+                    &mut self.complex_block_view_state.intra_tile_state,
+                    root_pb,
+                    &root_pb.name,
+                );
             }
         } else {
             intra_tile::collapse_all_blocks(&mut self.complex_block_view_state.intra_tile_state);
@@ -149,8 +133,7 @@ fn render_intra_tile_controls_panel(
     arch: &FPGAArch,
     all_blocks_expanded: &mut bool,
     draw_intra_interconnects: &mut bool,
-    selected_tile_name: &mut Option<String>,
-    selected_sub_tile_index: &mut usize,
+    selected_complex_block_name: &mut Option<String>,
 ) -> bool {
     let mut expand_all = false;
 
@@ -178,33 +161,36 @@ fn render_intra_tile_controls_panel(
             ui.add_space(10.0);
 
             // Tile selector
-            if !arch.tiles.is_empty() {
-                ui.label("Select Tile:");
+            if !arch.complex_block_list.is_empty() {
+                ui.label("Select Complex Block:");
                 ui.add_space(5.0);
 
-                let mut selected_tile_name_str =
-                    selected_tile_name.as_deref().unwrap_or("").to_string();
+                let mut selected_complex_block_name_str = selected_complex_block_name
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_string();
 
-                egui::ComboBox::from_id_salt("tile_selector")
-                    .selected_text(if !selected_tile_name_str.is_empty() {
-                        selected_tile_name_str.as_str()
+                egui::ComboBox::from_id_salt("complex_block_selector")
+                    .selected_text(if !selected_complex_block_name_str.is_empty() {
+                        selected_complex_block_name_str.as_str()
                     } else {
-                        "Select a tile"
+                        "Select a complex block"
                     })
                     .show_ui(ui, |ui| {
-                        for tile in &arch.tiles {
+                        for pb_type in &arch.complex_block_list {
                             ui.selectable_value(
-                                &mut selected_tile_name_str,
-                                tile.name.clone(),
-                                &tile.name,
+                                &mut selected_complex_block_name_str,
+                                pb_type.name.clone(),
+                                &pb_type.name,
                             );
                         }
                     });
 
                 // If tile selection changed, update state
-                if selected_tile_name_str != selected_tile_name.as_deref().unwrap_or("") {
-                    *selected_tile_name = Some(selected_tile_name_str);
-                    *selected_sub_tile_index = 0;
+                if selected_complex_block_name_str
+                    != selected_complex_block_name.as_deref().unwrap_or("")
+                {
+                    *selected_complex_block_name = Some(selected_complex_block_name_str);
                     expand_all = true;
                 }
             } else {

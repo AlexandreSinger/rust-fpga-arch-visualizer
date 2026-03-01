@@ -190,11 +190,8 @@ impl SummaryView {
                                     .button(format!("View {} Block Details", pb_type.name))
                                     .clicked()
                                 {
-                                    // TODO: The complex block view uses tile names to select the complex block in view.
-                                    //       We should have a tile view as well as a complex block view.
-                                    complex_block_view_state.selected_tile_name =
+                                    complex_block_view_state.selected_complex_block_name =
                                         Some(pb_type.name.clone());
-                                    complex_block_view_state.selected_sub_tile_index = 0;
                                     *next_view_mode = ViewMode::ComplexBlock;
                                 }
                             });

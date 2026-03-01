@@ -3,7 +3,7 @@
 //! Part of the FPGA Visualizer, this module renders the intra-tile view of an FPGA tile.
 
 use eframe::egui;
-use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
+use fpga_arch_parser::{PBType, PBTypeClass, Port};
 use std::collections::{HashMap, HashSet};
 
 use crate::color_scheme;
@@ -92,10 +92,8 @@ fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::
 
 fn render_visual_layout_canvas(
     ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
+    root_pb: &PBType,
     state: &mut IntraTileState,
-    sub_tile_index: usize,
     expand_all: bool,
     draw_interconnects: bool,
     dark_mode: bool,
@@ -144,45 +142,28 @@ fn render_visual_layout_canvas(
                 }
             }
 
-            if sub_tile_index < tile.sub_tiles.len() {
-                let sub_tile = &tile.sub_tiles[sub_tile_index];
-                if let Some(site) = sub_tile.equivalent_sites.first() {
-                    if let Some(root_pb) = arch
-                        .complex_block_list
-                        .iter()
-                        .find(|pb| pb.name == site.pb_type)
-                    {
-                        // Draw pbtype here
-                        let zoom = state.zoom_clamped();
-                        let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-                        let (response, painter) = ui.allocate_painter(
-                            total_size + egui::vec2(40.0, 40.0) * zoom,
-                            // Important: don't capture drags here, otherwise it prevents the
-                            // ScrollArea from receiving drag-to-pan gestures.
-                            egui::Sense::hover(),
-                        );
-                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
+            // Draw pbtype here
+            let zoom = state.zoom_clamped();
+            let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+            let (response, painter) = ui.allocate_painter(
+                total_size + egui::vec2(40.0, 40.0) * zoom,
+                // Important: don't capture drags here, otherwise it prevents the
+                // ScrollArea from receiving drag-to-pan gestures.
+                egui::Sense::hover(),
+            );
+            let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
 
-                        let _ = draw_pb_type(
-                            &painter,
-                            root_pb,
-                            start_pos,
-                            state,
-                            &root_pb.name,
-                            ui,
-                            expand_all,
-                            draw_interconnects,
-                            dark_mode,
-                        );
-                    } else {
-                        ui.label("Root PBType not found");
-                    }
-                } else {
-                    ui.label("No equivalent site found");
-                }
-            } else {
-                ui.label("Invalid sub_tile index");
-            }
+            let _ = draw_pb_type(
+                &painter,
+                root_pb,
+                start_pos,
+                state,
+                &root_pb.name,
+                ui,
+                expand_all,
+                draw_interconnects,
+                dark_mode,
+            );
         });
 }
 
@@ -204,10 +185,8 @@ fn render_visual_layout_controls(ui: &mut egui::Ui, state: &mut IntraTileState) 
 
 pub fn render_intra_tile_view(
     ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
+    root_pb: &PBType,
     state: &mut IntraTileState,
-    sub_tile_index: usize,
     expand_all: bool,
     draw_interconnects: bool,
     dark_mode: bool,
@@ -220,7 +199,7 @@ pub fn render_intra_tile_view(
 
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
-    ui.heading(format!("Tile: {}", tile.name));
+    ui.heading(format!("Complex Block: {}", root_pb.name));
     ui.separator();
 
     let available_rect = ui.available_rect_before_wrap();
@@ -231,10 +210,8 @@ pub fn render_intra_tile_view(
     render_visual_layout_controls(ui, state);
     render_visual_layout_canvas(
         ui,
-        arch,
-        tile,
+        root_pb,
         state,
-        sub_tile_index,
         expand_all,
         draw_interconnects,
         dark_mode,

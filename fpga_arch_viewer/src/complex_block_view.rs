@@ -80,7 +80,7 @@ impl ComplexBlockView {
                 ui,
                 "Complex block not found",
                 &format!("Could not find complex block: {}", pb_type_name),
-                Some("Back to Grid View"),
+                Some("Go to Grid View"),
             ) {
                 *next_view_mode = ViewMode::Grid;
             }
@@ -88,7 +88,7 @@ impl ComplexBlockView {
             ui,
             "No complex block selected",
             "Please select a complex block from the dropdown or click on a tile in the grid view.",
-            Some("Back to Grid View"),
+            Some("Go to Grid View"),
         ) {
             *next_view_mode = ViewMode::Grid;
         }

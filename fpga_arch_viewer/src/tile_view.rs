@@ -60,7 +60,7 @@ impl TileView {
                 });
 
             // If tile selection changed, update state
-            if selected_tile_name_str != self.selected_tile_name.as_deref().unwrap_or("").to_string() {
+            if selected_tile_name_str != self.selected_tile_name.as_deref().unwrap_or("") {
                 self.selected_tile_name = Some(selected_tile_name_str);
             }
         } else {

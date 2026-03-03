@@ -194,7 +194,7 @@ fn render_intra_tile_controls_panel(
                     expand_all = true;
                 }
             } else {
-                ui.label("No tiles available in architecture");
+                ui.label("No complex blocks available in architecture");
             }
         });
 

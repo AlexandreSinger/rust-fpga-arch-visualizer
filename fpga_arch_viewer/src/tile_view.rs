@@ -41,7 +41,7 @@ impl TileView {
             ui.add_space(5.0);
 
             let mut selected_tile_name_str =
-                self.selected_tile_name.clone().unwrap_or("".to_string());
+                self.selected_tile_name.as_deref().unwrap_or("").to_string();
 
             egui::ComboBox::from_id_salt("tile_selector_combobox")
                 .selected_text(if !selected_tile_name_str.is_empty() {
@@ -60,7 +60,7 @@ impl TileView {
                 });
 
             // If tile selection changed, update state
-            if selected_tile_name_str != self.selected_tile_name.clone().unwrap_or("".to_string()) {
+            if selected_tile_name_str != self.selected_tile_name.as_deref().unwrap_or("").to_string() {
                 self.selected_tile_name = Some(selected_tile_name_str);
             }
         } else {
@@ -92,7 +92,7 @@ impl TileView {
                 if common_ui::render_centered_message(
                     ui,
                     "No tile selected",
-                    "Please select a tile from the dropdown or clock on a tile in the grid view.",
+                    "Please select a tile from the dropdown or click on a tile in the grid view.",
                     Some("Back to Grid View"),
                 ) {
                     *next_view_mode = ViewMode::Grid;
@@ -238,7 +238,7 @@ impl TileView {
 
                 ui.add_space(10.0);
 
-                // Heirarchy Tree Section
+                // Hierarchy Tree Section
                 ui.group(|ui| {
                     ui.heading("Hierarchy Tree");
                     ui.separator();

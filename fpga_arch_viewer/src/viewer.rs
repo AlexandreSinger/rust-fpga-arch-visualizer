@@ -419,6 +419,7 @@ impl FpgaViewer {
                     }
                     if ui.button("Tile View").clicked() {
                         self.next_view_mode = ViewMode::Tile;
+                        ui.close();
                     }
                     if ui.button("Complex Block View").clicked() {
                         self.next_view_mode = ViewMode::ComplexBlock;

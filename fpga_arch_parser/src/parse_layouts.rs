@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -11,9 +10,9 @@ use crate::parse_error::*;
 
 use crate::parse_metadata::parse_metadata;
 
-fn parse_bool_attribute(
+fn parse_bool_attribute<R: BufRead>(
     value: &str,
-    parser: &EventReader<BufReader<File>>,
+    parser: &EventReader<R>,
 ) -> Result<bool, FPGAArchParseError> {
     match value.to_lowercase().as_str() {
         "true" | "on" | "1" | "yes" => Ok(true),
@@ -25,10 +24,10 @@ fn parse_bool_attribute(
     }
 }
 
-fn parse_grid_location(
+fn parse_grid_location<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<GridLocation, FPGAArchParseError> {
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
@@ -352,9 +351,9 @@ fn parse_grid_location(
     }
 }
 
-fn parse_grid_location_list(
+fn parse_grid_location_list<R: BufRead>(
     layout_type_name: &OwnedName,
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<GridLocation>, FPGAArchParseError> {
     let mut grid_locations: Vec<GridLocation> = Vec::new();
     loop {
@@ -392,10 +391,10 @@ fn parse_grid_location_list(
     Ok(grid_locations)
 }
 
-fn parse_auto_layout(
+fn parse_auto_layout<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<AutoLayout, FPGAArchParseError> {
     assert!(name.to_string() == "auto_layout");
 
@@ -441,10 +440,10 @@ fn parse_auto_layout(
     })
 }
 
-fn parse_fixed_layout(
+fn parse_fixed_layout<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<FixedLayout, FPGAArchParseError> {
     assert!(name.to_string() == "fixed_layout");
 
@@ -550,10 +549,10 @@ fn parse_fixed_layout(
     })
 }
 
-pub fn parse_layouts(
+pub fn parse_layouts<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceLayouts, FPGAArchParseError> {
     assert!(name.to_string() == "layout");
 

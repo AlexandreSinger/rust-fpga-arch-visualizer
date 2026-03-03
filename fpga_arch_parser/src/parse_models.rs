@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_model_port(
+fn parse_model_port<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<ModelPort, FPGAArchParseError> {
     assert!(tag_name.to_string() == "port");
 
@@ -135,10 +134,10 @@ fn parse_model_port(
     })
 }
 
-fn parse_model_port_list(
+fn parse_model_port_list<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<ModelPort>, FPGAArchParseError> {
     assert!(tag_name.to_string() == "input_ports" || tag_name.to_string() == "output_ports");
     if !attributes.is_empty() {
@@ -194,10 +193,10 @@ fn parse_model_port_list(
     Ok(ports)
 }
 
-fn parse_model(
+fn parse_model<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Model, FPGAArchParseError> {
     assert!(tag_name.to_string() == "model");
 
@@ -340,10 +339,10 @@ fn parse_model(
     })
 }
 
-pub fn parse_models(
+pub fn parse_models<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Model>, FPGAArchParseError> {
     assert!(name.to_string() == "models");
     if !attributes.is_empty() {

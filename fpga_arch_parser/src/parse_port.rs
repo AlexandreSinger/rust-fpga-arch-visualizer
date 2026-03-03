@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::{Position, TextPosition};
@@ -65,10 +64,10 @@ fn parse_port_class(value: &str, position: TextPosition) -> Result<PortClass, FP
     ))
 }
 
-pub fn parse_port(
+pub fn parse_port<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Port, FPGAArchParseError> {
     let mut port_name: Option<String> = None;
     let mut num_pins: Option<i32> = None;

@@ -1116,6 +1116,8 @@ dependencies = [
  "egui_extras",
  "fpga_arch_parser",
  "rfd",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

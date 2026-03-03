@@ -2,6 +2,11 @@ use eframe::egui;
 use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
 use std::io::{BufRead, BufReader};
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local;
+#[cfg(target_arch = "wasm32")]
+use rfd::AsyncFileDialog;
+
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
 use crate::complex_block_view::ComplexBlockView;
@@ -283,6 +288,39 @@ impl FpgaViewer {
         self.viewer_ctx.loaded_file_path = Some(file_path);
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn load_architecture_from_bytes(&mut self, data: Vec<u8>, file_name: String) {
+        match fpga_arch_parser::parse_from_bytes(&data) {
+            Ok(arch) => {
+                // Update views with new architecture.
+                self.grid_view.on_architecture_load(&arch);
+
+                // Update viewer context.
+                self.architecture = Some(arch);
+                self.viewer_ctx.show_error = false;
+                self.viewer_ctx.error_title.clear();
+                self.viewer_ctx.error_message.clear();
+
+                // Print success.
+                println!("Successfully loaded architecture file: {}", file_name);
+            }
+            Err(e) => {
+                self.architecture = None;
+                self.viewer_ctx.show_error = true;
+                self.viewer_ctx.error_title = "Parse Error".to_owned();
+                self.viewer_ctx.error_message = format!(
+                    "Error loading architecture: {}\n\n{}",
+                    file_name,
+                    format_parse_error(&e, None)
+                );
+            }
+        }
+
+        // Store the file name (we don't have a path in WASM)
+        self.viewer_ctx.loaded_file_path = Some(file_name.into());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_file_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("XML Architecture Files", &["xml"])
@@ -291,6 +329,29 @@ impl FpgaViewer {
         {
             self.load_architecture_file(path);
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_file_dialog(&mut self) {
+        let this = self as *mut Self;
+        spawn_local(async move {
+            let file_handle = AsyncFileDialog::new()
+                .add_filter("XML Architecture Files", &["xml"])
+                .set_title("Open FPGA Architecture File")
+                .pick_file()
+                .await;
+
+            if let Some(file_handle) = file_handle {
+                let file_name = file_handle.file_name();
+                let data = file_handle.read().await;
+                // SAFETY: The async block is local to the FpgaViewer instance,
+                // and we're using spawn_local which doesn't move the future beyond
+                // the current task. The pointer is only accessed within this closure.
+                unsafe {
+                    (*this).load_architecture_from_bytes(data, file_name);
+                }
+            }
+        });
     }
 
     fn navigate_back(&mut self) {

@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_switchblock_location(
+fn parse_switchblock_location<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<CustomSwitchBlockLocation, FPGAArchParseError> {
     assert!(name.to_string() == "switchblock_location");
 
@@ -177,10 +176,10 @@ fn parse_switchblock_location(
     Ok(switchblock_location)
 }
 
-fn parse_func(
+fn parse_func<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<CustomSwitchFunc, FPGAArchParseError> {
     assert!(name.to_string() == "func");
 
@@ -293,10 +292,10 @@ fn parse_func(
     Ok(CustomSwitchFunc { func_type, formula })
 }
 
-fn parse_switchfuncs(
+fn parse_switchfuncs<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<CustomSwitchFunc>, FPGAArchParseError> {
     assert!(name.to_string() == "switchfuncs");
     if !attributes.is_empty() {
@@ -352,9 +351,9 @@ fn parse_switchfuncs(
     Ok(switch_funcs)
 }
 
-fn parse_switchpoint_list(
+fn parse_switchpoint_list<R: BufRead>(
     switchpoint_list: &str,
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<i32>, FPGAArchParseError> {
     let mut switchpoints: Vec<i32> = Vec::new();
 
@@ -375,10 +374,10 @@ fn parse_switchpoint_list(
     Ok(switchpoints)
 }
 
-fn parse_conn_point(
+fn parse_conn_point<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<CustomSwitchBlockConnPoint, FPGAArchParseError> {
     assert!(name.to_string() == "from" || name.to_string() == "to");
 
@@ -474,10 +473,10 @@ fn parse_conn_point(
     })
 }
 
-fn parse_wireconn(
+fn parse_wireconn<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<CustomSwitchWireConn, FPGAArchParseError> {
     assert!(name.to_string() == "wireconn");
 
@@ -754,10 +753,10 @@ fn parse_wireconn(
     })
 }
 
-fn parse_switchblock(
+fn parse_switchblock<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<CustomSwitchBlock, FPGAArchParseError> {
     assert!(name.to_string() == "switchblock");
 
@@ -916,10 +915,10 @@ fn parse_switchblock(
     })
 }
 
-pub fn parse_switchblocklist(
+pub fn parse_switchblocklist<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<CustomSwitchBlock>, FPGAArchParseError> {
     assert!(name.to_string() == "switchblocklist");
     if !attributes.is_empty() {

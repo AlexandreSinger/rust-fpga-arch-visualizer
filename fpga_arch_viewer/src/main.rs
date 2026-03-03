@@ -14,6 +14,7 @@ mod intra_hierarchy_tree;
 mod intra_tile;
 mod settings;
 mod summary_view;
+mod tile_view;
 mod viewer;
 
 fn main() -> Result<(), eframe::Error> {

@@ -2,7 +2,6 @@ use fpga_arch_parser::FPGAArch;
 use std::{cmp::max, collections::HashMap};
 
 use crate::{
-    complex_block_view::ComplexBlockViewState,
     grid::{DeviceGrid, GridCell},
     grid_renderer::GridRenderer,
     viewer::ViewMode,
@@ -130,14 +129,14 @@ impl GridView {
     pub fn render(
         &mut self,
         arch: &FPGAArch,
-        complex_block_view_state: &mut ComplexBlockViewState,
+        selected_tile_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
         ctx: &egui::Context,
     ) {
         self.render_side_panel(arch, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_grid_view(arch, complex_block_view_state, next_view_mode, ui);
+            self.render_grid_view(arch, selected_tile_name, next_view_mode, ui);
         });
 
         self.grid_state.zoom_changed = false;
@@ -183,7 +182,7 @@ impl GridView {
     fn render_grid_view(
         &mut self,
         arch: &FPGAArch,
-        complex_block_view_state: &mut ComplexBlockViewState,
+        selected_tile_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui,
     ) {
@@ -225,9 +224,8 @@ impl GridView {
                 self.grid_renderer
                     .render_grid(ui, grid, arch, self.grid_state.zoom_factor)
             {
-                complex_block_view_state.selected_tile_name = Some(clicked_tile);
-                complex_block_view_state.selected_sub_tile_index = 0;
-                *next_view_mode = ViewMode::ComplexBlock;
+                *selected_tile_name = Some(clicked_tile);
+                *next_view_mode = ViewMode::Tile;
             }
         } else {
             // TODO: Render an error window

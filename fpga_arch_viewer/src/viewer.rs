@@ -8,11 +8,13 @@ use crate::complex_block_view::ComplexBlockView;
 use crate::grid_view::GridView;
 use crate::settings;
 use crate::summary_view::SummaryView;
+use crate::tile_view::TileView;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
     Summary,
     Grid,
+    Tile,
     ComplexBlock,
 }
 
@@ -52,6 +54,7 @@ pub struct FpgaViewer {
 
     summary_view: SummaryView,
     grid_view: GridView,
+    tile_view: TileView,
     complex_block_view: ComplexBlockView,
 
     view_mode: ViewMode,
@@ -226,6 +229,7 @@ impl FpgaViewer {
             },
             summary_view: SummaryView::default(),
             grid_view: GridView::default(),
+            tile_view: TileView::default(),
             complex_block_view: ComplexBlockView::default(),
             view_mode: ViewMode::Summary,
             next_view_mode: ViewMode::Summary,
@@ -413,6 +417,10 @@ impl FpgaViewer {
                         self.next_view_mode = ViewMode::Grid;
                         ui.close();
                     }
+                    if ui.button("Tile View").clicked() {
+                        self.next_view_mode = ViewMode::Tile;
+                        ui.close();
+                    }
                     if ui.button("Complex Block View").clicked() {
                         self.next_view_mode = ViewMode::ComplexBlock;
                         ui.close();
@@ -457,10 +465,20 @@ impl FpgaViewer {
     fn render_main_page(&mut self, ctx: &egui::Context) {
         match &self.architecture {
             Some(arch) => match self.view_mode {
-                ViewMode::Summary => self
-                    .summary_view
-                    .render(arch, &mut self.next_view_mode, ctx),
+                ViewMode::Summary => self.summary_view.render(
+                    arch,
+                    &mut self.tile_view.selected_tile_name,
+                    &mut self.complex_block_view.complex_block_view_state,
+                    &mut self.next_view_mode,
+                    ctx,
+                ),
                 ViewMode::Grid => self.grid_view.render(
+                    arch,
+                    &mut self.tile_view.selected_tile_name,
+                    &mut self.next_view_mode,
+                    ctx,
+                ),
+                ViewMode::Tile => self.tile_view.render(
                     arch,
                     &mut self.complex_block_view.complex_block_view_state,
                     &mut self.next_view_mode,

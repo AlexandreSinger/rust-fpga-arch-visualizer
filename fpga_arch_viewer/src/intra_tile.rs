@@ -3,12 +3,11 @@
 //! Part of the FPGA Visualizer, this module renders the intra-tile view of an FPGA tile.
 
 use eframe::egui;
-use fpga_arch_parser::{FPGAArch, PBType, PBTypeClass, Port, Tile};
+use fpga_arch_parser::{PBType, PBTypeClass, Port};
 use std::collections::{HashMap, HashSet};
 
 use crate::color_scheme;
 use crate::intra_block_drawing;
-use crate::intra_hierarchy_tree;
 
 // ------------------------------------------------------------
 // Constants
@@ -31,7 +30,6 @@ pub struct IntraTileState {
     pub selected_modes: HashMap<String, usize>,
     pub highlighted_positions_this_frame: Vec<egui::Pos2>,
     pub highlighted_positions_next_frame: Vec<egui::Pos2>,
-    pub hierarchy_tree_height: Option<f32>,
     pub expanded_blocks: HashSet<String>,
     pub pb_rects: HashMap<String, egui::Rect>,
     /// Zoom factor for the intra-tile canvas (1.0 = 100%).
@@ -46,7 +44,6 @@ impl Default for IntraTileState {
             selected_modes: HashMap::new(),
             highlighted_positions_this_frame: Vec::new(),
             highlighted_positions_next_frame: Vec::new(),
-            hierarchy_tree_height: None,
             expanded_blocks: HashSet::new(),
             pb_rects: HashMap::new(),
             zoom: 1.0,
@@ -93,81 +90,10 @@ fn apply_local_zoom_style(ui: &mut egui::Ui, zoom: f32) -> std::sync::Arc<egui::
     old
 }
 
-fn render_hierarchy_tree_panel(
-    ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
-    state: &mut IntraTileState,
-    available_rect: egui::Rect,
-    available_height: f32,
-) -> Option<f32> {
-    // Initialize hierarchy tree height
-    let default_tree_height = (available_height * 0.3).clamp(100.0, 400.0);
-    let tree_height = state.hierarchy_tree_height.unwrap_or(default_tree_height);
-
-    let min_tree_height = 50.0;
-    let max_tree_height = available_height - 100.0;
-    let tree_height = tree_height.clamp(min_tree_height, max_tree_height);
-
-    // Allocate space for hierarchy tree
-    let tree_rect = egui::Rect::from_min_size(
-        available_rect.min,
-        egui::vec2(available_rect.width(), tree_height),
-    );
-    let _tree_response = ui.scope_builder(egui::UiBuilder::new().max_rect(tree_rect), |ui| {
-        ui.set_width(available_rect.width());
-        egui::CollapsingHeader::new("Hierarchy Tree")
-            .default_open(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
-                    });
-            });
-    });
-
-    // Draw resizable separator between hierarchy tree and visual layout
-    let separator_y = tree_rect.max.y;
-    let separator_rect = egui::Rect::from_min_size(
-        egui::pos2(available_rect.min.x, separator_y - 2.0),
-        egui::vec2(available_rect.width(), 4.0),
-    );
-    let separator_response = ui
-        .scope_builder(egui::UiBuilder::new().max_rect(separator_rect), |ui| {
-            ui.allocate_response(separator_rect.size(), egui::Sense::drag())
-        });
-
-    ui.painter().rect_filled(
-        separator_rect,
-        0.0,
-        ui.style().visuals.widgets.inactive.bg_fill,
-    );
-    ui.painter().line_segment(
-        [separator_rect.left_top(), separator_rect.right_top()],
-        ui.style().visuals.widgets.inactive.bg_stroke,
-    );
-
-    if separator_response.inner.dragged() {
-        let delta_y = separator_response.inner.drag_delta().y;
-        let new_height = (tree_height + delta_y).clamp(min_tree_height, max_tree_height);
-        state.hierarchy_tree_height = Some(new_height);
-    }
-
-    // Update stored height if it's not set or if window was resized
-    if state.hierarchy_tree_height.is_none() || separator_response.inner.drag_stopped() {
-        state.hierarchy_tree_height = Some(tree_height);
-    }
-
-    Some(separator_rect.max.y)
-}
-
 fn render_visual_layout_canvas(
     ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
+    root_pb: &PBType,
     state: &mut IntraTileState,
-    sub_tile_index: usize,
     expand_all: bool,
     draw_interconnects: bool,
     dark_mode: bool,
@@ -216,45 +142,28 @@ fn render_visual_layout_canvas(
                 }
             }
 
-            if sub_tile_index < tile.sub_tiles.len() {
-                let sub_tile = &tile.sub_tiles[sub_tile_index];
-                if let Some(site) = sub_tile.equivalent_sites.first() {
-                    if let Some(root_pb) = arch
-                        .complex_block_list
-                        .iter()
-                        .find(|pb| pb.name == site.pb_type)
-                    {
-                        // Draw pbtype here
-                        let zoom = state.zoom_clamped();
-                        let total_size = measure_pb_type(root_pb, state, &root_pb.name);
-                        let (response, painter) = ui.allocate_painter(
-                            total_size + egui::vec2(40.0, 40.0) * zoom,
-                            // Important: don't capture drags here, otherwise it prevents the
-                            // ScrollArea from receiving drag-to-pan gestures.
-                            egui::Sense::hover(),
-                        );
-                        let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
+            // Draw pbtype here
+            let zoom = state.zoom_clamped();
+            let total_size = measure_pb_type(root_pb, state, &root_pb.name);
+            let (response, painter) = ui.allocate_painter(
+                total_size + egui::vec2(40.0, 40.0) * zoom,
+                // Important: don't capture drags here, otherwise it prevents the
+                // ScrollArea from receiving drag-to-pan gestures.
+                egui::Sense::hover(),
+            );
+            let start_pos = response.rect.min + egui::vec2(20.0, 20.0) * zoom;
 
-                        let _ = draw_pb_type(
-                            &painter,
-                            root_pb,
-                            start_pos,
-                            state,
-                            &root_pb.name,
-                            ui,
-                            expand_all,
-                            draw_interconnects,
-                            dark_mode,
-                        );
-                    } else {
-                        ui.label("Root PBType not found");
-                    }
-                } else {
-                    ui.label("No equivalent site found");
-                }
-            } else {
-                ui.label("Invalid sub_tile index");
-            }
+            let _ = draw_pb_type(
+                &painter,
+                root_pb,
+                start_pos,
+                state,
+                &root_pb.name,
+                ui,
+                expand_all,
+                draw_interconnects,
+                dark_mode,
+            );
         });
 }
 
@@ -276,11 +185,8 @@ fn render_visual_layout_controls(ui: &mut egui::Ui, state: &mut IntraTileState) 
 
 pub fn render_intra_tile_view(
     ui: &mut egui::Ui,
-    arch: &FPGAArch,
-    tile: &Tile,
+    root_pb: &PBType,
     state: &mut IntraTileState,
-    show_hierarchy_tree: bool,
-    sub_tile_index: usize,
     expand_all: bool,
     draw_interconnects: bool,
     dark_mode: bool,
@@ -293,54 +199,23 @@ pub fn render_intra_tile_view(
 
     state.highlighted_positions_this_frame =
         std::mem::take(&mut state.highlighted_positions_next_frame);
-    ui.heading(format!("Tile: {}", tile.name));
+    ui.heading(format!("Complex Block: {}", root_pb.name));
     ui.separator();
 
     let available_rect = ui.available_rect_before_wrap();
-    let available_height = available_rect.height();
-
-    let separator_bottom = if show_hierarchy_tree {
-        render_hierarchy_tree_panel(ui, arch, tile, state, available_rect, available_height)
-    } else {
-        None
-    };
 
     // Allocate space for visual layout
-    if let Some(separator_y) = separator_bottom {
-        let layout_rect = egui::Rect::from_min_max(
-            egui::pos2(available_rect.min.x, separator_y),
-            available_rect.max,
-        );
-        ui.scope_builder(egui::UiBuilder::new().max_rect(layout_rect), |ui| {
-            ui.set_width(available_rect.width());
-            ui.heading("Visual Layout");
-            render_visual_layout_controls(ui, state);
-            render_visual_layout_canvas(
-                ui,
-                arch,
-                tile,
-                state,
-                sub_tile_index,
-                expand_all,
-                draw_interconnects,
-                dark_mode,
-            );
-        });
-    } else {
-        ui.set_width(available_rect.width());
-        ui.heading("Visual Layout");
-        render_visual_layout_controls(ui, state);
-        render_visual_layout_canvas(
-            ui,
-            arch,
-            tile,
-            state,
-            sub_tile_index,
-            expand_all,
-            draw_interconnects,
-            dark_mode,
-        );
-    }
+    ui.set_width(available_rect.width());
+    ui.heading("Visual Layout");
+    render_visual_layout_controls(ui, state);
+    render_visual_layout_canvas(
+        ui,
+        root_pb,
+        state,
+        expand_all,
+        draw_interconnects,
+        dark_mode,
+    );
 }
 
 // ------------------------------------------------------------

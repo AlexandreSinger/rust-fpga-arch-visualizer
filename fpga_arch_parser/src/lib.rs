@@ -278,19 +278,7 @@ fn parse_architecture<R: BufRead>(
     })
 }
 
-pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
-    // Try to open the file.
-    let file = File::open(arch_file);
-    let file = match file {
-        Ok(f) => f,
-        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
-    };
-
-    // Create an XML event reader.
-    // Buffering is used for performance.
-    let file = BufReader::new(file);
-    let mut parser = EventReader::new(file);
-
+fn parse_file<R: BufRead>(mut parser: EventReader<R>) -> Result<FPGAArch, FPGAArchParseError> {
     // Parse the top-level tags.
     // At the top-level, we only expect the architecture tag.
     let mut arch: Option<FPGAArch> = None;
@@ -341,55 +329,29 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
     }
 }
 
+pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
+    // Try to open the file.
+    let file = File::open(arch_file);
+    let file = match file {
+        Ok(f) => f,
+        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
+    };
+
+    // Create an XML event reader.
+    // Buffering is used for performance.
+    let file = BufReader::new(file);
+    let parser = EventReader::new(file);
+
+    // Begin parsing the file.
+    parse_file(parser)
+}
+
 pub fn parse_from_bytes(data: &[u8]) -> Result<FPGAArch, FPGAArchParseError> {
     // Create a cursor from the byte slice for in-memory reading.
     let cursor = Cursor::new(data);
     let file = BufReader::new(cursor);
-    let mut parser = EventReader::new(file);
+    let parser = EventReader::new(file);
 
-    // Parse the top-level tags.
-    // At the top-level, we only expect the architecture tag.
-    let mut arch: Option<FPGAArch> = None;
-    loop {
-        match parser.next() {
-            Ok(XmlEvent::StartElement {
-                name, attributes, ..
-            }) => {
-                match name.to_string().as_str() {
-                    "architecture" => {
-                        arch = Some(parse_architecture(&name, &attributes, &mut parser)?);
-                    }
-                    _ => {
-                        return Err(FPGAArchParseError::InvalidTag(
-                            format!("Invalid top-level tag: {name}, expected only <architecture>"),
-                            parser.position(),
-                        ));
-                    }
-                }
-            }
-            Ok(XmlEvent::StartDocument { .. }) => {}
-            Ok(XmlEvent::Comment(_)) => {}
-            Ok(XmlEvent::Whitespace(_)) => {}
-            Ok(XmlEvent::EndDocument) => {
-                break;
-            }
-            Err(e) => {
-                return Err(FPGAArchParseError::XMLParseError(
-                    format!("{e:?}"),
-                    parser.position(),
-                ));
-            }
-            // There's more: https://docs.rs/xml/latest/xml/reader/enum.XmlEvent.html
-            _ => {}
-        };
-    }
-
-    // Return the architecture if it was provided. Error if no architecture was
-    // provided in the description file.
-    match arch {
-        None => Err(FPGAArchParseError::MissingRequiredTag(String::from(
-            "<architecture>",
-        ))),
-        Some(arch) => Ok(arch),
-    }
+    // Begin parsing the file.
+    parse_file(parser)
 }

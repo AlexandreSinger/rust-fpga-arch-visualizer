@@ -4,9 +4,9 @@ use log::info;
 use std::io::{BufRead, BufReader};
 
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
-#[cfg(target_arch = "wasm32")]
 use rfd::AsyncFileDialog;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::spawn_local;
 
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;

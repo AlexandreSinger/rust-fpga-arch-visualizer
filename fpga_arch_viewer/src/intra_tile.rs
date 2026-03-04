@@ -4,6 +4,7 @@
 
 use eframe::egui;
 use fpga_arch_parser::{PBType, PBTypeClass, Port};
+use log::warn;
 use std::collections::{HashMap, HashSet};
 
 use crate::color_scheme;
@@ -803,8 +804,8 @@ fn resolve_bus_list(
         const MAX_BUS_ITERATIONS: usize = 1024; // Prevent infinite loops
         loop {
             if idx >= MAX_BUS_ITERATIONS {
-                // Log warning for debugging (could use eprintln! or a logging framework)
-                eprintln!(
+                // Log warning for debugging
+                warn!(
                     "Warning: Bus resolution hit max iterations ({}) for port: {}",
                     MAX_BUS_ITERATIONS, port_ref
                 );

@@ -19,6 +19,9 @@ mod viewer;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
+    // Log to stderr (if you run with `RUST_LOG=debug`).
+    env_logger::init();
+
     // Load the icon data.
     let icon_data =
         eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..]);
@@ -42,7 +45,7 @@ fn main() {
     use eframe::wasm_bindgen::JsCast as _;
 
     // Redirect `log` message to `console.log` and friends:
-    // eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
     let web_options = eframe::WebOptions::default();
 

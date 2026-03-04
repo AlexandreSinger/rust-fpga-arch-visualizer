@@ -1,5 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
+use log::info;
 use std::io::{BufRead, BufReader};
 
 #[cfg(target_arch = "wasm32")]
@@ -269,7 +270,7 @@ impl FpgaViewer {
                 self.viewer_ctx.error_message.clear();
 
                 // Print success.
-                println!("Successfully loaded architecture file: {:?}", file_path);
+                info!("Successfully loaded architecture file: {:?}", file_path);
             }
             Err(e) => {
                 self.architecture = None;
@@ -302,7 +303,7 @@ impl FpgaViewer {
                 self.viewer_ctx.error_message.clear();
 
                 // Print success.
-                println!("Successfully loaded architecture file: {}", file_name);
+                info!("Successfully loaded architecture file: {}", file_name);
             }
             Err(e) => {
                 self.architecture = None;

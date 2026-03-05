@@ -6,6 +6,8 @@ use std::io::{BufRead, BufReader};
 #[cfg(target_arch = "wasm32")]
 use rfd::AsyncFileDialog;
 #[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::spawn_local;
 
 use crate::block_style::DefaultBlockStyles;
@@ -15,6 +17,13 @@ use crate::grid_view::GridView;
 use crate::settings;
 use crate::summary_view::SummaryView;
 use crate::tile_view::TileView;
+
+// Thread-local storage for pending wasm file loads
+// This avoids using unsafe raw pointers in the async file dialog closure
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static PENDING_WASM_FILE_LOAD: RefCell<Option<(Vec<u8>, String)>> = RefCell::new(None);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
@@ -334,8 +343,7 @@ impl FpgaViewer {
 
     #[cfg(target_arch = "wasm32")]
     fn open_file_dialog(&mut self) {
-        let this = self as *mut Self;
-        spawn_local(async move {
+        spawn_local(async {
             let file_handle = AsyncFileDialog::new()
                 .add_filter("XML Architecture Files", &["xml"])
                 .set_title("Open FPGA Architecture File")
@@ -345,12 +353,11 @@ impl FpgaViewer {
             if let Some(file_handle) = file_handle {
                 let file_name = file_handle.file_name();
                 let data = file_handle.read().await;
-                // SAFETY: The async block is local to the FpgaViewer instance,
-                // and we're using spawn_local which doesn't move the future beyond
-                // the current task. The pointer is only accessed within this closure.
-                unsafe {
-                    (*this).load_architecture_from_bytes(data, file_name);
-                }
+                // Store the loaded file data in thread-local storage
+                // The main app loop will process this in the next update
+                PENDING_WASM_FILE_LOAD.with(|pending| {
+                    *pending.borrow_mut() = Some((data, file_name));
+                });
             }
         });
     }
@@ -396,8 +403,8 @@ impl FpgaViewer {
                     }
                     ui.add_space(10.0);
 
-                    let reload_enabled = self.viewer_ctx.loaded_file_path.is_some()
-                        && !cfg!(target_arch = "wasm32");
+                    let reload_enabled =
+                        self.viewer_ctx.loaded_file_path.is_some() && !cfg!(target_arch = "wasm32");
                     let reload_button = ui.add_enabled_ui(reload_enabled, |ui| {
                         ui.add_sized(
                             [BUTTON_SIZE, BUTTON_SIZE],
@@ -627,6 +634,16 @@ impl FpgaViewer {
 
 impl eframe::App for FpgaViewer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process any pending wasm file loads from the async file dialog
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some((data, file_name)) =
+                PENDING_WASM_FILE_LOAD.with(|pending| pending.borrow_mut().take())
+            {
+                self.load_architecture_from_bytes(data, file_name);
+            }
+        }
+
         // Apply theme
         if self.viewer_ctx.dark_mode {
             ctx.set_visuals(egui::Visuals::dark());

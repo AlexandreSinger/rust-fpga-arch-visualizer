@@ -355,8 +355,7 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
 pub fn parse_from_bytes(data: &[u8]) -> Result<FPGAArch, FPGAArchParseError> {
     // Create a cursor from the byte slice for in-memory reading.
     let cursor = Cursor::new(data);
-    let file = BufReader::new(cursor);
-    let parser = EventReader::new(file);
+    let parser = EventReader::new(cursor);
 
     // Begin parsing the file.
     parse_file(parser)

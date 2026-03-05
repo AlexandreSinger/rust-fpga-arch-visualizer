@@ -396,7 +396,8 @@ impl FpgaViewer {
                     }
                     ui.add_space(10.0);
 
-                    let reload_enabled = self.viewer_ctx.loaded_file_path.is_some();
+                    let reload_enabled = self.viewer_ctx.loaded_file_path.is_some()
+                        && !cfg!(target_arch = "wasm32");
                     let reload_button = ui.add_enabled_ui(reload_enabled, |ui| {
                         ui.add_sized(
                             [BUTTON_SIZE, BUTTON_SIZE],
@@ -411,9 +412,15 @@ impl FpgaViewer {
                         self.load_architecture_file(path);
                     }
                     if reload_button.inner.hovered() {
-                        reload_button
-                            .inner
-                            .on_hover_text("Reload architecture file");
+                        if cfg!(target_arch = "wasm32") {
+                            reload_button
+                                .inner
+                                .on_hover_text("Reload not available in web build");
+                        } else {
+                            reload_button
+                                .inner
+                                .on_hover_text("Reload architecture file");
+                        }
                     }
                     ui.add_space(10.0);
 

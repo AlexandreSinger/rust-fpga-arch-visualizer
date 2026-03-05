@@ -289,6 +289,12 @@ fn parse_file<R: BufRead>(mut parser: EventReader<R>) -> Result<FPGAArch, FPGAAr
             }) => {
                 match name.to_string().as_str() {
                     "architecture" => {
+                        if arch.is_some() {
+                            return Err(FPGAArchParseError::DuplicateTag(
+                                "<architecture>".to_string(),
+                                parser.position(),
+                            ));
+                        }
                         arch = Some(parse_architecture(&name, &attributes, &mut parser)?);
                     }
                     _ => {

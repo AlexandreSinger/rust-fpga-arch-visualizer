@@ -27,4 +27,4 @@ target
 .DS_Store
 
 # trunk output folder
-dist
+/fpga_arch_viewer/dist/

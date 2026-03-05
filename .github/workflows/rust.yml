@@ -32,6 +32,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
       - name: Run check
         run: cargo check --all-features --all-targets --target wasm32-unknown-unknown
 

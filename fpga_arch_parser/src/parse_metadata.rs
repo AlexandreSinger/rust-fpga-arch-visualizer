@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_meta(
+fn parse_meta<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Metadata, FPGAArchParseError> {
     assert!(tag_name.to_string() == "meta");
 
@@ -99,10 +98,10 @@ fn parse_meta(
     Ok(Metadata { name, value })
 }
 
-pub fn parse_metadata(
+pub fn parse_metadata<R: BufRead>(
     tag_name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Metadata>, FPGAArchParseError> {
     assert!(tag_name.to_string() == "metadata");
     if !attributes.is_empty() {

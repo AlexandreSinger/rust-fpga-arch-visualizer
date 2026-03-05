@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -11,10 +10,10 @@ use crate::parse_error::*;
 
 use crate::parse_port::parse_port;
 
-fn parse_sb_loc(
+fn parse_sb_loc<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SwitchBlockLocation, FPGAArchParseError> {
     assert!(name.to_string() == "sb_loc");
 
@@ -150,10 +149,10 @@ fn parse_sb_loc(
     })
 }
 
-fn parse_switchblock_locations(
+fn parse_switchblock_locations<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SwitchBlockLocations, FPGAArchParseError> {
     assert!(name.to_string() == "switchblock_locations");
 
@@ -300,10 +299,10 @@ fn parse_switchblock_locations(
     })
 }
 
-fn parse_tile_site(
+fn parse_tile_site<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<TileSite, FPGAArchParseError> {
     assert!(name.to_string() == "site");
 
@@ -400,10 +399,10 @@ fn parse_tile_site(
     })
 }
 
-fn parse_equivalent_sites(
+fn parse_equivalent_sites<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<TileSite>, FPGAArchParseError> {
     assert!(name.to_string() == "equivalent_sites");
     if !attributes.is_empty() {
@@ -460,10 +459,10 @@ fn parse_equivalent_sites(
     Ok(equivalent_sites)
 }
 
-fn create_sub_tile_io_fc(
+fn create_sub_tile_io_fc<R: BufRead>(
     ty: &str,
     val: &str,
-    parser: &EventReader<BufReader<File>>,
+    parser: &EventReader<R>,
 ) -> Result<SubTileIOFC, FPGAArchParseError> {
     match ty {
         "frac" => Ok(SubTileIOFC::Frac(match val.parse() {
@@ -491,10 +490,10 @@ fn create_sub_tile_io_fc(
     }
 }
 
-fn parse_sub_tile_fc_override(
+fn parse_sub_tile_fc_override<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SubTileFCOverride, FPGAArchParseError> {
     assert!(name.to_string() == "fc_override");
 
@@ -622,10 +621,10 @@ fn parse_sub_tile_fc_override(
     })
 }
 
-fn parse_sub_tile_fc(
+fn parse_sub_tile_fc<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SubTileFC, FPGAArchParseError> {
     assert!(name.to_string() == "fc");
 
@@ -777,10 +776,10 @@ fn parse_sub_tile_fc(
     })
 }
 
-fn parse_pin_loc(
+fn parse_pin_loc<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<PinLoc, FPGAArchParseError> {
     assert!(name.to_string() == "loc");
 
@@ -929,10 +928,10 @@ fn parse_pin_loc(
     })
 }
 
-fn parse_sub_tile_pin_locations(
+fn parse_sub_tile_pin_locations<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SubTilePinLocations, FPGAArchParseError> {
     assert!(name.to_string() == "pinlocations");
 
@@ -1033,10 +1032,10 @@ fn parse_sub_tile_pin_locations(
     }
 }
 
-fn parse_sub_tile(
+fn parse_sub_tile<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SubTile, FPGAArchParseError> {
     assert!(name.to_string() == "sub_tile");
 
@@ -1203,10 +1202,10 @@ fn parse_sub_tile(
     })
 }
 
-fn parse_tile(
+fn parse_tile<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Tile, FPGAArchParseError> {
     assert!(name.to_string() == "tile");
 
@@ -1376,10 +1375,10 @@ fn parse_tile(
     })
 }
 
-pub fn parse_tiles(
+pub fn parse_tiles<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Tile>, FPGAArchParseError> {
     assert!(name.to_string() == "tiles");
     if !attributes.is_empty() {

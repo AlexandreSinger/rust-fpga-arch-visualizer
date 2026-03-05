@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -17,10 +16,10 @@ use crate::parse_timing::parse_delay_matrix;
 use crate::parse_timing::parse_t_hold;
 use crate::parse_timing::parse_t_setup;
 
-fn parse_pack_pattern(
+fn parse_pack_pattern<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<PackPattern, FPGAArchParseError> {
     assert!(name.to_string() == "pack_pattern");
 
@@ -139,10 +138,10 @@ fn parse_pack_pattern(
     })
 }
 
-fn parse_interconnect(
+fn parse_interconnect<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Interconnect, FPGAArchParseError> {
     let mut inter_name: Option<String> = None;
     let mut input: Option<String> = None;
@@ -312,10 +311,10 @@ fn parse_interconnect(
     }
 }
 
-fn parse_interconnects(
+fn parse_interconnects<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Interconnect>, FPGAArchParseError> {
     assert!(name.to_string() == "interconnect");
     if !attributes.is_empty() {
@@ -370,10 +369,10 @@ fn parse_interconnects(
     Ok(interconnects)
 }
 
-fn parse_pb_mode(
+fn parse_pb_mode<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<PBMode, FPGAArchParseError> {
     assert!(name.to_string() == "mode");
 
@@ -488,10 +487,10 @@ fn parse_pb_mode(
     })
 }
 
-fn parse_pb_type(
+fn parse_pb_type<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<PBType, FPGAArchParseError> {
     assert!(name.to_string() == "pb_type");
 
@@ -713,10 +712,10 @@ fn parse_pb_type(
     })
 }
 
-pub fn parse_complex_block_list(
+pub fn parse_complex_block_list<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<PBType>, FPGAArchParseError> {
     assert!(name.to_string() == "complexblocklist");
     if !attributes.is_empty() {

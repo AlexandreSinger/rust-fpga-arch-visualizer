@@ -25,3 +25,6 @@ target
 
 # Mac Files
 .DS_Store
+
+# trunk output folder
+/fpga_arch_viewer/dist/

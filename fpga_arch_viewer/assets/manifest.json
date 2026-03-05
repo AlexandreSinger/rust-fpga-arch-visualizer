@@ -1,0 +1,22 @@
+{
+  "name": "FPGA Architecture Visualizer",
+  "short_name": "fpga-arch-viewer",
+  "icons": [
+    {
+      "src": "./assets/icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "./assets/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ],
+  "lang": "en-US",
+  "id": "/index.html",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "white",
+  "theme_color": "white"
+}

@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader, Cursor};
 use std::path::Path;
 
 use xml::attribute::OwnedAttribute;
@@ -35,10 +35,10 @@ use crate::parse_segment_list::parse_segment_list;
 use crate::parse_switch_list::parse_switch_list;
 use crate::parse_tiles::parse_tiles;
 
-fn parse_architecture(
+fn parse_architecture<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<FPGAArch, FPGAArchParseError> {
     assert!(name.to_string() == "architecture");
     if !attributes.is_empty() {
@@ -278,19 +278,7 @@ fn parse_architecture(
     })
 }
 
-pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
-    // Try to open the file.
-    let file = File::open(arch_file);
-    let file = match file {
-        Ok(f) => f,
-        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
-    };
-
-    // Create an XML event reader.
-    // Buffering is used for performance.
-    let file = BufReader::new(file);
-    let mut parser = EventReader::new(file);
-
+fn parse_file<R: BufRead>(mut parser: EventReader<R>) -> Result<FPGAArch, FPGAArchParseError> {
     // Parse the top-level tags.
     // At the top-level, we only expect the architecture tag.
     let mut arch: Option<FPGAArch> = None;
@@ -301,6 +289,12 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
             }) => {
                 match name.to_string().as_str() {
                     "architecture" => {
+                        if arch.is_some() {
+                            return Err(FPGAArchParseError::DuplicateTag(
+                                "<architecture>".to_string(),
+                                parser.position(),
+                            ));
+                        }
                         arch = Some(parse_architecture(&name, &attributes, &mut parser)?);
                     }
                     _ => {
@@ -339,4 +333,30 @@ pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
         ))),
         Some(arch) => Ok(arch),
     }
+}
+
+pub fn parse(arch_file: &Path) -> Result<FPGAArch, FPGAArchParseError> {
+    // Try to open the file.
+    let file = File::open(arch_file);
+    let file = match file {
+        Ok(f) => f,
+        Err(error) => return Err(FPGAArchParseError::ArchFileOpenError(format!("{error:?}"))),
+    };
+
+    // Create an XML event reader.
+    // Buffering is used for performance.
+    let file = BufReader::new(file);
+    let parser = EventReader::new(file);
+
+    // Begin parsing the file.
+    parse_file(parser)
+}
+
+pub fn parse_from_bytes(data: &[u8]) -> Result<FPGAArch, FPGAArchParseError> {
+    // Create a cursor from the byte slice for in-memory reading.
+    let cursor = Cursor::new(data);
+    let parser = EventReader::new(cursor);
+
+    // Begin parsing the file.
+    parse_file(parser)
 }

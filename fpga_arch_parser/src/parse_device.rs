@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_device_sizing(
+fn parse_device_sizing<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceSizingInfo, FPGAArchParseError> {
     assert!(name.to_string() == "sizing");
 
@@ -124,10 +123,10 @@ fn parse_device_sizing(
     })
 }
 
-fn parse_device_connection_block(
+fn parse_device_connection_block<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceConnectionBlockInfo, FPGAArchParseError> {
     assert!(name.to_string() == "connection_block");
 
@@ -199,10 +198,10 @@ fn parse_device_connection_block(
     Ok(DeviceConnectionBlockInfo { input_switch_name })
 }
 
-fn parse_device_area(
+fn parse_device_area<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceAreaInfo, FPGAArchParseError> {
     assert!(name.to_string() == "area");
 
@@ -284,10 +283,10 @@ fn parse_device_area(
     })
 }
 
-fn parse_device_switch_block(
+fn parse_device_switch_block<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceSwitchBlockInfo, FPGAArchParseError> {
     assert!(name.to_string() == "switch_block");
 
@@ -390,10 +389,10 @@ fn parse_device_switch_block(
     Ok(DeviceSwitchBlockInfo { sb_type, sb_fs })
 }
 
-fn parse_chan_w_dist(
+fn parse_chan_w_dist<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<ChanWDist, FPGAArchParseError> {
     assert!(name.to_string() == "x" || name.to_string() == "y");
 
@@ -652,10 +651,10 @@ fn parse_chan_w_dist(
     }
 }
 
-fn parse_device_chan_w_distr(
+fn parse_device_chan_w_distr<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceChanWidthDistrInfo, FPGAArchParseError> {
     assert!(name.to_string() == "chan_width_distr");
     if !attributes.is_empty() {
@@ -739,10 +738,10 @@ fn parse_device_chan_w_distr(
     Ok(DeviceChanWidthDistrInfo { x_distr, y_distr })
 }
 
-pub fn parse_device(
+pub fn parse_device<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DeviceInfo, FPGAArchParseError> {
     assert!(name.to_string() == "device");
     if !attributes.is_empty() {

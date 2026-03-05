@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_switch_t_del(
+fn parse_switch_t_del<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<SwitchTDel, FPGAArchParseError> {
     assert!(name.to_string() == "Tdel");
 
@@ -121,10 +120,10 @@ fn parse_switch_t_del(
     Ok(SwitchTDel { num_inputs, delay })
 }
 
-fn parse_switch(
+fn parse_switch<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Switch, FPGAArchParseError> {
     assert!(name.to_string() == "switch");
 
@@ -443,10 +442,10 @@ fn parse_switch(
     })
 }
 
-pub fn parse_switch_list(
+pub fn parse_switch_list<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Switch>, FPGAArchParseError> {
     assert!(name.to_string() == "switchlist");
     if !attributes.is_empty() {

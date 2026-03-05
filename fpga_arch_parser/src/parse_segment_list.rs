@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,9 +8,9 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-fn parse_pattern_int_list(
+fn parse_pattern_int_list<R: BufRead>(
     text: &str,
-    parser: &EventReader<BufReader<File>>,
+    parser: &EventReader<R>,
 ) -> Result<Vec<bool>, FPGAArchParseError> {
     let mut list: Vec<bool> = Vec::new();
 
@@ -40,10 +39,10 @@ fn parse_pattern_int_list(
     Ok(list)
 }
 
-fn parse_segment_pattern(
+fn parse_segment_pattern<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<bool>, FPGAArchParseError> {
     assert!(name.to_string() == "sb" || name.to_string() == "cb");
 
@@ -142,10 +141,10 @@ fn parse_segment_pattern(
     Ok(pattern)
 }
 
-fn parse_segment_switch_point_descriptor(
+fn parse_segment_switch_point_descriptor<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<String, FPGAArchParseError> {
     let mut desc_name: Option<String> = None;
     for a in attributes {
@@ -215,10 +214,10 @@ fn parse_segment_switch_point_descriptor(
     Ok(desc_name)
 }
 
-fn parse_segment(
+fn parse_segment<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Segment, FPGAArchParseError> {
     assert!(name.to_string() == "segment");
 
@@ -676,10 +675,10 @@ fn parse_segment(
     })
 }
 
-pub fn parse_segment_list(
+pub fn parse_segment_list<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<Vec<Segment>, FPGAArchParseError> {
     assert!(name.to_string() == "segmentlist");
     if !attributes.is_empty() {

@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::BufReader;
+use std::io::BufRead;
 
 use xml::attribute::OwnedAttribute;
 use xml::common::Position;
@@ -9,10 +8,10 @@ use xml::reader::{EventReader, XmlEvent};
 use crate::arch::*;
 use crate::parse_error::*;
 
-pub fn parse_delay_constant(
+pub fn parse_delay_constant<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DelayInfo, FPGAArchParseError> {
     assert!(name.to_string() == "delay_constant");
 
@@ -164,9 +163,9 @@ pub fn parse_delay_constant(
     })
 }
 
-fn parse_matrix_text(
+fn parse_matrix_text<R: BufRead>(
     text: &str,
-    parser: &EventReader<BufReader<File>>,
+    parser: &EventReader<R>,
 ) -> Result<Vec<Vec<f32>>, FPGAArchParseError> {
     let mut matrix: Vec<Vec<f32>> = Vec::new();
 
@@ -190,10 +189,10 @@ fn parse_matrix_text(
     Ok(matrix)
 }
 
-pub fn parse_delay_matrix(
+pub fn parse_delay_matrix<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<DelayInfo, FPGAArchParseError> {
     assert!(name.to_string() == "delay_matrix");
 
@@ -342,11 +341,11 @@ pub fn parse_delay_matrix(
     })
 }
 
-fn parse_setup_or_hold(
+fn parse_setup_or_hold<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
     constraint_type: TimingConstraintType,
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<TimingConstraintInfo, FPGAArchParseError> {
     assert!(name.to_string() == "T_setup" || name.to_string() == "T_hold");
 
@@ -474,30 +473,30 @@ fn parse_setup_or_hold(
     })
 }
 
-pub fn parse_t_setup(
+pub fn parse_t_setup<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<TimingConstraintInfo, FPGAArchParseError> {
     assert!(name.to_string() == "T_setup");
 
     parse_setup_or_hold(name, attributes, TimingConstraintType::Setup, parser)
 }
 
-pub fn parse_t_hold(
+pub fn parse_t_hold<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<TimingConstraintInfo, FPGAArchParseError> {
     assert!(name.to_string() == "T_hold");
 
     parse_setup_or_hold(name, attributes, TimingConstraintType::Hold, parser)
 }
 
-pub fn parse_clock_to_q(
+pub fn parse_clock_to_q<R: BufRead>(
     name: &OwnedName,
     attributes: &[OwnedAttribute],
-    parser: &mut EventReader<BufReader<File>>,
+    parser: &mut EventReader<R>,
 ) -> Result<TimingConstraintInfo, FPGAArchParseError> {
     assert!(name.to_string() == "T_clock_to_Q");
 

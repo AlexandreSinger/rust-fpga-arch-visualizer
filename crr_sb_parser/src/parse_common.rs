@@ -23,3 +23,10 @@ pub fn parse_crr_tap_num(lane_num_str: &str) -> Result<usize, CRRSBParseError> {
         Err(e) => Err(CRRSBParseError::SBHeaderCellParseError(format!("Invalid tap num string: {e}.")))
     }
 }
+
+pub fn parse_crr_fan_in(fan_in_str: &str) -> Result<usize, CRRSBParseError> {
+    match fan_in_str.parse() {
+        Ok(v) => Ok(v),
+        Err(e) => Err(CRRSBParseError::SBHeaderCellParseError(format!("Invalid fan-in string: {e}.")))
+    }
+}

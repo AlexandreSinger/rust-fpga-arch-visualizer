@@ -5,7 +5,9 @@ use csv::{StringRecord, StringRecordsIter};
 use crate::{CRRSBParseError, crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo}, parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num}};
 
 fn parse_source_info(row: &StringRecord) -> Result<CRRSwitchSourceNodeInfo, CRRSBParseError> {
-    // FIXME: Check that the row has at least 4 columns.
+    if row.len() < 4 {
+        return Err(CRRSBParseError::SBHeaderColMissing(format!("Found {} row header cols, expected 4.", row.len())));
+    }
 
     Ok(CRRSwitchSourceNodeInfo {
         dir: parse_crr_switch_dir(row[0].trim())?,
@@ -57,7 +59,7 @@ pub fn parse_rows(csv_records: &mut StringRecordsIter<'_, File>) -> Result<(Vec<
                 return Err(CRRSBParseError::CSVParseError(e.to_string()));
             },
         };
-        // FIXME: We somehow need to verify that the rows have the correct length.
+        // TODO: We somehow need to verify that the rows have the correct length.
 
         source_nodes.push(parse_source_info(&row)?);
         edges.append(&mut parse_row_edges(&row, row_idx)?);

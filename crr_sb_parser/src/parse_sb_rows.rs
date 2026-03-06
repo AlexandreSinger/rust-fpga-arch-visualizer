@@ -2,11 +2,18 @@ use std::fs::File;
 
 use csv::{StringRecord, StringRecordsIter};
 
-use crate::{CRRSBParseError, crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo}, parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num}};
+use crate::{
+    CRRSBParseError,
+    crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo},
+    parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num},
+};
 
 fn parse_source_info(row: &StringRecord) -> Result<CRRSwitchSourceNodeInfo, CRRSBParseError> {
     if row.len() < 4 {
-        return Err(CRRSBParseError::SBHeaderColMissing(format!("Found {} row header cols, expected 4.", row.len())));
+        return Err(CRRSBParseError::SBHeaderColMissing(format!(
+            "Found {} row header cols, expected 4.",
+            row.len()
+        )));
     }
 
     Ok(CRRSwitchSourceNodeInfo {
@@ -23,11 +30,14 @@ fn parse_row_edge_delay(cell_str: &str) -> Result<CRRSwitchConnectionDelay, CRRS
         _ => match cell_str.parse() {
             Ok(delay) => Ok(CRRSwitchConnectionDelay::DelaySpecified { delay }),
             Err(e) => Err(CRRSBParseError::SBSWCellParseError(e.to_string())),
-        }
+        },
     }
 }
 
-fn parse_row_edges(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchConnection>, CRRSBParseError> {
+fn parse_row_edges(
+    row: &StringRecord,
+    row_idx: usize,
+) -> Result<Vec<CRRSwitchConnection>, CRRSBParseError> {
     let mut row_edges: Vec<CRRSwitchConnection> = Vec::new();
     let num_cols = row.len();
 
@@ -37,7 +47,7 @@ fn parse_row_edges(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchCo
             continue;
         }
 
-        row_edges.push(CRRSwitchConnection { 
+        row_edges.push(CRRSwitchConnection {
             source_node_id: row_idx,
             sink_node_id: i - 4,
             delay: parse_row_edge_delay(cell_str)?,
@@ -47,24 +57,23 @@ fn parse_row_edges(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchCo
     Ok(row_edges)
 }
 
-pub fn parse_rows(csv_records: &mut StringRecordsIter<'_, File>) -> Result<(Vec<CRRSwitchSourceNodeInfo>, Vec<CRRSwitchConnection>), CRRSBParseError> {
+pub fn parse_rows(
+    csv_records: &mut StringRecordsIter<'_, File>,
+) -> Result<(Vec<CRRSwitchSourceNodeInfo>, Vec<CRRSwitchConnection>), CRRSBParseError> {
     let mut source_nodes: Vec<CRRSwitchSourceNodeInfo> = Vec::new();
     let mut edges: Vec<CRRSwitchConnection> = Vec::new();
 
-    let mut row_idx: usize = 0;
-    for row in csv_records {
+    for (row_idx, row) in csv_records.enumerate() {
         let row = match row {
             Ok(v) => v,
             Err(e) => {
                 return Err(CRRSBParseError::CSVParseError(e.to_string()));
-            },
+            }
         };
         // TODO: We somehow need to verify that the rows have the correct length.
 
         source_nodes.push(parse_source_info(&row)?);
         edges.append(&mut parse_row_edges(&row, row_idx)?);
-
-        row_idx += 1;
     }
 
     Ok((source_nodes, edges))

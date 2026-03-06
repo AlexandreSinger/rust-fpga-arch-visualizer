@@ -1,4 +1,3 @@
-
 #[derive(Debug, PartialEq)]
 pub enum CRRSwitchDir {
     Left,
@@ -23,9 +22,7 @@ pub struct CRRSwitchSinkNodeInfo {
 
 pub enum CRRSwitchConnectionDelay {
     Undefined,
-    DelaySpecified {
-        delay: f32,
-    }
+    DelaySpecified { delay: f32 },
 }
 
 pub struct CRRSwitchConnection {

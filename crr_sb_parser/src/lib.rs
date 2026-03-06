@@ -2,9 +2,9 @@ use std::{fs::File, path::Path};
 
 mod crr_sb_des;
 mod crr_sb_parse_error;
+mod parse_common;
 mod parse_sb_col_headers;
 mod parse_sb_rows;
-mod parse_common;
 
 pub use crate::crr_sb_des::*;
 pub use crate::crr_sb_parse_error::CRRSBParseError;

@@ -1,4 +1,3 @@
-
 #[derive(Debug)]
 pub enum CRRSBParseError {
     SBFileOpenError(String),

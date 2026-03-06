@@ -11,7 +11,12 @@ fn test_sb_template_1() -> Result<(), CRRSBParseError> {
 
     // Check the column headers.
     assert_eq!(res.sink_nodes.len(), 100);
-    let sides_in_order = [CRRSwitchDir::Left, CRRSwitchDir::Right, CRRSwitchDir::Top, CRRSwitchDir::Bottom];
+    let sides_in_order = [
+        CRRSwitchDir::Left,
+        CRRSwitchDir::Right,
+        CRRSwitchDir::Top,
+        CRRSwitchDir::Bottom,
+    ];
     for i in 0..100 {
         assert_eq!(res.sink_nodes[i].dir, sides_in_order[i / 25]);
         assert_eq!(res.sink_nodes[i].segment_type, "l4");
@@ -62,7 +67,12 @@ fn test_sb_template_2() -> Result<(), CRRSBParseError> {
 
     // Check the column headers.
     assert_eq!(res.sink_nodes.len(), 100);
-    let sides_in_order = [CRRSwitchDir::Left, CRRSwitchDir::Right, CRRSwitchDir::Top, CRRSwitchDir::Bottom];
+    let sides_in_order = [
+        CRRSwitchDir::Left,
+        CRRSwitchDir::Right,
+        CRRSwitchDir::Top,
+        CRRSwitchDir::Bottom,
+    ];
     for i in 0..100 {
         assert_eq!(res.sink_nodes[i].dir, sides_in_order[i / 25]);
         assert_eq!(res.sink_nodes[i].segment_type, "l4");
@@ -113,7 +123,12 @@ fn test_sb_template_3() -> Result<(), CRRSBParseError> {
 
     // Check the column headers.
     assert_eq!(res.sink_nodes.len(), 100);
-    let sides_in_order = [CRRSwitchDir::Left, CRRSwitchDir::Right, CRRSwitchDir::Top, CRRSwitchDir::Bottom];
+    let sides_in_order = [
+        CRRSwitchDir::Left,
+        CRRSwitchDir::Right,
+        CRRSwitchDir::Top,
+        CRRSwitchDir::Bottom,
+    ];
     for i in 0..100 {
         assert_eq!(res.sink_nodes[i].dir, sides_in_order[i / 25]);
         assert_eq!(res.sink_nodes[i].segment_type, "l4");

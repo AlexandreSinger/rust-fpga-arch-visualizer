@@ -1,9 +1,9 @@
 //! # CRR Switch Block Parser
 //!
-//! A parser for Channel-Related Routing (CRR) switch block specifications defined in CSV format.
+//! A parser for Custom Routing Resource (CRR) switch block specifications defined in CSV format.
 //!
 //! This library provides functionality to parse and deserialize CSV files that describe the
-//! connectivity of Channel-Related Routing switch blocks, which are fundamental components
+//! connectivity of Custom Routing Resource switch blocks, which are fundamental components
 //! in FPGA architecture. Each switch block definition specifies:
 //!
 //! - **Sink nodes**: the destination connection points with information about their direction,
@@ -42,7 +42,7 @@ pub use crate::crr_sb_des::*;
 pub use crate::crr_sb_parse_error::CRRSBParseError;
 use crate::{parse_sb_col_headers::parse_sink_nodes, parse_sb_rows::parse_rows};
 
-/// Parses a CSV file containing Channel-Related Routing (CRR) switch block definitions.
+/// Parses a CSV file containing Custom Routing Resource (CRR) switch block definitions.
 ///
 /// This function reads and parses a CSV file that specifies a switch block's connectivity,
 /// extracting sink nodes, source nodes, and the connections between them. The CSV format

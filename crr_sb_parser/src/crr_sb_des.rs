@@ -7,35 +7,35 @@ pub enum CRRSwitchDir {
     Bottom,
 }
 
-pub struct CRRSwitchRowHeaderInfo {
+pub struct CRRSwitchSourceNodeInfo {
     pub dir: CRRSwitchDir,
     pub segment_type: String,
     pub lane_num: usize,
     pub tap_num: usize,
 }
 
-pub struct CRRSwitchColHeaderInfo {
+pub struct CRRSwitchSinkNodeInfo {
     pub dir: CRRSwitchDir,
     pub segment_type: String,
     pub fan_in: Option<usize>,
     pub lane_num: usize,
 }
 
-pub enum CRRSwitchCellData {
-    Connection,
+pub enum CRRSwitchConnectionDelay {
+    Undefined,
     DelaySpecified {
         delay: f32,
     }
 }
 
-pub struct CRRSwitchCell {
-    pub row_idx: usize,
-    pub col_idx: usize,
-    pub data: CRRSwitchCellData,
+pub struct CRRSwitchConnection {
+    pub source_node_id: usize,
+    pub sink_node_id: usize,
+    pub delay: CRRSwitchConnectionDelay,
 }
 
 pub struct CRRSwitchBlockDeserialized {
-    pub col_headers: Vec<CRRSwitchColHeaderInfo>,
-    pub row_headers: Vec<CRRSwitchRowHeaderInfo>,
-    pub cells: Vec<CRRSwitchCell>,
+    pub sink_nodes: Vec<CRRSwitchSinkNodeInfo>,
+    pub source_nodes: Vec<CRRSwitchSourceNodeInfo>,
+    pub edges: Vec<CRRSwitchConnection>,
 }

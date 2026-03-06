@@ -2,12 +2,12 @@ use std::fs::File;
 
 use csv::{StringRecord, StringRecordsIter};
 
-use crate::{CRRSBParseError, crr_sb_des::{CRRSwitchCell, CRRSwitchCellData, CRRSwitchRowHeaderInfo}, parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num}};
+use crate::{CRRSBParseError, crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo}, parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num}};
 
-fn parse_row_header(row: &StringRecord) -> Result<CRRSwitchRowHeaderInfo, CRRSBParseError> {
+fn parse_source_info(row: &StringRecord) -> Result<CRRSwitchSourceNodeInfo, CRRSBParseError> {
     // FIXME: Check that the row has at least 4 columns.
 
-    Ok(CRRSwitchRowHeaderInfo {
+    Ok(CRRSwitchSourceNodeInfo {
         dir: parse_crr_switch_dir(row[0].trim())?,
         segment_type: row[1].trim().to_string(),
         lane_num: parse_crr_lane_num(row[2].trim())?,
@@ -15,18 +15,18 @@ fn parse_row_header(row: &StringRecord) -> Result<CRRSwitchRowHeaderInfo, CRRSBP
     })
 }
 
-fn parse_row_cell_data(cell_str: &str) -> Result<CRRSwitchCellData, CRRSBParseError> {
+fn parse_row_edge_delay(cell_str: &str) -> Result<CRRSwitchConnectionDelay, CRRSBParseError> {
     match cell_str {
-        "x" => Ok(CRRSwitchCellData::Connection),
+        "x" => Ok(CRRSwitchConnectionDelay::Undefined),
         _ => match cell_str.parse() {
-            Ok(delay) => Ok(CRRSwitchCellData::DelaySpecified { delay }),
+            Ok(delay) => Ok(CRRSwitchConnectionDelay::DelaySpecified { delay }),
             Err(e) => Err(CRRSBParseError::SBSWCellParseError(e.to_string())),
         }
     }
 }
 
-fn parse_row_cells(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchCell>, CRRSBParseError> {
-    let mut row_cells: Vec<CRRSwitchCell> = Vec::new();
+fn parse_row_edges(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchConnection>, CRRSBParseError> {
+    let mut row_edges: Vec<CRRSwitchConnection> = Vec::new();
     let num_cols = row.len();
 
     for i in 4..num_cols {
@@ -35,19 +35,19 @@ fn parse_row_cells(row: &StringRecord, row_idx: usize) -> Result<Vec<CRRSwitchCe
             continue;
         }
 
-        row_cells.push(CRRSwitchCell { 
-            row_idx,
-            col_idx: i - 4,
-            data: parse_row_cell_data(cell_str)?,
+        row_edges.push(CRRSwitchConnection { 
+            source_node_id: row_idx,
+            sink_node_id: i - 4,
+            delay: parse_row_edge_delay(cell_str)?,
         });
     }
 
-    Ok(row_cells)
+    Ok(row_edges)
 }
 
-pub fn parse_rows(csv_records: &mut StringRecordsIter<'_, File>) -> Result<(Vec<CRRSwitchRowHeaderInfo>, Vec<CRRSwitchCell>), CRRSBParseError> {
-    let mut row_headers: Vec<CRRSwitchRowHeaderInfo> = Vec::new();
-    let mut cells: Vec<CRRSwitchCell> = Vec::new();
+pub fn parse_rows(csv_records: &mut StringRecordsIter<'_, File>) -> Result<(Vec<CRRSwitchSourceNodeInfo>, Vec<CRRSwitchConnection>), CRRSBParseError> {
+    let mut source_nodes: Vec<CRRSwitchSourceNodeInfo> = Vec::new();
+    let mut edges: Vec<CRRSwitchConnection> = Vec::new();
 
     let mut row_idx: usize = 0;
     for row in csv_records {
@@ -59,11 +59,11 @@ pub fn parse_rows(csv_records: &mut StringRecordsIter<'_, File>) -> Result<(Vec<
         };
         // FIXME: We somehow need to verify that the rows have the correct length.
 
-        row_headers.push(parse_row_header(&row)?);
-        cells.append(&mut parse_row_cells(&row, row_idx)?);
+        source_nodes.push(parse_source_info(&row)?);
+        edges.append(&mut parse_row_edges(&row, row_idx)?);
 
         row_idx += 1;
     }
 
-    Ok((row_headers, cells))
+    Ok((source_nodes, edges))
 }

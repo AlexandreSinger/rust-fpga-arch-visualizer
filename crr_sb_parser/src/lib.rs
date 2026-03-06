@@ -8,7 +8,7 @@ mod parse_common;
 
 pub use crate::crr_sb_des::*;
 pub use crate::crr_sb_parse_error::CRRSBParseError;
-use crate::{parse_sb_col_headers::parse_col_headers, parse_sb_rows::parse_rows};
+use crate::{parse_sb_col_headers::parse_sink_nodes, parse_sb_rows::parse_rows};
 
 pub fn parse_csv_file(csv_file_path: &Path) -> Result<CRRSwitchBlockDeserialized, CRRSBParseError> {
     // Try to open the file.
@@ -27,11 +27,11 @@ pub fn parse_csv_file(csv_file_path: &Path) -> Result<CRRSwitchBlockDeserialized
     let mut csv_records = rdr.records();
 
     // Parse the column headers, row headers, and cells.
-    let col_headers = parse_col_headers(&mut csv_records)?;
-    let (row_headers, cells) = parse_rows(&mut csv_records)?;
+    let sink_nodes = parse_sink_nodes(&mut csv_records)?;
+    let (source_nodes, edges) = parse_rows(&mut csv_records)?;
     Ok(CRRSwitchBlockDeserialized {
-        col_headers,
-        row_headers,
-        cells,
+        sink_nodes,
+        source_nodes,
+        edges,
     })
 }

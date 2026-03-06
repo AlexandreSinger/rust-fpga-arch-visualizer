@@ -6,6 +6,7 @@ pub enum CRRSwitchDir {
     Bottom,
 }
 
+#[derive(Debug)]
 pub struct CRRSwitchSourceNodeInfo {
     pub dir: CRRSwitchDir,
     pub segment_type: String,
@@ -13,6 +14,7 @@ pub struct CRRSwitchSourceNodeInfo {
     pub tap_num: usize,
 }
 
+#[derive(Debug)]
 pub struct CRRSwitchSinkNodeInfo {
     pub dir: CRRSwitchDir,
     pub segment_type: String,
@@ -20,17 +22,20 @@ pub struct CRRSwitchSinkNodeInfo {
     pub lane_num: usize,
 }
 
+#[derive(Debug)]
 pub enum CRRSwitchConnectionDelay {
     Undefined,
     DelaySpecified { delay: f32 },
 }
 
+#[derive(Debug)]
 pub struct CRRSwitchConnection {
     pub source_node_id: usize,
     pub sink_node_id: usize,
     pub delay: CRRSwitchConnectionDelay,
 }
 
+#[derive(Debug)]
 pub struct CRRSwitchBlockDeserialized {
     pub sink_nodes: Vec<CRRSwitchSinkNodeInfo>,
     pub source_nodes: Vec<CRRSwitchSourceNodeInfo>,

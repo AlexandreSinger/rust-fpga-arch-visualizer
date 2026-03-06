@@ -15,7 +15,10 @@ pub fn parse_sink_nodes(
 
     let dir_row = match csv_records.next() {
         Some(Ok(row)) => row,
-        _ => {
+        Some(Err(e)) => {
+            return Err(CRRSBParseError::CSVParseError(e.to_string()));
+        }
+        None => {
             return Err(CRRSBParseError::SBHeaderRowMissing(
                 "Dir column header row missing.".to_string(),
             ));
@@ -24,7 +27,10 @@ pub fn parse_sink_nodes(
 
     let segment_type_row = match csv_records.next() {
         Some(Ok(row)) => row,
-        _ => {
+        Some(Err(e)) => {
+            return Err(CRRSBParseError::CSVParseError(e.to_string()));
+        }
+        None => {
             return Err(CRRSBParseError::SBHeaderRowMissing(
                 "Segment type column header row missing.".to_string(),
             ));
@@ -35,7 +41,10 @@ pub fn parse_sink_nodes(
     //       is provided or not. For now, assume it is always provided. Ask Amin.
     let fan_in_row = match csv_records.next() {
         Some(Ok(row)) => row,
-        _ => {
+        Some(Err(e)) => {
+            return Err(CRRSBParseError::CSVParseError(e.to_string()));
+        }
+        None => {
             return Err(CRRSBParseError::SBHeaderRowMissing(
                 "Fan-in column header row missing.".to_string(),
             ));
@@ -44,16 +53,28 @@ pub fn parse_sink_nodes(
 
     let lane_num_row = match csv_records.next() {
         Some(Ok(row)) => row,
-        _ => {
+        Some(Err(e)) => {
+            return Err(CRRSBParseError::CSVParseError(e.to_string()));
+        }
+        None => {
             return Err(CRRSBParseError::SBHeaderRowMissing(
                 "lane-num column header row missing.".to_string(),
             ));
         }
     };
 
-    // TODO: Verify that all rows above are the same length.
-    //       Should be true by construction, but worth checking.
     let num_cols = dir_row.len();
+
+    // Check that all rows have the same length. This protects the code below
+    // from throwing a panic.
+    if segment_type_row.len() != num_cols
+        || fan_in_row.len() != num_cols
+        || lane_num_row.len() != num_cols
+    {
+        return Err(CRRSBParseError::SBHeaderCellParseError(
+            "Header rows have inconsistent column counts.".to_string(),
+        ));
+    }
 
     // TODO: Check that the first 4 cells of each row are empty.
 

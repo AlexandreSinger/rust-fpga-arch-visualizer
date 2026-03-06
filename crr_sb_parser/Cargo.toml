@@ -1,0 +1,7 @@
+[package]
+name = "crr_sb_parser"
+version = "0.3.2"
+edition = "2024"
+
+[dependencies]
+csv = "1.4.0"

@@ -1227,6 +1227,7 @@ dependencies = [
 name = "fpga_arch_viewer"
 version = "0.3.2"
 dependencies = [
+ "crr_sb_parser",
  "eframe",
  "egui",
  "egui_extras",

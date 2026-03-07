@@ -13,6 +13,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::block_style::DefaultBlockStyles;
 use crate::common_ui;
 use crate::complex_block_view::ComplexBlockView;
+use crate::crr_sb_view::CRRSBView;
 use crate::grid_view::GridView;
 use crate::settings;
 use crate::summary_view::SummaryView;
@@ -31,6 +32,7 @@ pub enum ViewMode {
     Grid,
     Tile,
     ComplexBlock,
+    CRRSwitchBlock,
 }
 
 // NOTE: These act more like tabs, so while you are looking at settings,
@@ -71,6 +73,7 @@ pub struct FpgaViewer {
     grid_view: GridView,
     tile_view: TileView,
     complex_block_view: ComplexBlockView,
+    crr_sb_view: CRRSBView,
 
     view_mode: ViewMode,
     next_view_mode: ViewMode,
@@ -246,6 +249,7 @@ impl FpgaViewer {
             grid_view: GridView::default(),
             tile_view: TileView::default(),
             complex_block_view: ComplexBlockView::default(),
+            crr_sb_view: CRRSBView::default(),
             view_mode: ViewMode::Summary,
             next_view_mode: ViewMode::Summary,
         }
@@ -506,6 +510,10 @@ impl FpgaViewer {
                         self.next_view_mode = ViewMode::ComplexBlock;
                         ui.close();
                     }
+                    if ui.button("CRR Switch Block View").clicked() {
+                        self.next_view_mode = ViewMode::CRRSwitchBlock;
+                        ui.close();
+                    }
                 });
 
                 ui.menu_button("Help", |ui| {
@@ -571,6 +579,7 @@ impl FpgaViewer {
                     self.viewer_ctx.dark_mode,
                     ctx,
                 ),
+                ViewMode::CRRSwitchBlock => self.crr_sb_view.render(ctx),
             },
             None => {
                 // If no architecture is loaded, no view can be seen, so show a welcome message.

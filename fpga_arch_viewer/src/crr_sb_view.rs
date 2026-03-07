@@ -93,7 +93,7 @@ impl CRRSBView {
         spacing_between_points: f32,
         crr_sb: &CRRSwitchBlock,
     ) -> egui::Pos2 {
-        // FIXME: Catch for underflow!
+        // TODO: Catch for underflow!
         let lane_num = source_node.lane_num - 1;
         let ptc_offset = (source_node.tap_num - 1) * 2;
         let ptc_num = match source_node.dir {
@@ -119,7 +119,7 @@ impl CRRSBView {
         spacing_between_points: f32,
         crr_sb: &CRRSwitchBlock,
     ) -> egui::Pos2 {
-        // FIXME: Catch for underflow!
+        // TODO: Catch for underflow!
         let lane_num = sink_node.lane_num - 1;
         let ptc_offset = 0;
         let ptc_num = match sink_node.dir {
@@ -400,6 +400,22 @@ struct CRRSwitchBlockLane {
     segment_len: usize,
 }
 
+fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
+    // This method is currently a bit hacky. The correct way to do this is to get
+    // this information from the architecture file; however, this interface supports
+    // case-insensitive segment types which is very strange.
+    // According to Amin, all segments will follow this naming convention in the tileable
+    // architecture.
+    let segment_type = segment_type.to_lowercase();
+    if !segment_type.starts_with('l') {
+        return Err("Unsupported segment type should start with l.");
+    }
+    match segment_type[1..].parse::<usize>() {
+        Ok(v) => Ok(v),
+        Err(_e) => Err("Unsupported segment type."),
+    }
+}
+
 fn get_crr_switch_block(
     crr_sb_info: &CRRSwitchBlockDeserialized,
 ) -> Result<CRRSwitchBlock, &'static str> {
@@ -450,16 +466,7 @@ fn get_crr_switch_block(
         if left_lane_num_to_segment[&lane_num] != right_lane_num_to_segment[&lane_num] {
             return Err("Left and right target lanes do not target the same segment.");
         }
-        // FIXME: This should be made much better.
-        let segment_len = match left_lane_num_to_segment[&lane_num].to_lowercase().as_str() {
-            "l4" => 4,
-            "l3" => 3,
-            "l2" => 2,
-            "l1" => 1,
-            _ => {
-                return Err("Unsupported segment type.");
-            }
-        };
+        let segment_len = get_segment_len(left_lane_num_to_segment[&lane_num])?;
         chan_x_lanes.push(CRRSwitchBlockLane {
             starting_track_num: curr_chan_x_track_num,
             segment_len,
@@ -476,16 +483,7 @@ fn get_crr_switch_block(
         if top_lane_num_to_segment[&lane_num] != bottom_lane_num_to_segment[&lane_num] {
             return Err("Left and right target lanes do not target the same segment.");
         }
-        // FIXME: This should be made much better.
-        let segment_len = match top_lane_num_to_segment[&lane_num].to_lowercase().as_str() {
-            "l4" => 4,
-            "l3" => 3,
-            "l2" => 2,
-            "l1" => 1,
-            _ => {
-                return Err("Unsupported segment type.");
-            }
-        };
+        let segment_len = get_segment_len(top_lane_num_to_segment[&lane_num])?;
         chan_y_lanes.push(CRRSwitchBlockLane {
             starting_track_num: curr_chan_y_track_num,
             segment_len,

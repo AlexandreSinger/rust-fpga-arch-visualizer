@@ -15,7 +15,7 @@
 //!
 //! ## Example
 //!
-//! ```
+//! ```no_run
 //! use crr_sb_parser::parse_csv_file;
 //! use std::path::Path;
 //!

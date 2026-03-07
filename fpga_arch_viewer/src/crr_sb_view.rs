@@ -76,14 +76,19 @@ impl CRRSBView {
             } else {
                 ui.label("Error occured while interpreting the CRR SB.");
             }
-        } else if ui.button("Select CSV file to view").clicked() {
-            // TODO: Make this cleaner by combining with view.
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CRR CSV Files", &["csv"])
-                .set_title("Open CRR CSV File")
-                .pick_file()
-            {
-                self.load_crr_csv_file(path);
+        } else {
+            ui.label("The CRR View is currently under development.");
+            if ui.button("Select CSV file to view").clicked() {
+                // TODO: Make this cleaner by combining with view.
+                // TODO: Add WASM support.
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("CRR CSV Files", &["csv"])
+                    .set_title("Open CRR CSV File")
+                    .pick_file()
+                {
+                    self.load_crr_csv_file(path);
+                }
             }
         }
     }

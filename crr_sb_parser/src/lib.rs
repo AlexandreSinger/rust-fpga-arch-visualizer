@@ -15,7 +15,7 @@
 //!
 //! ## Example
 //!
-//! ```ignore
+//! ```
 //! use crr_sb_parser::parse_csv_file;
 //! use std::path::Path;
 //!
@@ -35,12 +35,12 @@ use std::{fs::File, path::Path};
 mod crr_sb_des;
 mod crr_sb_parse_error;
 mod parse_common;
-mod parse_sb_col_headers;
 mod parse_sb_rows;
+mod parse_sink_nodes;
 
 pub use crate::crr_sb_des::*;
 pub use crate::crr_sb_parse_error::CRRSBParseError;
-use crate::{parse_sb_col_headers::parse_sink_nodes, parse_sb_rows::parse_rows};
+use crate::{parse_sb_rows::parse_rows, parse_sink_nodes::parse_sink_nodes};
 
 /// Parses a CSV file containing Custom Routing Resource (CRR) switch block definitions.
 ///

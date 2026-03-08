@@ -416,6 +416,7 @@ fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
         return Err("Unsupported segment type should start with l.");
     }
     match segment_type[1..].parse::<usize>() {
+        Ok(0) => Err("Unsupported segment type should have a positive length."),
         Ok(v) => Ok(v),
         Err(_e) => Err("Unsupported segment type."),
     }
@@ -425,7 +426,6 @@ fn get_crr_switch_block(
     crr_sb_info: &CRRSwitchBlockDeserialized,
 ) -> Result<CRRSwitchBlock, &'static str> {
     // To get the lanes, we go through the sink nodes.
-    // TODO: We should verify that this matches the source nodes.
     let mut left_lane_num_to_segment = HashMap::new();
     let mut right_lane_num_to_segment = HashMap::new();
     let mut top_lane_num_to_segment = HashMap::new();
@@ -494,6 +494,35 @@ fn get_crr_switch_block(
             segment_len,
         });
         curr_chan_y_track_num += segment_len * 2;
+    }
+
+    // Validate the source nodes to ensure that they are consistent with the sink nodes.
+    // This prevents crashes in the code later.
+    for source_node in &crr_sb_info.source_nodes {
+        if source_node.lane_num == 0 {
+            return Err("Found a source node with lane num 0.");
+        }
+        let source_node_lane_id = source_node.lane_num - 1;
+        let source_node_lane = match source_node.dir {
+            CRRSwitchDir::Left | CRRSwitchDir::Right => {
+                if source_node_lane_id >= chan_x_lanes.len() {
+                    return Err("Found a source node with an invalid lane.");
+                }
+                &chan_x_lanes[source_node_lane_id]
+            },
+            CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
+                if source_node_lane_id >= chan_y_lanes.len() {
+                    return Err("Found a source node with an invalid lane.");
+                }
+                &chan_y_lanes[source_node_lane_id]
+            }
+        };
+        if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
+            return Err("Found a source node in a lane with the wrong segment type.");
+        }
+        if source_node.tap_num == 0 || source_node.tap_num > source_node_lane.segment_len {
+            return Err("Found a source node with an invalid tap number.");
+        }
     }
 
     Ok(CRRSwitchBlock {

@@ -509,7 +509,7 @@ fn get_crr_switch_block(
                     return Err("Found a source node with an invalid lane.");
                 }
                 &chan_x_lanes[source_node_lane_id]
-            },
+            }
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
                 if source_node_lane_id >= chan_y_lanes.len() {
                     return Err("Found a source node with an invalid lane.");

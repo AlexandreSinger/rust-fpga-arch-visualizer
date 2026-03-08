@@ -10,6 +10,7 @@ pub struct CRRSBView {
     crr_sb_info: Option<crr_sb_parser::CRRSwitchBlockDeserialized>,
     crr_sb: Option<CRRSwitchBlock>,
     zoom_factor: f32,
+    last_error: Option<String>,
 }
 
 impl Default for CRRSBView {
@@ -18,6 +19,7 @@ impl Default for CRRSBView {
             crr_sb_info: None,
             crr_sb: None,
             zoom_factor: 1.0,
+            last_error: None,
         }
     }
 }
@@ -25,18 +27,24 @@ impl Default for CRRSBView {
 impl CRRSBView {
     fn load_crr_csv_file(&mut self, file_path: std::path::PathBuf) {
         self.crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
-            Ok(crr_sb_info) => Some(crr_sb_info),
+            Ok(crr_sb_info) => {
+                self.last_error = None;
+                Some(crr_sb_info)
+            }
             Err(e) => {
-                println!("{e}");
+                self.last_error = Some(e.to_string());
                 None
             }
         };
 
         if let Some(crr_sb_info) = &self.crr_sb_info {
             self.crr_sb = match get_crr_switch_block(crr_sb_info) {
-                Ok(crr_sb) => Some(crr_sb),
+                Ok(crr_sb) => {
+                    self.last_error = None;
+                    Some(crr_sb)
+                }
                 Err(e) => {
-                    println!("{e}");
+                    self.last_error = Some(e.to_string());
                     None
                 }
             }
@@ -73,8 +81,10 @@ impl CRRSBView {
                 }
 
                 self.render_crr_sb(crr_sb, crr_sb_info, ui);
+            } else if let Some(error_msg) = &self.last_error {
+                ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             } else {
-                ui.label("Error occured while interpreting the CRR SB.");
+                ui.label("Error occurred while interpreting the CRR SB.");
             }
         } else {
             ui.label("The CRR View is currently under development.");

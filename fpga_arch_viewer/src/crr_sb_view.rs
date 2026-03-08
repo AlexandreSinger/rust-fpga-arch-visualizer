@@ -116,7 +116,7 @@ impl CRRSBView {
             CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
         };
-        Self::get_ptc_loc(ptc_num, spacing_between_points, &source_node.dir, chan_w)
+        Self::get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, chan_w)
     }
 
     fn get_sink_node_loc(
@@ -138,13 +138,13 @@ impl CRRSBView {
             CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
         };
-        Self::get_ptc_loc(ptc_num, spacing_between_points, &sink_node.dir, chan_w)
+        Self::get_ptc_loc(ptc_num, spacing_between_points, sink_node.dir, chan_w)
     }
 
     fn get_ptc_loc(
         ptc_track_num: usize,
         spacing_between_points: f32,
-        side: &CRRSwitchDir,
+        side: CRRSwitchDir,
         chan_w: usize,
     ) -> egui::Pos2 {
         egui::Pos2::new(
@@ -200,7 +200,7 @@ impl CRRSBView {
                     let left_conn_pt = Self::get_ptc_loc(
                         chan_x_ptc,
                         spacing_between_points,
-                        &CRRSwitchDir::Left,
+                        CRRSwitchDir::Left,
                         crr_sb.chan_x_width,
                     );
                     painter.line_segment(
@@ -217,7 +217,7 @@ impl CRRSBView {
                     let left_conn_pt = Self::get_ptc_loc(
                         chan_y_ptc,
                         spacing_between_points,
-                        &CRRSwitchDir::Bottom,
+                        CRRSwitchDir::Bottom,
                         crr_sb.chan_y_width,
                     );
                     painter.line_segment(
@@ -243,7 +243,7 @@ impl CRRSBView {
                     };
                     for chan_ptc in 0..chan_w {
                         let conn_pt =
-                            Self::get_ptc_loc(chan_ptc, spacing_between_points, &side, chan_w);
+                            Self::get_ptc_loc(chan_ptc, spacing_between_points, side, chan_w);
                         painter.circle(
                             conn_pt + sb_draw_offset.to_vec2(),
                             2.5,
@@ -264,25 +264,25 @@ impl CRRSBView {
                         let left_source_loc = Self::get_ptc_loc(
                             left_source_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Left,
+                            CRRSwitchDir::Left,
                             crr_sb.chan_x_width,
                         );
                         let left_sink_loc = Self::get_ptc_loc(
                             left_sink_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Left,
+                            CRRSwitchDir::Left,
                             crr_sb.chan_x_width,
                         );
                         let right_source_loc = Self::get_ptc_loc(
                             right_source_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Right,
+                            CRRSwitchDir::Right,
                             crr_sb.chan_x_width,
                         );
                         let right_sink_loc = Self::get_ptc_loc(
                             right_sink_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Right,
+                            CRRSwitchDir::Right,
                             crr_sb.chan_x_width,
                         );
 
@@ -312,25 +312,25 @@ impl CRRSBView {
                         let top_source_loc = Self::get_ptc_loc(
                             top_source_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Top,
+                            CRRSwitchDir::Top,
                             crr_sb.chan_y_width,
                         );
                         let top_sink_loc = Self::get_ptc_loc(
                             top_sink_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Top,
+                            CRRSwitchDir::Top,
                             crr_sb.chan_y_width,
                         );
                         let bottom_source_loc = Self::get_ptc_loc(
                             bottom_source_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Bottom,
+                            CRRSwitchDir::Bottom,
                             crr_sb.chan_y_width,
                         );
                         let bottom_sink_loc = Self::get_ptc_loc(
                             bottom_sink_ptc_num,
                             spacing_between_points,
-                            &CRRSwitchDir::Bottom,
+                            CRRSwitchDir::Bottom,
                             crr_sb.chan_y_width,
                         );
 

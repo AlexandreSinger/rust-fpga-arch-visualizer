@@ -368,19 +368,31 @@ fn parse_switch<R: BufRead>(
     let c_in = match c_in {
         Some(p) => p,
         None => {
-            return Err(FPGAArchParseError::MissingRequiredAttribute(
-                "Cin".to_string(),
-                parser.position(),
-            ));
+            // TODO: Update VTR Docs. This is not well documented.
+            match sw_type {
+                SwitchType::Short => 0.0,
+                _ => {
+                    return Err(FPGAArchParseError::MissingRequiredAttribute(
+                        "Cin".to_string(),
+                        parser.position(),
+                    ));
+                }
+            }
         }
     };
     let c_out = match c_out {
         Some(p) => p,
         None => {
-            return Err(FPGAArchParseError::MissingRequiredAttribute(
-                "Cout".to_string(),
-                parser.position(),
-            ));
+            // TODO: Update VTR Docs. This is not well documented.
+            match sw_type {
+                SwitchType::Short => 0.0,
+                _ => {
+                    return Err(FPGAArchParseError::MissingRequiredAttribute(
+                        "Cout".to_string(),
+                        parser.position(),
+                    ));
+                }
+            }
         }
     };
     let buf_size = buf_size.unwrap_or(SwitchBufSize::Auto);

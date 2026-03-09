@@ -6,7 +6,7 @@ pub fn render_welcome_message(ui: &mut egui::Ui, view_mode: &ViewMode) {
     ui.scope_builder(
         egui::UiBuilder::new().max_rect(egui::Rect::from_center_size(
             available_rect.center(),
-            egui::vec2(500.0, 200.0),
+            egui::vec2(500.0, 250.0),
         )),
         |ui| {
             ui.vertical_centered(|ui| {
@@ -14,7 +14,9 @@ pub fn render_welcome_message(ui: &mut egui::Ui, view_mode: &ViewMode) {
                 ui.add_space(20.0);
                 ui.label("No architecture file loaded.");
                 ui.add_space(10.0);
-                ui.label("Use File > Open Architecture File to load a VTR architecture file.");
+                ui.label("You can:");
+                ui.label("  • Use File > Open to load a VTR architecture file");
+                ui.label("  • Try File > Open Sample to explore sample architectures");
                 ui.add_space(20.0);
                 ui.label(format!("Current mode: {:?}", view_mode));
             });

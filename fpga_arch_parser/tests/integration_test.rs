@@ -492,6 +492,7 @@ fn test_vtr_flagship_tileable() -> Result<(), FPGAArchParseError> {
 
     Ok(())
 }
+
 #[test]
 fn test_k6_n10_40nm_interposer() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k6_N10_40nm_interposer.xml");
@@ -551,6 +552,19 @@ fn test_k6_n10_40nm_interposer() -> Result<(), FPGAArchParseError> {
     } else {
         panic!("Second layout expected to be the fixed layout.");
     }
+
+    Ok(())
+}
+
+#[test]
+fn test_koios_arch() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6FracN10LB_mem20K_complexDSP_customSB_22nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    assert_eq!(res.tiles.len(), 4);
+    assert_eq!(res.layouts.layout_list.len(), 6);
 
     Ok(())
 }

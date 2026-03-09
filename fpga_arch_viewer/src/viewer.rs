@@ -15,6 +15,7 @@ use crate::common_ui;
 use crate::complex_block_view::ComplexBlockView;
 use crate::crr_sb_view::CRRSBView;
 use crate::grid_view::GridView;
+use crate::samples::SampleArchitecture;
 use crate::settings;
 use crate::summary_view::SummaryView;
 use crate::tile_view::TileView;
@@ -302,7 +303,6 @@ impl FpgaViewer {
         self.viewer_ctx.loaded_file_path = Some(file_path);
     }
 
-    #[cfg(target_arch = "wasm32")]
     fn load_architecture_from_bytes(&mut self, data: Vec<u8>, file_name: String) {
         match fpga_arch_parser::parse_from_bytes(&data) {
             Ok(arch) => {
@@ -332,6 +332,10 @@ impl FpgaViewer {
 
         // Store the file name (we don't have a path in WASM)
         self.viewer_ctx.loaded_file_path = Some(file_name.into());
+    }
+
+    fn load_sample_architecture(&mut self, sample: &SampleArchitecture) {
+        self.load_architecture_from_bytes(sample.data.to_vec(), sample.name.to_string());
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -488,6 +492,15 @@ impl FpgaViewer {
                         self.open_file_dialog();
                         ui.close();
                     }
+                    ui.menu_button("Open Sample Architecture", |ui| {
+                        for sample in SampleArchitecture::all() {
+                            if ui.button(sample.name).clicked() {
+                                self.load_sample_architecture(sample);
+                                ui.close();
+                            }
+                        }
+                    });
+                    ui.separator();
                     if ui.button("Exit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }

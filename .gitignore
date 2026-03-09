@@ -28,3 +28,6 @@ target
 
 # trunk output folder
 /fpga_arch_viewer/dist/
+
+# Firebase
+/.firebase/

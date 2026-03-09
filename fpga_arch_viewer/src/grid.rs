@@ -392,19 +392,19 @@ impl DeviceGrid {
                 if let Some(x_expr) = &cut_line.x {
                     // NOTE: This interface should not use the tile width and height.
                     //       Just in case it is used, we will use 1 as a default value.
-                    if let Some(x) = self.eval_expr(x_expr, 1, 1) {
-                        if x <= self.width {
-                            self.vertical_interposer_cut_lines.push(x);
-                        }
+                    if let Some(x) = self.eval_expr(x_expr, 1, 1)
+                        && x <= self.width
+                    {
+                        self.vertical_interposer_cut_lines.push(x);
                     }
                 }
                 if let Some(y_expr) = &cut_line.y {
                     // NOTE: This interface should not use the tile width and height.
                     //       Just in case it is used, we will use 1 as a default value.
-                    if let Some(y) = self.eval_expr(y_expr, 1, 1) {
-                        if y <= self.height {
-                            self.horizontal_interposer_cut_lines.push(y);
-                        }
+                    if let Some(y) = self.eval_expr(y_expr, 1, 1)
+                        && y <= self.height
+                    {
+                        self.horizontal_interposer_cut_lines.push(y);
                     }
                 }
             }

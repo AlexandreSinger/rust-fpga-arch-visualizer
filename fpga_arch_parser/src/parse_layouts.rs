@@ -399,17 +399,22 @@ fn parse_interposer_cut<R: BufRead>(
         }
     }
 
-    match x {
-        None => {
-            if y.is_none() {
-                return Err(FPGAArchParseError::MissingRequiredAttribute("Exactly one of the x or y attributes must be specified. Neither has been specified.".to_string(), parser.position()));
-            }
+    match (&x, &y) {
+        (None, None) => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "Exactly one of the x or y attributes must be specified. Neither has been specified."
+                    .to_string(),
+                parser.position()
+            ));
         }
-        Some(_) => {
-            if y.is_some() {
-                return Err(FPGAArchParseError::InvalidTag("Exactly one of the x or y attributes must be specified. Both have been specified.".to_string(), parser.position()));
-            }
+        (Some(_), Some(_)) => {
+            return Err(FPGAArchParseError::InvalidTag(
+                "Exactly one of the x or y attributes must be specified. Both have been specified."
+                    .to_string(),
+                parser.position(),
+            ));
         }
+        _ => {}
     }
 
     let mut interdie_wires: Vec<InterdieWire> = Vec::new();

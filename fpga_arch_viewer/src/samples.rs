@@ -1,4 +1,4 @@
-/// Sample architectures embedded in the binary for users to explore without loading files
+//! Sample architectures embedded in the binary for users to explore without loading files
 
 pub struct SampleArchitecture {
     pub name: &'static str,
@@ -6,8 +6,8 @@ pub struct SampleArchitecture {
 }
 
 impl SampleArchitecture {
-    pub fn all() -> Vec<Self> {
-        vec![
+    pub fn all() -> &'static [Self] {
+        static SAMPLES: &[SampleArchitecture] = &[
             SampleArchitecture {
                 name: "MCNC Architecture",
                 data: include_bytes!("../../fpga_arch_parser/tests/k6_frac_N10_40nm.xml"),
@@ -24,6 +24,7 @@ impl SampleArchitecture {
                     "../../fpga_arch_parser/tests/k6FracN10LB_mem20K_complexDSP_customSB_22nm.xml"
                 ),
             },
-        ]
+        ];
+        SAMPLES
     }
 }

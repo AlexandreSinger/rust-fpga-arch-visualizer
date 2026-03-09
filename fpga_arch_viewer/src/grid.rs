@@ -31,6 +31,9 @@ pub struct DeviceGrid {
     // The priority of each cell currently placed on the grid.
     // This is used when building the grid.
     grid_priorities: Vec<Vec<i32>>,
+
+    pub horizontal_interposer_cut_lines: Vec<usize>,
+    pub vertical_interposer_cut_lines: Vec<usize>,
 }
 
 impl DeviceGrid {
@@ -71,6 +74,8 @@ impl DeviceGrid {
             cells: vec![vec![GridCell::Empty; width]; height],
             tile_sizes,
             grid_priorities: vec![vec![i32::MIN; width]; height],
+            horizontal_interposer_cut_lines: Vec::new(),
+            vertical_interposer_cut_lines: Vec::new(),
         };
 
         for grid_location in &fixed_layout.grid_locations {
@@ -92,6 +97,8 @@ impl DeviceGrid {
             cells: vec![vec![GridCell::Empty; width]; height],
             tile_sizes,
             grid_priorities: vec![vec![i32::MIN; width]; height],
+            horizontal_interposer_cut_lines: Vec::new(),
+            vertical_interposer_cut_lines: Vec::new(),
         };
 
         for grid_location in &auto_layout.grid_locations {
@@ -378,6 +385,26 @@ impl DeviceGrid {
                         for x in (start_x..=end_x.min(self.width - 1)).step_by(incr_x) {
                             self.place_tile(y, x, &region.pb_type, region.priority);
                         }
+                    }
+                }
+            }
+            GridLocation::InterposerCut(cut_line) => {
+                if let Some(x_expr) = &cut_line.x {
+                    // NOTE: This interface should not use the tile width and height.
+                    //       Just in case it is used, we will use 1 as a default value.
+                    if let Some(x) = self.eval_expr(x_expr, 1, 1)
+                        && x <= self.width
+                    {
+                        self.vertical_interposer_cut_lines.push(x);
+                    }
+                }
+                if let Some(y_expr) = &cut_line.y {
+                    // NOTE: This interface should not use the tile width and height.
+                    //       Just in case it is used, we will use 1 as a default value.
+                    if let Some(y) = self.eval_expr(y_expr, 1, 1)
+                        && y <= self.height
+                    {
+                        self.horizontal_interposer_cut_lines.push(y);
                     }
                 }
             }

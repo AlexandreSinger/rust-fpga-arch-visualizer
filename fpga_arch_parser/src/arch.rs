@@ -229,6 +229,21 @@ pub struct RegionGridLocation {
     pub metadata: Option<Vec<Metadata>>,
 }
 
+pub struct InterdieWire {
+    pub sg_name: String,
+    pub sg_link: String,
+    pub offset_start: i32,
+    pub offset_end: i32,
+    pub offset_increment: i32,
+    pub num: String,
+}
+
+pub struct InterposerCutGridLocation {
+    pub x: Option<String>,
+    pub y: Option<String>,
+    pub interdie_wires: Vec<InterdieWire>,
+}
+
 pub enum GridLocation {
     Fill(FillGridLocation),
     Perimeter(PerimeterGridLocation),
@@ -237,6 +252,7 @@ pub enum GridLocation {
     Col(ColGridLocation),
     Row(RowGridLocation),
     Region(RegionGridLocation),
+    InterposerCut(InterposerCutGridLocation),
 }
 
 pub struct AutoLayout {
@@ -478,8 +494,8 @@ pub struct Segment {
     pub freq: f32,
     pub r_metal: f32,
     pub c_metal: f32,
-    pub sb_pattern: Vec<bool>,
-    pub cb_pattern: Vec<bool>,
+    pub sb_pattern: Option<Vec<bool>>,
+    pub cb_pattern: Option<Vec<bool>>,
     pub switch_points: SegmentSwitchPoints,
 }
 

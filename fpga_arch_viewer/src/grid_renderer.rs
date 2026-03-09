@@ -115,6 +115,28 @@ impl GridRenderer {
                 }
             }
         }
+
+        // Draw any interposer cut lines
+        for vertical_cut in &grid.vertical_interposer_cut_lines {
+            let cut_x = *vertical_cut as f32 * cell_size;
+            self.grid_shapes.push(egui::Shape::LineSegment {
+                points: [
+                    egui::Pos2::new(cut_x, 0.0),
+                    egui::Pos2::new(cut_x, grid.height as f32 * cell_size),
+                ],
+                stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+            });
+        }
+        for horizontal_cut in &grid.horizontal_interposer_cut_lines {
+            let cut_y = (grid.height - *horizontal_cut) as f32 * cell_size;
+            self.grid_shapes.push(egui::Shape::LineSegment {
+                points: [
+                    egui::Pos2::new(0.0, cut_y),
+                    egui::Pos2::new(grid.width as f32 * cell_size, cut_y),
+                ],
+                stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+            });
+        }
     }
 
     pub fn render_grid(

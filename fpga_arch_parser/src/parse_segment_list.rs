@@ -594,10 +594,14 @@ fn parse_segment<R: BufRead>(
                     parser.position(),
                 ));
             } else {
-                p
+                Some(p)
             }
         }
-        None => return Err(FPGAArchParseError::MissingRequiredTag("<sb>".to_string())),
+        // TODO: This needs to be documented better in VTR.
+        None => match freq {
+            0.0 => None,
+            _ => return Err(FPGAArchParseError::MissingRequiredTag("<sb>".to_string())),
+        },
     };
     let cb_pattern = match cb_pattern {
         Some(p) => {
@@ -608,10 +612,14 @@ fn parse_segment<R: BufRead>(
                     parser.position(),
                 ));
             } else {
-                p
+                Some(p)
             }
         }
-        None => return Err(FPGAArchParseError::MissingRequiredTag("<cb>".to_string())),
+        // TODO: This needs to be documented better in VTR.
+        None => match freq {
+            0.0 => None,
+            _ => return Err(FPGAArchParseError::MissingRequiredTag("<cb>".to_string())),
+        },
     };
     let switch_points = match segment_type {
         SegmentType::Unidir => match mux {

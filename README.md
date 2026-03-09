@@ -5,6 +5,14 @@
 <img src="./docs/images/demo-splash-complex-blocks.png" width="49%" />
 </p>
 
+## Try Online
+
+The visualizer is also available as a **web application** that runs directly in your browser:
+
+🌐 **[Open in Browser](https://fpga-architecture-visualizer.web.app/)**
+
+No installation required. Simply click the link and open your FPGA architecture XML file to get started.
+
 ## Install
 
 ### Pre-Built Binaries

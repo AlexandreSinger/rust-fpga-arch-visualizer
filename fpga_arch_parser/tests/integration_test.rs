@@ -492,3 +492,65 @@ fn test_vtr_flagship_tileable() -> Result<(), FPGAArchParseError> {
 
     Ok(())
 }
+#[test]
+fn test_k6_n10_40nm_interposer() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_N10_40nm_interposer.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    assert_eq!(res.layouts.layout_list.len(), 2);
+
+    if let Layout::FixedLayout(fixed_layout) = &res.layouts.layout_list[1] {
+        assert_eq!(fixed_layout.name, "vtr_homogeneous_extra_small");
+        assert_eq!(fixed_layout.width, 10);
+        assert_eq!(fixed_layout.height, 10);
+        assert_eq!(fixed_layout.grid_locations.len(), 5);
+        if let GridLocation::InterposerCut(horizontal_cut) = &fixed_layout.grid_locations[3] {
+            assert_eq!(horizontal_cut.y, Some("4".to_string()));
+            assert_eq!(horizontal_cut.x, None);
+            assert_eq!(horizontal_cut.interdie_wires.len(), 2);
+            let l_up_wire = &horizontal_cut.interdie_wires[0];
+            assert_eq!(l_up_wire.sg_name, "interposer_sg");
+            assert_eq!(l_up_wire.sg_link, "L_UP");
+            assert_eq!(l_up_wire.offset_start, -1);
+            assert_eq!(l_up_wire.offset_end, -1);
+            assert_eq!(l_up_wire.offset_increment, 1);
+            assert_eq!(l_up_wire.num, "4");
+            let l_down_wire = &horizontal_cut.interdie_wires[1];
+            assert_eq!(l_down_wire.sg_name, "interposer_sg");
+            assert_eq!(l_down_wire.sg_link, "L_DOWN");
+            assert_eq!(l_down_wire.offset_start, 1);
+            assert_eq!(l_down_wire.offset_end, 1);
+            assert_eq!(l_down_wire.offset_increment, -1);
+            assert_eq!(l_down_wire.num, "4");
+        } else {
+            panic!("Fourth grid location is expected to be an interposer cut.");
+        }
+        if let GridLocation::InterposerCut(vertical_cut) = &fixed_layout.grid_locations[4] {
+            assert_eq!(vertical_cut.x, Some("4".to_string()));
+            assert_eq!(vertical_cut.y, None);
+            assert_eq!(vertical_cut.interdie_wires.len(), 2);
+            let l_right_wire = &vertical_cut.interdie_wires[0];
+            assert_eq!(l_right_wire.sg_name, "interposer_sg");
+            assert_eq!(l_right_wire.sg_link, "L_RIGHT");
+            assert_eq!(l_right_wire.offset_start, -1);
+            assert_eq!(l_right_wire.offset_end, -1);
+            assert_eq!(l_right_wire.offset_increment, 1);
+            assert_eq!(l_right_wire.num, "4");
+            let l_left_wire = &vertical_cut.interdie_wires[1];
+            assert_eq!(l_left_wire.sg_name, "interposer_sg");
+            assert_eq!(l_left_wire.sg_link, "L_LEFT");
+            assert_eq!(l_left_wire.offset_start, 1);
+            assert_eq!(l_left_wire.offset_end, 1);
+            assert_eq!(l_left_wire.offset_increment, -1);
+            assert_eq!(l_left_wire.num, "4");
+        } else {
+            panic!("Fifth grid location is expected to be an interposer cut.");
+        }
+    } else {
+        panic!("Second layout expected to be the fixed layout.");
+    }
+
+    Ok(())
+}

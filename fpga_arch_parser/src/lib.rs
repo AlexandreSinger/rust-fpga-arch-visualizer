@@ -173,6 +173,10 @@ fn parse_architecture<R: BufRead>(
                         // FIXME: Check that this is documented in VTR.
                         let _ = parser.skip();
                     }
+                    "scatter_gather_list" => {
+                        // TODO: Implement.
+                        let _ = parser.skip();
+                    }
                     _ => {
                         return Err(FPGAArchParseError::InvalidTag(
                             name.to_string(),

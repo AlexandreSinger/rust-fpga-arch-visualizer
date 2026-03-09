@@ -29,6 +29,11 @@ fn parse_grid_location<R: BufRead>(
     attributes: &[OwnedAttribute],
     parser: &mut EventReader<R>,
 ) -> Result<GridLocation, FPGAArchParseError> {
+    // Interposer cuts are parsed special.
+    if name.to_string() == "interposer_cut" {
+        return parse_interposer_cut(name, attributes, parser);
+    }
+
     let mut pb_type: Option<String> = None;
     let mut priority: Option<i32> = None;
     let mut x_expr: Option<String> = None;
@@ -349,6 +354,322 @@ fn parse_grid_location<R: BufRead>(
             parser.position(),
         )),
     }
+}
+
+fn parse_interposer_cut<R: BufRead>(
+    name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<R>,
+) -> Result<GridLocation, FPGAArchParseError> {
+    assert!(name.to_string() == "interposer_cut");
+
+    let mut x: Option<String> = None;
+    let mut y: Option<String> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "x" => {
+                x = match x {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "y" => {
+                y = match y {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
+    }
+
+    match x {
+        None => {
+            if y.is_none() {
+                return Err(FPGAArchParseError::MissingRequiredAttribute("Exactly one of the x or y attributes must be specified. Neither has been specified.".to_string(), parser.position()));
+            }
+        }
+        Some(_) => {
+            if y.is_some() {
+                return Err(FPGAArchParseError::InvalidTag("Exactly one of the x or y attributes must be specified. Both have been specified.".to_string(), parser.position()));
+            }
+        }
+    }
+
+    let mut interdie_wires: Vec<InterdieWire> = Vec::new();
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            }) => {
+                match name.to_string().as_str() {
+                    "interdie_wire" => {
+                        interdie_wires.push(parse_interdie_wire(&name, &attributes, parser)?);
+                    }
+                    _ => {
+                        return Err(FPGAArchParseError::InvalidTag(
+                            name.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                };
+            }
+            Ok(XmlEvent::EndElement { name: end_name }) => {
+                if end_name.to_string() == name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+            }
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    name.to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(GridLocation::InterposerCut(InterposerCutGridLocation {
+        x,
+        y,
+        interdie_wires,
+    }))
+}
+
+fn parse_interdie_wire<R: BufRead>(
+    tag_name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<R>,
+) -> Result<InterdieWire, FPGAArchParseError> {
+    assert!(tag_name.to_string() == "interdie_wire");
+
+    let mut sg_name: Option<String> = None;
+    let mut sg_link: Option<String> = None;
+    let mut offset_start: Option<i32> = None;
+    let mut offset_end: Option<i32> = None;
+    let mut offset_increment: Option<i32> = None;
+    let mut num: Option<String> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "sg_name" => {
+                sg_name = match sg_name {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "sg_link" => {
+                sg_link = match sg_link {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "offset_start" => {
+                offset_start = match offset_start {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "offset_end" => {
+                offset_end = match offset_end {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "offset_increment" => {
+                offset_increment = match offset_increment {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "num" => {
+                num = match num {
+                    None => Some(a.value.clone()),
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
+    }
+    let sg_name = match sg_name {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "sg_name".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let sg_link = match sg_link {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "sg_link".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let offset_start = match offset_start {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "offset_start".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let offset_end = match offset_end {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "offset_end".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let offset_increment = match offset_increment {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "offset_increment".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let num = match num {
+        Some(n) => n,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "num".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(
+                    name.to_string(),
+                    parser.position(),
+                ));
+            }
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() != tag_name.to_string() {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+                break;
+            }
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    tag_name.to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
+        };
+    }
+
+    Ok(InterdieWire {
+        sg_name,
+        sg_link,
+        offset_start,
+        offset_end,
+        offset_increment,
+        num,
+    })
 }
 
 fn parse_grid_location_list<R: BufRead>(

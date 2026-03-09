@@ -105,6 +105,7 @@ impl GridView {
                     fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
                     fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
                     fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
+                    fpga_arch_parser::GridLocation::InterposerCut(_) => continue,
                 };
                 if pb_type != "EMPTY" {
                     tile_names.insert(pb_type.clone());

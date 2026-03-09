@@ -1,3 +1,12 @@
+## [v0.3.3] - 2026-03-08
+
+### Added
+- Proper Tile View has been added which resolves issue where some complex blocks could not be viewed.
+- WASM target is now supported.
+- Initial support for Custom RR graphs.
+- Fixed small oversight with shorts in parsing architecture files.
+- Added automatic website deployment for the WASM build of the app.
+
 ## [v0.3.2] - 2026-02-01
 
 ### Added

@@ -1,0 +1,5 @@
+{
+  "projects": {
+    "default": "fpga-architecture-visualizer"
+  }
+}

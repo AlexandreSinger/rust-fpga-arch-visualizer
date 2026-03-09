@@ -495,7 +495,7 @@ impl FpgaViewer {
                     ui.menu_button("Open Sample Architecture", |ui| {
                         for sample in SampleArchitecture::all() {
                             if ui.button(sample.name).clicked() {
-                                self.load_sample_architecture(&sample);
+                                self.load_sample_architecture(sample);
                                 ui.close();
                             }
                         }

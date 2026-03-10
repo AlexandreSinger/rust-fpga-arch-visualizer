@@ -14,6 +14,7 @@ pub struct GridState {
     pub grid_height: usize,
     pub aspect_ratio: f32,
     pub selected_layout_index: usize,
+    pub selected_die_id: usize,
     pub zoom_factor: f32,
 
     pub max_zoom: f32,
@@ -30,6 +31,7 @@ impl Default for GridState {
             grid_height: 10,
             aspect_ratio: 1.0,
             selected_layout_index: 0,
+            selected_die_id: 0,
             zoom_factor: 1.0,
             max_zoom: 10.0,
             grid_changed: false,
@@ -90,27 +92,8 @@ impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
         // Extract unique tile names from all layouts
         let mut tile_names = std::collections::HashSet::new();
-        for layout in &arch.layouts.layout_list {
-            let grid_locations = match &layout {
-                fpga_arch_parser::Layout::AutoLayout(al) => &al.grid_locations,
-                fpga_arch_parser::Layout::FixedLayout(fl) => &fl.grid_locations,
-            };
-
-            for location in grid_locations {
-                let pb_type = match location {
-                    fpga_arch_parser::GridLocation::Fill(f) => &f.pb_type,
-                    fpga_arch_parser::GridLocation::Perimeter(p) => &p.pb_type,
-                    fpga_arch_parser::GridLocation::Corners(c) => &c.pb_type,
-                    fpga_arch_parser::GridLocation::Single(s) => &s.pb_type,
-                    fpga_arch_parser::GridLocation::Col(c) => &c.pb_type,
-                    fpga_arch_parser::GridLocation::Row(r) => &r.pb_type,
-                    fpga_arch_parser::GridLocation::Region(r) => &r.pb_type,
-                    fpga_arch_parser::GridLocation::InterposerCut(_) => continue,
-                };
-                if pb_type != "EMPTY" {
-                    tile_names.insert(pb_type.clone());
-                }
-            }
+        for tile in &arch.tiles {
+            tile_names.insert(tile.name.clone());
         }
 
         // Assign colors to tile types
@@ -124,6 +107,7 @@ impl GridView {
 
         // Reset layout selection and rebuild grid
         self.grid_state.selected_layout_index = 0;
+        self.grid_state.selected_die_id = 0;
         self.rebuild_grid(arch);
     }
 
@@ -221,10 +205,13 @@ impl GridView {
                 );
                 self.grid_state.last_available_size = current_available_size;
             }
-            if let Some(clicked_tile) =
-                self.grid_renderer
-                    .render_grid(ui, grid, arch, self.grid_state.zoom_factor)
-            {
+            if let Some(clicked_tile) = self.grid_renderer.render_grid(
+                ui,
+                grid,
+                arch,
+                self.grid_state.zoom_factor,
+                self.grid_state.selected_die_id,
+            ) {
                 *selected_tile_name = Some(clicked_tile);
                 *next_view_mode = ViewMode::Tile;
             }
@@ -295,6 +282,7 @@ fn render_grid_controls_panel(
 
                 if layout_changed {
                     grid_changed = true;
+                    state.selected_die_id = 0;
                 }
                 ui.add_space(10.0);
             }
@@ -394,6 +382,34 @@ fn render_grid_controls_panel(
                 });
             });
 
+            if let Some(layout) = arch.layouts.layout_list.get(state.selected_layout_index) {
+                let layers = match layout {
+                    fpga_arch_parser::Layout::FixedLayout(fixed_layout) => &fixed_layout.layers,
+                    fpga_arch_parser::Layout::AutoLayout(auto_layout) => &auto_layout.layers,
+                };
+
+                if layers.len() > 1 {
+                    ui.add_space(10.0);
+                    let selected_layer_name = format!("Layer {}", state.selected_die_id);
+                    ui.label("Layer:");
+                    egui::ComboBox::from_id_salt("layer_selector")
+                        .selected_text(&selected_layer_name)
+                        .show_ui(ui, |ui| {
+                            for die_id in 0..layers.len() {
+                                let layer_name = format!("Layer {}", die_id);
+                                if ui
+                                    .selectable_value(
+                                        &mut state.selected_die_id,
+                                        die_id,
+                                        layer_name,
+                                    )
+                                    .clicked()
+                                {}
+                            }
+                        });
+                }
+            }
+
             ui.add_space(15.0);
             ui.separator();
             ui.add_space(10.0);
@@ -433,7 +449,7 @@ fn render_grid_controls_panel(
             if let Some(grid) = device_grid {
                 let mut tile_counts: std::collections::BTreeMap<String, usize> =
                     std::collections::BTreeMap::new();
-                for row in &grid.cells {
+                for row in &grid.grid_layers[state.selected_die_id].cells {
                     for cell in row {
                         if let GridCell::BlockAnchor { pb_type, .. } = cell {
                             *tile_counts.entry(pb_type.clone()).or_insert(0) += 1;

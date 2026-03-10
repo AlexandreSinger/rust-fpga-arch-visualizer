@@ -680,8 +680,12 @@ fn parse_interdie_wire<R: BufRead>(
 fn parse_grid_location_list<R: BufRead>(
     layout_type_name: &OwnedName,
     parser: &mut EventReader<R>,
+    prev_grid_loc: Option<GridLocation>,
 ) -> Result<Vec<GridLocation>, FPGAArchParseError> {
     let mut grid_locations: Vec<GridLocation> = Vec::new();
+    if let Some(prev_grid_loc) = prev_grid_loc {
+        grid_locations.push(prev_grid_loc);
+    }
     loop {
         match parser.next() {
             Ok(XmlEvent::StartElement {
@@ -715,6 +719,131 @@ fn parse_grid_location_list<R: BufRead>(
     }
 
     Ok(grid_locations)
+}
+
+fn parse_layer<R: BufRead>(
+    name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<R>,
+) -> Result<Layer, FPGAArchParseError> {
+    assert!(name.to_string() == "layer");
+
+    let mut die: Option<usize> = None;
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "die" => {
+                die = match die {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        }
+    }
+    let die = die.unwrap_or(0);
+
+    let grid_locations = parse_grid_location_list(name, parser, None)?;
+
+    Ok(Layer {
+        die,
+        grid_locations,
+    })
+}
+
+fn parse_layers<R: BufRead>(
+    layout_type_name: &OwnedName,
+    parser: &mut EventReader<R>,
+) -> Result<Vec<Layer>, FPGAArchParseError> {
+    let mut layers: Vec<Layer> = Vec::new();
+
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            }) => match name.to_string().as_str() {
+                "layer" => layers.push(parse_layer(&name, &attributes, parser)?),
+                _ => {
+                    if !layers.is_empty() {
+                        return Err(FPGAArchParseError::InvalidTag(
+                            "Found a grid location when there should not be one".to_string(),
+                            parser.position(),
+                        ));
+                    }
+                    let prev_grid_loc = Some(parse_grid_location(&name, &attributes, parser)?);
+                    layers.push(Layer {
+                        die: 0,
+                        grid_locations: parse_grid_location_list(
+                            layout_type_name,
+                            parser,
+                            prev_grid_loc,
+                        )?,
+                    });
+                    return Ok(layers);
+                }
+            },
+            Ok(XmlEvent::EndElement { name }) => {
+                if name.to_string() == layout_type_name.to_string() {
+                    break;
+                } else {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+            }
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    layout_type_name.to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    // Sort the layers in increasing order of die id.
+    // This is just for convenience. Downstream should not care about the order
+    // layers are in the original XML file.
+    layers.sort_by(|a, b| a.die.cmp(&b.die));
+
+    // Verify the layers
+    // This verifies that each layer has a die ID from 0 to num_layers - 1.
+    for (i, layer) in layers.iter().enumerate() {
+        if layer.die != i {
+            return Err(FPGAArchParseError::InvalidTag(
+                format!(
+                    "Found a layer with an invalid die ID: {}. Expected to be: {}",
+                    layer.die, i
+                ),
+                parser.position(),
+            ));
+        }
+    }
+
+    Ok(layers)
 }
 
 fn parse_auto_layout<R: BufRead>(
@@ -758,11 +887,11 @@ fn parse_auto_layout<R: BufRead>(
 
     let aspect_ratio = aspect_ratio.unwrap_or(1.0);
 
-    let grid_locations = parse_grid_location_list(name, parser)?;
+    let layers = parse_layers(name, parser)?;
 
     Ok(AutoLayout {
         aspect_ratio,
-        grid_locations,
+        layers,
     })
 }
 
@@ -865,13 +994,13 @@ fn parse_fixed_layout<R: BufRead>(
         }
     };
 
-    let grid_locations = parse_grid_location_list(name, parser)?;
+    let layers = parse_layers(name, parser)?;
 
     Ok(FixedLayout {
         name: layout_name,
         width,
         height,
-        grid_locations,
+        layers,
     })
 }
 

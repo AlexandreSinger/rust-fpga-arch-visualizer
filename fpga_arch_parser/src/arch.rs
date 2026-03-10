@@ -255,16 +255,21 @@ pub enum GridLocation {
     InterposerCut(InterposerCutGridLocation),
 }
 
+pub struct Layer {
+    pub die: usize,
+    pub grid_locations: Vec<GridLocation>,
+}
+
 pub struct AutoLayout {
     pub aspect_ratio: f32,
-    pub grid_locations: Vec<GridLocation>,
+    pub layers: Vec<Layer>,
 }
 
 pub struct FixedLayout {
     pub name: String,
     pub width: i32,
     pub height: i32,
-    pub grid_locations: Vec<GridLocation>,
+    pub layers: Vec<Layer>,
 }
 
 #[derive(Clone)]

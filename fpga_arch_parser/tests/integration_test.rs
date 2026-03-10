@@ -76,17 +76,18 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     match &res.layouts.layout_list[0] {
         Layout::AutoLayout(auto_layout) => {
             assert_eq!(auto_layout.aspect_ratio, 1.0);
-            assert_eq!(auto_layout.grid_locations.len(), 3);
+            assert_eq!(auto_layout.layers.len(), 1);
+            assert_eq!(auto_layout.layers[0].grid_locations.len(), 3);
             assert!(matches!(
-                auto_layout.grid_locations[0],
+                auto_layout.layers[0].grid_locations[0],
                 GridLocation::Perimeter { .. }
             ));
             assert!(matches!(
-                auto_layout.grid_locations[1],
+                auto_layout.layers[0].grid_locations[1],
                 GridLocation::Corners { .. }
             ));
             assert!(matches!(
-                auto_layout.grid_locations[2],
+                auto_layout.layers[0].grid_locations[2],
                 GridLocation::Fill { .. }
             ));
             // TODO: Check the priority and the pb_types are correct.
@@ -506,8 +507,11 @@ fn test_k6_n10_40nm_interposer() -> Result<(), FPGAArchParseError> {
         assert_eq!(fixed_layout.name, "vtr_homogeneous_extra_small");
         assert_eq!(fixed_layout.width, 10);
         assert_eq!(fixed_layout.height, 10);
-        assert_eq!(fixed_layout.grid_locations.len(), 5);
-        if let GridLocation::InterposerCut(horizontal_cut) = &fixed_layout.grid_locations[3] {
+        assert_eq!(fixed_layout.layers.len(), 1);
+        assert_eq!(fixed_layout.layers[0].grid_locations.len(), 5);
+        if let GridLocation::InterposerCut(horizontal_cut) =
+            &fixed_layout.layers[0].grid_locations[3]
+        {
             assert_eq!(horizontal_cut.y, Some("4".to_string()));
             assert_eq!(horizontal_cut.x, None);
             assert_eq!(horizontal_cut.interdie_wires.len(), 2);
@@ -528,7 +532,8 @@ fn test_k6_n10_40nm_interposer() -> Result<(), FPGAArchParseError> {
         } else {
             panic!("Fourth grid location is expected to be an interposer cut.");
         }
-        if let GridLocation::InterposerCut(vertical_cut) = &fixed_layout.grid_locations[4] {
+        if let GridLocation::InterposerCut(vertical_cut) = &fixed_layout.layers[0].grid_locations[4]
+        {
             assert_eq!(vertical_cut.x, Some("4".to_string()));
             assert_eq!(vertical_cut.y, None);
             assert_eq!(vertical_cut.interdie_wires.len(), 2);
@@ -565,6 +570,54 @@ fn test_koios_arch() -> Result<(), FPGAArchParseError> {
 
     assert_eq!(res.tiles.len(), 4);
     assert_eq!(res.layouts.layout_list.len(), 6);
+
+    Ok(())
+}
+
+#[test]
+fn test_3d_k4_n4_90nm_opin_per_block() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/3d_k4_N4_90nm_opin_per_block.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    assert_eq!(res.tiles.len(), 2);
+    assert_eq!(res.layouts.layout_list.len(), 2);
+
+    if let Layout::FixedLayout(fixed_3d_layout) = &res.layouts.layout_list[1] {
+        assert_eq!(fixed_3d_layout.name, "FPGA3D");
+        assert_eq!(fixed_3d_layout.width, 11);
+        assert_eq!(fixed_3d_layout.height, 11);
+        assert_eq!(fixed_3d_layout.layers.len(), 2);
+        assert_eq!(fixed_3d_layout.layers[0].die, 0);
+        assert_eq!(fixed_3d_layout.layers[1].die, 1);
+
+        assert_eq!(fixed_3d_layout.layers[0].grid_locations.len(), 2);
+        assert!(matches!(
+            fixed_3d_layout.layers[0].grid_locations[0],
+            GridLocation::Perimeter { .. }
+        ));
+        assert!(matches!(
+            fixed_3d_layout.layers[0].grid_locations[1],
+            GridLocation::Fill { .. }
+        ));
+
+        assert_eq!(fixed_3d_layout.layers[1].grid_locations.len(), 3);
+        assert!(matches!(
+            fixed_3d_layout.layers[1].grid_locations[0],
+            GridLocation::Region { .. }
+        ));
+        assert!(matches!(
+            fixed_3d_layout.layers[1].grid_locations[1],
+            GridLocation::Region { .. }
+        ));
+        assert!(matches!(
+            fixed_3d_layout.layers[1].grid_locations[2],
+            GridLocation::Fill { .. }
+        ));
+    } else {
+        panic!("Second layout expected to be fixed.");
+    }
 
     Ok(())
 }

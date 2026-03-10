@@ -7,9 +7,9 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub struct GridRenderer {
     // Prerendered shapes that make up the grid.
-    grid_shapes: Vec<egui::Shape>,
+    grid_shapes: Vec<Vec<egui::Shape>>,
     // Prerendered shapes that make up the text on the grid.
-    text_shapes: Vec<egui::Shape>,
+    text_shapes: Vec<Vec<egui::Shape>>,
 }
 
 impl GridRenderer {
@@ -23,119 +23,123 @@ impl GridRenderer {
         ui: &egui::Ui,
     ) {
         self.grid_shapes.clear();
+        self.grid_shapes.resize(grid.num_layers, Vec::new());
         self.text_shapes.clear();
+        self.text_shapes.resize(grid.num_layers, Vec::new());
         let cell_size = get_cell_size(grid, zoom_factor, ui);
 
         // Draw grid
-        for row in 0..grid.height {
-            for col in 0..grid.width {
-                if let Some(cell) = grid.get(row, col) {
-                    // Flip y-coordinate so (0,0) is at bottom-left
-                    let cell_pos = egui::Pos2::new(
-                        col as f32 * cell_size,
-                        (grid.height - 1 - row) as f32 * cell_size,
-                    );
+        for die_id in 0..grid.num_layers {
+            for row in 0..grid.height {
+                for col in 0..grid.width {
+                    if let Some(cell) = grid.get(row, col, die_id) {
+                        // Flip y-coordinate so (0,0) is at bottom-left
+                        let cell_pos = egui::Pos2::new(
+                            col as f32 * cell_size,
+                            (grid.height - 1 - row) as f32 * cell_size,
+                        );
 
-                    match cell {
-                        GridCell::Empty => {
-                            // Draw empty cell outline
-                            let rect = egui::Rect::from_min_size(
-                                cell_pos,
-                                egui::vec2(cell_size, cell_size),
-                            );
-                            self.grid_shapes.push(egui::Shape::rect_stroke(
-                                rect,
-                                egui::CornerRadius::ZERO,
-                                egui::Stroke::new(0.5, egui::Color32::DARK_GRAY),
-                                egui::epaint::StrokeKind::Inside,
-                            ));
-                        }
-                        GridCell::BlockAnchor {
-                            pb_type,
-                            width,
-                            height,
-                        } => {
-                            // Draw merged rectangle for multi-cell tile
-                            let tile_width = *width as f32 * cell_size;
-                            let tile_height = *height as f32 * cell_size;
-
-                            let visual_top = egui::Pos2::new(
-                                col as f32 * cell_size,
-                                (grid.height - row - height) as f32 * cell_size,
-                            );
-                            let rect = egui::Rect::from_min_size(
-                                visual_top,
-                                egui::vec2(tile_width, tile_height),
-                            );
-
-                            let color = tile_colors
-                                .get(pb_type)
-                                .copied()
-                                .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
-
-                            let outline_color = darken_color(color, 0.5);
-
-                            // Draw filled rectangle
-                            self.grid_shapes.push(egui::Shape::rect_filled(
-                                rect,
-                                egui::CornerRadius::ZERO,
-                                color,
-                            ));
-
-                            // Draw outline
-                            // TODO: This can probably be combined with the filled rectangle.
-                            self.grid_shapes.push(egui::Shape::rect_stroke(
-                                rect,
-                                egui::CornerRadius::ZERO,
-                                egui::Stroke::new(1.0, outline_color),
-                                egui::epaint::StrokeKind::Inside,
-                            ));
-
-                            // Only draw the text if the tile is large enough.
-                            if cell_size > Self::MIN_CELL_SIZE_FOR_TEXT {
-                                // Draw tile name in center (uppercase)
-                                let tile_name_upper = pb_type.to_uppercase();
-                                let font_size = (cell_size * 0.2).min(tile_height * 0.15);
-                                ui.fonts(|fonts| {
-                                    self.text_shapes.push(egui::Shape::text(
-                                        fonts,
-                                        rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        &tile_name_upper,
-                                        egui::FontId::proportional(font_size),
-                                        egui::Color32::BLACK,
-                                    ));
-                                });
+                        match cell {
+                            GridCell::Empty => {
+                                // Draw empty cell outline
+                                let rect = egui::Rect::from_min_size(
+                                    cell_pos,
+                                    egui::vec2(cell_size, cell_size),
+                                );
+                                self.grid_shapes[die_id].push(egui::Shape::rect_stroke(
+                                    rect,
+                                    egui::CornerRadius::ZERO,
+                                    egui::Stroke::new(0.5, egui::Color32::DARK_GRAY),
+                                    egui::epaint::StrokeKind::Inside,
+                                ));
                             }
-                        }
-                        GridCell::BlockOccupied { .. } => {
-                            // Skip - this space is part of an anchor tile and already drawn
+                            GridCell::BlockAnchor {
+                                pb_type,
+                                width,
+                                height,
+                            } => {
+                                // Draw merged rectangle for multi-cell tile
+                                let tile_width = *width as f32 * cell_size;
+                                let tile_height = *height as f32 * cell_size;
+
+                                let visual_top = egui::Pos2::new(
+                                    col as f32 * cell_size,
+                                    (grid.height - row - height) as f32 * cell_size,
+                                );
+                                let rect = egui::Rect::from_min_size(
+                                    visual_top,
+                                    egui::vec2(tile_width, tile_height),
+                                );
+
+                                let color = tile_colors
+                                    .get(pb_type)
+                                    .copied()
+                                    .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
+
+                                let outline_color = darken_color(color, 0.5);
+
+                                // Draw filled rectangle
+                                self.grid_shapes[die_id].push(egui::Shape::rect_filled(
+                                    rect,
+                                    egui::CornerRadius::ZERO,
+                                    color,
+                                ));
+
+                                // Draw outline
+                                // TODO: This can probably be combined with the filled rectangle.
+                                self.grid_shapes[die_id].push(egui::Shape::rect_stroke(
+                                    rect,
+                                    egui::CornerRadius::ZERO,
+                                    egui::Stroke::new(1.0, outline_color),
+                                    egui::epaint::StrokeKind::Inside,
+                                ));
+
+                                // Only draw the text if the tile is large enough.
+                                if cell_size > Self::MIN_CELL_SIZE_FOR_TEXT {
+                                    // Draw tile name in center (uppercase)
+                                    let tile_name_upper = pb_type.to_uppercase();
+                                    let font_size = (cell_size * 0.2).min(tile_height * 0.15);
+                                    ui.fonts(|fonts| {
+                                        self.text_shapes[die_id].push(egui::Shape::text(
+                                            fonts,
+                                            rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            &tile_name_upper,
+                                            egui::FontId::proportional(font_size),
+                                            egui::Color32::BLACK,
+                                        ));
+                                    });
+                                }
+                            }
+                            GridCell::BlockOccupied { .. } => {
+                                // Skip - this space is part of an anchor tile and already drawn
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Draw any interposer cut lines
-        for vertical_cut in &grid.vertical_interposer_cut_lines {
-            let cut_x = *vertical_cut as f32 * cell_size;
-            self.grid_shapes.push(egui::Shape::LineSegment {
-                points: [
-                    egui::Pos2::new(cut_x, 0.0),
-                    egui::Pos2::new(cut_x, grid.height as f32 * cell_size),
-                ],
-                stroke: egui::Stroke::new(2.0, egui::Color32::RED),
-            });
-        }
-        for horizontal_cut in &grid.horizontal_interposer_cut_lines {
-            let cut_y = (grid.height - *horizontal_cut) as f32 * cell_size;
-            self.grid_shapes.push(egui::Shape::LineSegment {
-                points: [
-                    egui::Pos2::new(0.0, cut_y),
-                    egui::Pos2::new(grid.width as f32 * cell_size, cut_y),
-                ],
-                stroke: egui::Stroke::new(2.0, egui::Color32::RED),
-            });
+            // Draw any interposer cut lines
+            for vertical_cut in &grid.grid_layers[die_id].vertical_interposer_cut_lines {
+                let cut_x = *vertical_cut as f32 * cell_size;
+                self.grid_shapes[die_id].push(egui::Shape::LineSegment {
+                    points: [
+                        egui::Pos2::new(cut_x, 0.0),
+                        egui::Pos2::new(cut_x, grid.height as f32 * cell_size),
+                    ],
+                    stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+                });
+            }
+            for horizontal_cut in &grid.grid_layers[die_id].horizontal_interposer_cut_lines {
+                let cut_y = (grid.height - *horizontal_cut) as f32 * cell_size;
+                self.grid_shapes[die_id].push(egui::Shape::LineSegment {
+                    points: [
+                        egui::Pos2::new(0.0, cut_y),
+                        egui::Pos2::new(grid.width as f32 * cell_size, cut_y),
+                    ],
+                    stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+                });
+            }
         }
     }
 
@@ -145,6 +149,7 @@ impl GridRenderer {
         grid: &DeviceGrid,
         arch: &FPGAArch,
         zoom_factor: f32,
+        selected_die_id: usize,
     ) -> Option<String> {
         // Cell size is based on the available space
         let cell_size = get_cell_size(grid, zoom_factor, ui);
@@ -167,7 +172,7 @@ impl GridRenderer {
                 // to allow us to render very large FPGAs.
                 // TODO: This clone can be wasteful. Should consider using egui::Context::set_transform_layer()
                 //       in the future.
-                let mut shapes = self.grid_shapes.clone();
+                let mut shapes = self.grid_shapes[selected_die_id].clone();
                 for shape in &mut shapes {
                     shape.translate(offset.to_vec2());
                 }
@@ -181,7 +186,7 @@ impl GridRenderer {
                     // we are so zoomed in, we only collect the visible text
                     // shapes. This greatly improves performance.
                     let mut text_shapes = Vec::new();
-                    for shape in &self.text_shapes {
+                    for shape in &self.text_shapes[selected_die_id] {
                         if ui.is_rect_visible(
                             shape.visual_bounding_rect().translate(offset.to_vec2()),
                         ) {
@@ -206,7 +211,7 @@ impl GridRenderer {
                         pb_type: _,
                         anchor_row,
                         anchor_col,
-                    }) = grid.get(row, col)
+                    }) = grid.get(row, col, selected_die_id)
                     {
                         col = *anchor_col;
                         row = *anchor_row;
@@ -216,7 +221,7 @@ impl GridRenderer {
                         pb_type,
                         width,
                         height,
-                    }) = grid.get(row, col)
+                    }) = grid.get(row, col, selected_die_id)
                     {
                         // If a tile has been clicked, mark it as the clicked tile.
                         if response.clicked() {

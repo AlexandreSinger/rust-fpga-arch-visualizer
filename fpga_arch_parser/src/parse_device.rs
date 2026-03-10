@@ -144,6 +144,8 @@ fn parse_device_connection_block<R: BufRead>(
                     }
                 }
             }
+            // TODO: This is not used in VPR. This should be removed from the parser.
+            "input_inter_die_switch_name" => {}
             _ => {
                 return Err(FPGAArchParseError::UnknownAttribute(
                     a.to_string(),
@@ -819,6 +821,11 @@ pub fn parse_device<R: BufRead>(
                                 ));
                             }
                         }
+                    }
+                    "opin_chanz_connectivity" => {
+                        // TODO: This is only used in special cases of 3D which we likely will not
+                        //       need to visualize. Skipping for now.
+                        let _ = parser.skip();
                     }
                     _ => {
                         return Err(FPGAArchParseError::InvalidTag(

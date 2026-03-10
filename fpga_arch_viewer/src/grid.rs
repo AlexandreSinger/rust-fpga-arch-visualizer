@@ -19,21 +19,27 @@ pub enum GridCell {
     },
 }
 
-// FPGA device grid
 #[derive(Debug, Clone)]
-pub struct DeviceGrid {
-    pub width: usize,
-    pub height: usize,
+pub struct DeviceGridLayer {
     pub cells: Vec<Vec<GridCell>>,
-    // Map from tile name to (width, height)
-    tile_sizes: HashMap<String, (usize, usize)>,
-
     // The priority of each cell currently placed on the grid.
     // This is used when building the grid.
     grid_priorities: Vec<Vec<i32>>,
 
     pub horizontal_interposer_cut_lines: Vec<usize>,
     pub vertical_interposer_cut_lines: Vec<usize>,
+}
+
+// FPGA device grid
+#[derive(Debug, Clone)]
+pub struct DeviceGrid {
+    pub width: usize,
+    pub height: usize,
+    pub num_layers: usize,
+    // Map from tile name to (width, height)
+    tile_sizes: HashMap<String, (usize, usize)>,
+
+    pub grid_layers: Vec<DeviceGridLayer>,
 }
 
 impl DeviceGrid {
@@ -67,19 +73,32 @@ impl DeviceGrid {
         let tile_sizes = Self::build_tile_size_map(arch);
         let width = fixed_layout.width as usize;
         let height = fixed_layout.height as usize;
+        let mut num_layers = 1;
+        for layer in &fixed_layout.layers {
+            num_layers = num_layers.max(layer.die + 1);
+        }
 
         let mut grid = Self {
             width,
             height,
-            cells: vec![vec![GridCell::Empty; width]; height],
+            num_layers,
             tile_sizes,
-            grid_priorities: vec![vec![i32::MIN; width]; height],
-            horizontal_interposer_cut_lines: Vec::new(),
-            vertical_interposer_cut_lines: Vec::new(),
+            grid_layers: Vec::new(),
         };
 
-        for grid_location in &fixed_layout.grid_locations {
-            grid.apply_grid_location(grid_location);
+        for _ in 0..num_layers {
+            grid.grid_layers.push(DeviceGridLayer {
+                cells: vec![vec![GridCell::Empty; width]; height],
+                grid_priorities: vec![vec![i32::MIN; width]; height],
+                horizontal_interposer_cut_lines: Vec::new(),
+                vertical_interposer_cut_lines: Vec::new(),
+            });
+        }
+
+        for layer in &fixed_layout.layers {
+            for grid_location in &layer.grid_locations {
+                grid.apply_grid_location(grid_location, layer.die);
+            }
         }
 
         grid
@@ -91,18 +110,32 @@ impl DeviceGrid {
         height: usize,
         tile_sizes: HashMap<String, (usize, usize)>,
     ) -> Self {
+        let mut num_layers = 1;
+        for layer in &auto_layout.layers {
+            num_layers = num_layers.max(layer.die + 1);
+        }
+
         let mut grid = Self {
             width,
             height,
-            cells: vec![vec![GridCell::Empty; width]; height],
+            num_layers,
             tile_sizes,
-            grid_priorities: vec![vec![i32::MIN; width]; height],
-            horizontal_interposer_cut_lines: Vec::new(),
-            vertical_interposer_cut_lines: Vec::new(),
+            grid_layers: Vec::new(),
         };
 
-        for grid_location in &auto_layout.grid_locations {
-            grid.apply_grid_location(grid_location);
+        for _ in 0..num_layers {
+            grid.grid_layers.push(DeviceGridLayer {
+                cells: vec![vec![GridCell::Empty; width]; height],
+                grid_priorities: vec![vec![i32::MIN; width]; height],
+                horizontal_interposer_cut_lines: Vec::new(),
+                vertical_interposer_cut_lines: Vec::new(),
+            });
+        }
+
+        for layer in &auto_layout.layers {
+            for grid_location in &layer.grid_locations {
+                grid.apply_grid_location(grid_location, layer.die);
+            }
         }
 
         grid
@@ -114,7 +147,14 @@ impl DeviceGrid {
 
     /// Place a multi-cell tile at the given position
     /// Returns true if successfully placed, false if there wasn't enough space
-    fn place_tile(&mut self, row: usize, col: usize, pb_type: &str, priority: i32) -> bool {
+    fn place_tile(
+        &mut self,
+        row: usize,
+        col: usize,
+        pb_type: &str,
+        priority: i32,
+        die_id: usize,
+    ) -> bool {
         let (tile_width, tile_height) = self.get_tile_size(pb_type);
 
         // Check if there's enough space
@@ -129,8 +169,10 @@ impl DeviceGrid {
                 let check_row = row + dy;
                 let check_col = col + dx;
                 if check_row < self.height && check_col < self.width {
-                    max_priority =
-                        std::cmp::max(max_priority, self.grid_priorities[check_row][check_col]);
+                    max_priority = std::cmp::max(
+                        max_priority,
+                        self.grid_layers[die_id].grid_priorities[check_row][check_col],
+                    );
                 }
             }
         }
@@ -149,7 +191,7 @@ impl DeviceGrid {
                 let check_row = row + dy;
                 let check_col = col + dx;
                 if check_row < self.height && check_col < self.width {
-                    match &self.cells[check_row][check_col] {
+                    match &self.grid_layers[die_id].cells[check_row][check_col] {
                         GridCell::BlockAnchor { .. } => {
                             // Found an anchor that will be overwritten
                             tiles_to_clear.push((check_row, check_col));
@@ -170,7 +212,8 @@ impl DeviceGrid {
 
         // Clear all intersected tiles completely
         for (anchor_row, anchor_col) in tiles_to_clear {
-            if let GridCell::BlockAnchor { width, height, .. } = &self.cells[anchor_row][anchor_col]
+            if let GridCell::BlockAnchor { width, height, .. } =
+                &self.grid_layers[die_id].cells[anchor_row][anchor_col]
             {
                 let old_width = *width;
                 let old_height = *height;
@@ -180,12 +223,13 @@ impl DeviceGrid {
                         let clear_row = anchor_row + dy;
                         let clear_col = anchor_col + dx;
                         if clear_row < self.height && clear_col < self.width {
-                            self.cells[clear_row][clear_col] = GridCell::Empty;
+                            self.grid_layers[die_id].cells[clear_row][clear_col] = GridCell::Empty;
                             // NOTE: This is not the best idea since there may have been a lower
                             //       priority tile that is being overwritten; however, this is
                             //       how VPR appears to handle this currently. We want to match
                             //       VPR as much as possible.
-                            self.grid_priorities[clear_row][clear_col] = i32::MIN;
+                            self.grid_layers[die_id].grid_priorities[clear_row][clear_col] =
+                                i32::MIN;
                         }
                     }
                 }
@@ -194,15 +238,15 @@ impl DeviceGrid {
 
         // Place the anchor cell
         if pb_type == "EMPTY" {
-            self.cells[row][col] = GridCell::Empty;
+            self.grid_layers[die_id].cells[row][col] = GridCell::Empty;
         } else {
-            self.cells[row][col] = GridCell::BlockAnchor {
+            self.grid_layers[die_id].cells[row][col] = GridCell::BlockAnchor {
                 pb_type: pb_type.to_string(),
                 width: tile_width,
                 height: tile_height,
             };
         }
-        self.grid_priorities[row][col] = priority;
+        self.grid_layers[die_id].grid_priorities[row][col] = priority;
 
         // Place occupied cells
         for dy in 0..tile_height {
@@ -211,12 +255,12 @@ impl DeviceGrid {
                     continue; // Skip anchor cell
                 }
                 if row + dy < self.height && col + dx < self.width {
-                    self.cells[row + dy][col + dx] = GridCell::BlockOccupied {
+                    self.grid_layers[die_id].cells[row + dy][col + dx] = GridCell::BlockOccupied {
                         pb_type: pb_type.to_string(),
                         anchor_row: row,
                         anchor_col: col,
                     };
-                    self.grid_priorities[row + dy][col + dx] = priority;
+                    self.grid_layers[die_id].grid_priorities[row + dy][col + dx] = priority;
                 }
             }
         }
@@ -224,7 +268,7 @@ impl DeviceGrid {
         true
     }
 
-    fn apply_grid_location(&mut self, location: &GridLocation) {
+    fn apply_grid_location(&mut self, location: &GridLocation, die_id: usize) {
         match location {
             GridLocation::Fill(fill) => {
                 let (tile_width, tile_height) = self.get_tile_size(&fill.pb_type);
@@ -232,7 +276,7 @@ impl DeviceGrid {
                 while row < self.height {
                     let mut col = 0;
                     while col < self.width {
-                        if self.place_tile(row, col, &fill.pb_type, fill.priority) {
+                        if self.place_tile(row, col, &fill.pb_type, fill.priority, die_id) {
                             col += tile_width;
                         } else {
                             col += 1;
@@ -246,7 +290,7 @@ impl DeviceGrid {
                 // Top edge
                 let mut col = 0;
                 while col < self.width {
-                    if self.place_tile(0, col, &perimeter.pb_type, perimeter.priority) {
+                    if self.place_tile(0, col, &perimeter.pb_type, perimeter.priority, die_id) {
                         col += tile_width;
                     } else {
                         col += 1;
@@ -262,6 +306,7 @@ impl DeviceGrid {
                             col,
                             &perimeter.pb_type,
                             perimeter.priority,
+                            die_id,
                         ) {
                             col += tile_width;
                         } else {
@@ -273,7 +318,7 @@ impl DeviceGrid {
                 // Left edge
                 let mut row = 0;
                 while row < self.height {
-                    if self.place_tile(row, 0, &perimeter.pb_type, perimeter.priority) {
+                    if self.place_tile(row, 0, &perimeter.pb_type, perimeter.priority, die_id) {
                         row += tile_height;
                     } else {
                         row += 1;
@@ -289,6 +334,7 @@ impl DeviceGrid {
                             self.width - 1,
                             &perimeter.pb_type,
                             perimeter.priority,
+                            die_id,
                         ) {
                             row += tile_height;
                         } else {
@@ -307,7 +353,7 @@ impl DeviceGrid {
 
                 for (row, col) in corners_positions {
                     if row < self.height && col < self.width {
-                        self.place_tile(row, col, &corners.pb_type, corners.priority);
+                        self.place_tile(row, col, &corners.pb_type, corners.priority, die_id);
                     }
                 }
             }
@@ -319,7 +365,7 @@ impl DeviceGrid {
                 ) && y < self.height
                     && x < self.width
                 {
-                    self.place_tile(y, x, &single.pb_type, single.priority);
+                    self.place_tile(y, x, &single.pb_type, single.priority, die_id);
                 }
             }
             GridLocation::Col(col_loc) => {
@@ -339,7 +385,7 @@ impl DeviceGrid {
 
                     for x in (start_x..self.width).step_by(repeat_x) {
                         for y in (start_y..self.height).step_by(incr_y) {
-                            self.place_tile(y, x, &col_loc.pb_type, col_loc.priority);
+                            self.place_tile(y, x, &col_loc.pb_type, col_loc.priority, die_id);
                         }
                     }
                 }
@@ -361,7 +407,7 @@ impl DeviceGrid {
 
                     for y in (start_y..self.height).step_by(repeat_y) {
                         for x in (start_x..self.width).step_by(incr_x) {
-                            self.place_tile(y, x, &row_loc.pb_type, row_loc.priority);
+                            self.place_tile(y, x, &row_loc.pb_type, row_loc.priority, die_id);
                         }
                     }
                 }
@@ -383,7 +429,7 @@ impl DeviceGrid {
 
                     for y in (start_y..=end_y.min(self.height - 1)).step_by(incr_y) {
                         for x in (start_x..=end_x.min(self.width - 1)).step_by(incr_x) {
-                            self.place_tile(y, x, &region.pb_type, region.priority);
+                            self.place_tile(y, x, &region.pb_type, region.priority, die_id);
                         }
                     }
                 }
@@ -395,7 +441,9 @@ impl DeviceGrid {
                     if let Some(x) = self.eval_expr(x_expr, 1, 1)
                         && x <= self.width
                     {
-                        self.vertical_interposer_cut_lines.push(x);
+                        self.grid_layers[die_id]
+                            .vertical_interposer_cut_lines
+                            .push(x);
                     }
                 }
                 if let Some(y_expr) = &cut_line.y {
@@ -404,7 +452,9 @@ impl DeviceGrid {
                     if let Some(y) = self.eval_expr(y_expr, 1, 1)
                         && y <= self.height
                     {
-                        self.horizontal_interposer_cut_lines.push(y);
+                        self.grid_layers[die_id]
+                            .horizontal_interposer_cut_lines
+                            .push(y);
                     }
                 }
             }
@@ -423,9 +473,9 @@ impl DeviceGrid {
         eval_expr_recursive(&expr)
     }
 
-    pub fn get(&self, row: usize, col: usize) -> Option<&GridCell> {
-        if row < self.height && col < self.width {
-            Some(&self.cells[row][col])
+    pub fn get(&self, row: usize, col: usize, die_id: usize) -> Option<&GridCell> {
+        if row < self.height && col < self.width && die_id < self.num_layers {
+            Some(&self.grid_layers[die_id].cells[row][col])
         } else {
             None
         }

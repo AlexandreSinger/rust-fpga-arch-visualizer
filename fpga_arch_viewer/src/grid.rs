@@ -474,7 +474,7 @@ impl DeviceGrid {
     }
 
     pub fn get(&self, row: usize, col: usize, die_id: usize) -> Option<&GridCell> {
-        if row < self.height && col < self.width {
+        if row < self.height && col < self.width && die_id < self.num_layers {
             Some(&self.grid_layers[die_id].cells[row][col])
         } else {
             None

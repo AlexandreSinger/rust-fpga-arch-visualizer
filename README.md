@@ -7,13 +7,13 @@
 
 ## Try Online
 
-The visualizer is also available as a **web application** that runs directly in your browser:
+The visualizer is available as a **web application** that runs directly in your browser:
 
 🌐 **[Open in Browser](https://fpga-architecture-visualizer.web.app/)**
 
 No installation required. Simply click the link and open your FPGA architecture XML file to get started.
 
-## Install
+## Install Natively
 
 ### Pre-Built Binaries
 
@@ -23,6 +23,13 @@ Run the following code in a terminal:
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/AlexandreSinger/rust-fpga-arch-visualizer/releases/latest/download/fpga_arch_viewer-installer.sh | sh
 ```
+
+This will add two executables to your PATH variable:
+```text
+fpga_arch_viewer
+fpga_arch_viewer-update
+```
+Running the first executable will run the application. The second executable will check for any new releases and download them automatically.
 
 #### Windows PowerShell:
 

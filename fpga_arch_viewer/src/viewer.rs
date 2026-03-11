@@ -1,6 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
-use log::info;
+use log::{info, warn};
 use std::io::{BufRead, BufReader};
 
 #[cfg(target_arch = "wasm32")]
@@ -378,15 +378,31 @@ impl FpgaViewer {
                 dropped_files = i.raw.dropped_files.clone();
             }
         });
-        // Load the dropped files.
+        // The viewer can only display one architecture at a time, so load the
+        // first supported file and ignore the rest.
         for file in dropped_files {
-            // Note: if multiple files are passed in, we try to load all of them.
-            //       Eventually I would like this interface to pass multiple different
-            //       types of files at the same time.
             if let Some(file_path) = file.path {
-                self.load_architecture_file(file_path);
-            } else if let (Some(data), file_name) = (file.bytes, file.name) {
-                self.load_architecture_from_bytes(data.to_vec(), file_name);
+                let is_xml = file_path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+                if is_xml {
+                    self.load_architecture_file(file_path);
+                    break;
+                } else {
+                    warn!("Cannot open dropped filepath: {}", file_path.display());
+                }
+            } else if let Some(data) = file.bytes {
+                let is_xml = file
+                    .name
+                    .rsplit_once('.')
+                    .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("xml"));
+                if is_xml {
+                    self.load_architecture_from_bytes(data.to_vec(), file.name);
+                    break;
+                } else {
+                    warn!("Cannot open dropped file: {}", file.name);
+                }
             }
         }
     }

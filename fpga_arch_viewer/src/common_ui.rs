@@ -17,6 +17,7 @@ pub fn render_welcome_message(ui: &mut egui::Ui, view_mode: &ViewMode) {
                 ui.label("You can:");
                 ui.label("  • Use File > Open to load a VTR architecture file");
                 ui.label("  • Try File > Open Sample to explore sample architectures");
+                ui.label("  • Drag and drop an architecture file directly into the app");
                 ui.add_space(20.0);
                 ui.label(format!("Current mode: {:?}", view_mode));
             });

@@ -1,6 +1,6 @@
 use eframe::egui;
 use fpga_arch_parser::{FPGAArch, FPGAArchParseError};
-use log::info;
+use log::{info, warn};
 use std::io::{BufRead, BufReader};
 
 #[cfg(target_arch = "wasm32")]
@@ -370,6 +370,43 @@ impl FpgaViewer {
         });
     }
 
+    fn process_dropped_files(&mut self, ctx: &egui::Context) {
+        // Checked for dropped files.
+        let mut dropped_files = Vec::new();
+        ctx.input(|i| {
+            if !i.raw.dropped_files.is_empty() {
+                dropped_files = i.raw.dropped_files.clone();
+            }
+        });
+        // The viewer can only display one architecture at a time, so load the
+        // first supported file and ignore the rest.
+        for file in dropped_files {
+            if let Some(file_path) = file.path {
+                let is_xml = file_path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+                if is_xml {
+                    self.load_architecture_file(file_path);
+                    break;
+                } else {
+                    warn!("Cannot open dropped filepath: {}", file_path.display());
+                }
+            } else if let Some(data) = file.bytes {
+                let is_xml = file
+                    .name
+                    .rsplit_once('.')
+                    .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("xml"));
+                if is_xml {
+                    self.load_architecture_from_bytes(data.to_vec(), file.name);
+                    break;
+                } else {
+                    warn!("Cannot open dropped file: {}", file.name);
+                }
+            }
+        }
+    }
+
     fn navigate_back(&mut self) {
         if self.viewer_ctx.current_page == Page::Settings {
             self.viewer_ctx.current_page = Page::Main;
@@ -670,6 +707,9 @@ impl eframe::App for FpgaViewer {
                 self.load_architecture_from_bytes(data, file_name);
             }
         }
+
+        // Process files which were dropped into the app (if any).
+        self.process_dropped_files(ctx);
 
         // Apply theme
         if self.viewer_ctx.dark_mode {

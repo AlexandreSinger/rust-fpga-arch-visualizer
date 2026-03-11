@@ -19,7 +19,7 @@ jobs:
         uses: jetli/trunk-action@v0.5.1
         with:
           version: 'latest'
-      # TODO: Add public URL when one is createed.
+      # NOTE: This does not use a public URL since these will use temporary URLs for testing.
       - name: Build with Trunk
         run: cd fpga_arch_viewer && trunk build --release
       - uses: FirebaseExtended/action-hosting-deploy@v0

@@ -25,7 +25,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/AlexandreSinger/rust-fp
 ```
 
 This will add two executables to your PATH variable:
-```
+```text
 fpga_arch_viewer
 fpga_arch_viewer-update
 ```

@@ -370,6 +370,27 @@ impl FpgaViewer {
         });
     }
 
+    fn process_dropped_files(&mut self, ctx: &egui::Context) {
+        // Checked for dropped files.
+        let mut dropped_files = Vec::new();
+        ctx.input(|i| {
+            if !i.raw.dropped_files.is_empty() {
+                dropped_files = i.raw.dropped_files.clone();
+            }
+        });
+        // Load the dropped files.
+        for file in dropped_files {
+            // Note: if multiple files are passed in, we try to load all of them.
+            //       Eventually I would like this interface to pass multiple different
+            //       types of files at the same time.
+            if let Some(file_path) = file.path {
+                self.load_architecture_file(file_path);
+            } else if let (Some(data), file_name) = (file.bytes, file.name) {
+                self.load_architecture_from_bytes(data.to_vec(), file_name);
+            }
+        }
+    }
+
     fn navigate_back(&mut self) {
         if self.viewer_ctx.current_page == Page::Settings {
             self.viewer_ctx.current_page = Page::Main;
@@ -670,6 +691,9 @@ impl eframe::App for FpgaViewer {
                 self.load_architecture_from_bytes(data, file_name);
             }
         }
+
+        // Process files which were dropped into the app (if any).
+        self.process_dropped_files(ctx);
 
         // Apply theme
         if self.viewer_ctx.dark_mode {

@@ -50,6 +50,7 @@ Update the version in:
 - `fpga_arch_parser/Cargo.toml`
 - `fpga_arch_viewer/Cargo.toml`
 - `crr_sb_parser/Cargo.toml`
+- `fpga_arch_viewer/assets/sw.js` (Version for the cache in the web release)
 
 Example:
 

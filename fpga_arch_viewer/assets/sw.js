@@ -1,4 +1,4 @@
-const cacheName = 'fpga-arch-viewer-v1';
+const cacheName = 'fpga-arch-viewer-v0.3.4';
 const filesToCache = [
   './',
   './index.html',

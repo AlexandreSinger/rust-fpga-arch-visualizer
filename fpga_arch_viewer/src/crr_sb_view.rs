@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 use crr_sb_parser::{
-    CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo,
+    CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
 
 use crate::{block_style, color_scheme};
@@ -90,6 +90,9 @@ impl CRRSBView {
             }
         } else {
             ui.label("The CRR View is currently under development.");
+            if let Some(error_msg) = &self.last_error {
+                ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            }
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Select CSV file to view").clicked() {
                 // TODO: Make this cleaner by combining with view.
@@ -115,7 +118,11 @@ impl CRRSBView {
     ) -> egui::Pos2 {
         // TODO: Catch for underflow!
         let lane_num = source_node.lane_num - 1;
-        let ptc_offset = (source_node.tap_num - 1) * 2;
+        let tap_num = match source_node.source_pin {
+            CRRSwitchSourcePin::Tap { tap_num } => tap_num,
+            _ => 1,
+        };
+        let ptc_offset = (tap_num - 1) * 2;
         let ptc_num = match source_node.dir {
             // TODO: Verify that the lane is allowed.
             CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
@@ -126,10 +133,14 @@ impl CRRSBView {
             CRRSwitchDir::Bottom => {
                 crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1
             }
+            // FIXME: Update.
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {0}
         };
         let chan_w = match source_node.dir {
             CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
+            // FIXME: Update.
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => crr_sb.chan_x_width,
         };
         Self::get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, chan_w)
     }
@@ -148,10 +159,14 @@ impl CRRSBView {
             CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
             CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
             CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
+            // FIXME: Handle this correctly.
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0,
         };
         let chan_w = match sink_node.dir {
             CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
+            // FIXME: Update.
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => crr_sb.chan_x_width,
         };
         Self::get_ptc_loc(ptc_num, spacing_between_points, sink_node.dir, chan_w)
     }
@@ -169,6 +184,8 @@ impl CRRSBView {
                 CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
                     (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
                 }
+                // FIXME: Update
+                CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
             },
             match side {
                 CRRSwitchDir::Top => 0.0,
@@ -176,6 +193,8 @@ impl CRRSBView {
                 CRRSwitchDir::Left | CRRSwitchDir::Right => {
                     (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
                 }
+                // FIXME: Update
+                CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
             },
         )
     }
@@ -255,6 +274,8 @@ impl CRRSBView {
                     let chan_w = match side {
                         CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
                         CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
+                        // FIXME: Update.
+                        CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => crr_sb.chan_x_width,
                     };
                     for chan_ptc in 0..chan_w {
                         let conn_pt =
@@ -372,6 +393,11 @@ impl CRRSBView {
                     let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
                     let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
 
+                    // Skip the IPIN/OPINs for now.
+                    if src_node.dir == CRRSwitchDir::OPIN || sink_node.dir == CRRSwitchDir::IPIN {
+                        continue;
+                    }
+
                     let src_node_loc =
                         Self::get_source_node_loc(src_node, spacing_between_points, crr_sb);
                     let sink_node_loc =
@@ -448,6 +474,9 @@ fn get_crr_switch_block(
     let mut top_lane_num_to_segment = HashMap::new();
     let mut bottom_lane_num_to_segment = HashMap::new();
     for sink_node in &crr_sb_info.sink_nodes {
+        if sink_node.dir == CRRSwitchDir::IPIN {
+            continue;
+        }
         if sink_node.lane_num == 0 {
             return Err("Invalid lane num of 0 found.");
         }
@@ -465,6 +494,7 @@ fn get_crr_switch_block(
             CRRSwitchDir::Bottom => {
                 bottom_lane_num_to_segment.insert(lane_num, &sink_node.segment_type);
             }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {},
         }
     }
 
@@ -516,6 +546,9 @@ fn get_crr_switch_block(
     // Validate the source nodes to ensure that they are consistent with the sink nodes.
     // This prevents crashes in the code later.
     for source_node in &crr_sb_info.source_nodes {
+        if source_node.dir == CRRSwitchDir::OPIN {
+            continue;
+        }
         if source_node.lane_num == 0 {
             return Err("Found a source node with lane num 0.");
         }
@@ -533,11 +566,16 @@ fn get_crr_switch_block(
                 }
                 &chan_y_lanes[source_node_lane_id]
             }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {panic!("TODO: Handle this.")},
         };
         if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
             return Err("Found a source node in a lane with the wrong segment type.");
         }
-        if source_node.tap_num == 0 || source_node.tap_num > source_node_lane.segment_len {
+        let tap_num = match source_node.source_pin {
+            CRRSwitchSourcePin::Tap { tap_num } => tap_num,
+            _ => 1,
+        };
+        if tap_num == 0 || tap_num > source_node_lane.segment_len {
             return Err("Found a source node with an invalid tap number.");
         }
     }

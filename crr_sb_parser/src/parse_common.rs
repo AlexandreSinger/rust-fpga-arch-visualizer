@@ -1,20 +1,22 @@
 use crate::{CRRSBParseError, crr_sb_des::CRRSwitchDir};
 
 pub fn parse_crr_switch_dir(dir_str: &str) -> Result<CRRSwitchDir, CRRSBParseError> {
-    match dir_str {
+    match dir_str.to_lowercase().as_str() {
         "left" => Ok(CRRSwitchDir::Left),
         "right" => Ok(CRRSwitchDir::Right),
         "top" => Ok(CRRSwitchDir::Top),
         "bottom" => Ok(CRRSwitchDir::Bottom),
+        "ipin" => Ok(CRRSwitchDir::IPIN),
+        "opin" => Ok(CRRSwitchDir::OPIN),
         _ => Err(CRRSBParseError::SBHeaderCellParseError(
-            "Invalid dir string.".to_string(),
+            format!("Invalid dir string: {dir_str}."),
         )),
     }
 }
 
 fn parse_usize(value: &str, field_name: &str) -> Result<usize, CRRSBParseError> {
     value.parse().map_err(|e| {
-        CRRSBParseError::SBHeaderCellParseError(format!("Invalid {field_name} string: {e}."))
+        CRRSBParseError::SBHeaderCellParseError(format!("Invalid {field_name} string ({value}): {e}."))
     })
 }
 

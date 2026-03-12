@@ -90,10 +90,10 @@ impl CRRSBView {
             }
         } else {
             ui.label("The CRR View is currently under development.");
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Select CSV file to view").clicked() {
                 // TODO: Make this cleaner by combining with view.
                 // TODO: Add WASM support.
-                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("CRR CSV Files", &["csv"])
                     .set_title("Open CRR CSV File")
@@ -102,6 +102,9 @@ impl CRRSBView {
                     self.load_crr_csv_file(path);
                 }
             }
+
+            #[cfg(target_arch = "wasm32")]
+            ui.label("CRR CSV loading is not available in the web build yet.");
         }
     }
 

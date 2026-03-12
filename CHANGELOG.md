@@ -1,3 +1,11 @@
+## [v0.3.4] - 2026-03-11
+
+### Added
+- Basic interposer support has been added.
+- Sample architectures are provided in the binary to sample the viewer.
+- 3D architectures are now supported.
+- Files can now be dropped into the app instead of going through the file select prompt.
+
 ## [v0.3.3] - 2026-03-08
 
 ### Added

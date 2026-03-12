@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
 use crr_sb_parser::{
@@ -25,6 +26,7 @@ impl Default for CRRSBView {
 }
 
 impl CRRSBView {
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_crr_csv_file(&mut self, file_path: std::path::PathBuf) {
         self.crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
             Ok(crr_sb_info) => {
@@ -88,10 +90,10 @@ impl CRRSBView {
             }
         } else {
             ui.label("The CRR View is currently under development.");
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Select CSV file to view").clicked() {
                 // TODO: Make this cleaner by combining with view.
                 // TODO: Add WASM support.
-                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("CRR CSV Files", &["csv"])
                     .set_title("Open CRR CSV File")
@@ -100,6 +102,9 @@ impl CRRSBView {
                     self.load_crr_csv_file(path);
                 }
             }
+
+            #[cfg(target_arch = "wasm32")]
+            ui.label("CRR CSV loading is not available in the web build yet.");
         }
     }
 
@@ -415,6 +420,7 @@ struct CRRSwitchBlockLane {
     segment_len: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
     // This method is currently a bit hacky. The correct way to do this is to get
     // this information from the architecture file; however, this interface supports
@@ -432,6 +438,7 @@ fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn get_crr_switch_block(
     crr_sb_info: &CRRSwitchBlockDeserialized,
 ) -> Result<CRRSwitchBlock, &'static str> {

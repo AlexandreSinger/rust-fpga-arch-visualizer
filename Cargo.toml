@@ -10,3 +10,8 @@ members = [
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# Optimize release builds with Link-Time Optimization
+[profile.release]
+opt-level = 3
+lto = true

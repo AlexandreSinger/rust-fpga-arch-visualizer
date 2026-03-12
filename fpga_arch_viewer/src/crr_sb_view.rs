@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
 use crr_sb_parser::{
@@ -25,6 +26,7 @@ impl Default for CRRSBView {
 }
 
 impl CRRSBView {
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_crr_csv_file(&mut self, file_path: std::path::PathBuf) {
         self.crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
             Ok(crr_sb_info) => {
@@ -415,6 +417,7 @@ struct CRRSwitchBlockLane {
     segment_len: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
     // This method is currently a bit hacky. The correct way to do this is to get
     // this information from the architecture file; however, this interface supports
@@ -432,6 +435,7 @@ fn get_segment_len(segment_type: &str) -> Result<usize, &'static str> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn get_crr_switch_block(
     crr_sb_info: &CRRSwitchBlockDeserialized,
 ) -> Result<CRRSwitchBlock, &'static str> {

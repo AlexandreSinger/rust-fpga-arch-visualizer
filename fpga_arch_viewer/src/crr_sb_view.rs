@@ -652,7 +652,7 @@ impl TilePinMapper {
                     let mut pin_indices = Vec::new();
                     for pin_index in num_pins_in_tile..num_pins_in_tile+num_pins {
                         pin_indices.push(pin_index);
-                        pin_name_lookup.push(format!("{}[{}].{}[{}]", sub_tile.name, sub_tile_cap_index, port_name, pin_index));
+                        pin_name_lookup.push(format!("{}[{}].{}[{}]", sub_tile.name, sub_tile_cap_index, port_name, pin_index - num_pins_in_tile));
                     }
                     num_pins_in_tile += num_pins;
                     // TODO: Check for dupes.

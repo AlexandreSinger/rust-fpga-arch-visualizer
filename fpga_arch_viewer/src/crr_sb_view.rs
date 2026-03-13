@@ -1,9 +1,11 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
+use fpga_arch_parser::{FPGAArch, PinLoc, PinSide, Port, SubTile, SubTilePinLocations};
 
 use crate::{block_style, color_scheme};
 
@@ -53,13 +55,13 @@ impl CRRSBView {
         }
     }
 
-    pub fn render(&mut self, ctx: &egui::Context) {
+    pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(ui);
+            self.render_central_panel(arch, ui);
         });
     }
 
-    fn render_central_panel(&mut self, ui: &mut egui::Ui) {
+    fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
         if let Some(crr_sb_info) = &self.crr_sb_info {
             if let Some(crr_sb) = &self.crr_sb {
                 // Handle zoom input (Cmd + scroll wheel or pinch gesture)
@@ -82,7 +84,7 @@ impl CRRSBView {
                     self.zoom_factor *= zoom_delta;
                 }
 
-                self.render_crr_sb(crr_sb, crr_sb_info, ui);
+                self.render_crr_sb(crr_sb, crr_sb_info, arch, ui);
             } else if let Some(error_msg) = &self.last_error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             } else {
@@ -203,6 +205,7 @@ impl CRRSBView {
         &self,
         crr_sb: &CRRSwitchBlock,
         crr_sb_info: &CRRSwitchBlockDeserialized,
+        arch: &FPGAArch,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
@@ -430,6 +433,24 @@ impl CRRSBView {
                     egui::Stroke::new(2.0, block_style::darken_color(lb_color, 0.5)),
                     egui::epaint::StrokeKind::Inside,
                 );
+
+                // Draw pins
+                let clb_pin_mapper = TilePinMapper::new("clb", arch).expect("What?");
+                for (pin_index, pin_loc) in clb_pin_mapper.pin_locations.iter().enumerate() {
+                    let pin_pos = (*pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2();
+                    painter.circle(
+                        pin_pos.to_pos2(),
+                        2.5 * self.zoom_factor,
+                        egui::Color32::BLACK,
+                        egui::Stroke::new(0.5, egui::Color32::BLACK),
+                    );
+                    let hit_rect = egui::Rect::from_center_size(pin_pos.to_pos2(), egui::Vec2::new(5.0 * self.zoom_factor, 5.0 * self.zoom_factor));
+                    let response = ui.put(hit_rect, egui::Label::new(""));
+                    let pin_name = &clb_pin_mapper.pin_name_lookup[pin_index];
+                    response.on_hover_ui(|ui| {
+                        ui.label(pin_name);
+                    });
+                }
             });
     }
 }
@@ -587,3 +608,202 @@ fn get_crr_switch_block(
         chan_y_width: curr_chan_y_track_num,
     })
 }
+
+// FIXME: Everything below belongs in the architecture parser in my opinion.
+//      -- The pin locations would need to be moved out since they do not make sense in this context.
+type TilePinIndexMap = HashMap<String, Vec<HashMap<String, Vec<usize>>>>;
+
+struct TilePinMapper {
+    tile_name: String,
+    pin_locations: Vec<egui::Vec2>,
+    num_pins_in_tile: usize,
+    // [sub_tile_name][sub_tile_cap_index][port_bus_name][port_index] -> pin_index
+    pin_index_lookup: TilePinIndexMap,
+
+    pin_name_lookup: Vec<String>,
+}
+
+impl TilePinMapper {
+    pub fn new(tile_name: &str, arch: &FPGAArch) -> Result<TilePinMapper, String> {
+        let tile = arch.tiles.iter().find(|&tile| {
+            tile.name == tile_name
+        });
+        let tile = match tile {
+            Some(t) => t,
+            None => {
+                return Err("Could not find a tile with the given name.".to_string());
+            }
+        };
+
+        let mut num_pins_in_tile: usize = 0;
+        let mut pin_index_lookup: TilePinIndexMap = HashMap::new();
+        let mut pin_name_lookup: Vec<String> = Vec::new();
+        for sub_tile in &tile.sub_tiles {
+            let mut sub_tile_pin_lookup = Vec::new();
+            for sub_tile_cap_index in 0..sub_tile.capacity {
+                let mut port_name_pin_lookup = HashMap::new();
+                for port in &sub_tile.ports {
+                    let (port_name, num_pins) = match port {
+                        Port::Input(input_port) => (&input_port.name, input_port.num_pins),
+                        Port::Output(output_port) => (&output_port.name, output_port.num_pins),
+                        Port::Clock(clock_port) => (&clock_port.name, clock_port.num_pins),
+                    };
+                    let num_pins = num_pins as usize;
+                    let mut pin_indices = Vec::new();
+                    for pin_index in num_pins_in_tile..num_pins_in_tile+num_pins {
+                        pin_indices.push(pin_index);
+                        pin_name_lookup.push(format!("{}[{}].{}[{}]", sub_tile.name, sub_tile_cap_index, port_name, pin_index));
+                    }
+                    num_pins_in_tile += num_pins;
+                    // TODO: Check for dupes.
+                    port_name_pin_lookup.insert(port_name.clone(), pin_indices);
+                }
+                sub_tile_pin_lookup.push(port_name_pin_lookup);
+            }
+            // TODO: Check for dupes.
+            pin_index_lookup.insert(sub_tile.name.clone(), sub_tile_pin_lookup);
+        }
+
+        let mut top_pins: Vec<usize> = Vec::new();
+        let mut bottom_pins: Vec<usize> = Vec::new();
+        let mut left_pins: Vec<usize> = Vec::new();
+        let mut right_pins: Vec<usize> = Vec::new();
+        for sub_tile in &tile.sub_tiles {
+            match &sub_tile.pin_locations {
+                SubTilePinLocations::Custom(custom_pin_locations) => {
+                    for loc in &custom_pin_locations.pin_locations {
+                        // TODO: Handle xoffset and yoffset
+                        let mut pins = get_pins_in_pin_loc(loc, sub_tile, &pin_index_lookup)?;
+                        match loc.side {
+                            PinSide::Top => top_pins.append(&mut pins),
+                            PinSide::Bottom => bottom_pins.append(&mut pins),
+                            PinSide::Left => left_pins.append(&mut pins),
+                            PinSide::Right => right_pins.append(&mut pins),
+                        }
+                    }
+                },
+                _ => {},
+            }
+        }
+
+        let mut pin_locations: Vec<egui::Vec2> = vec![egui::Vec2::new(0.0, 0.0); num_pins_in_tile];
+        for (i, pin_index) in top_pins.iter().enumerate() {
+            pin_locations[*pin_index] = egui::Vec2::new((i as f32) / (top_pins.len() as f32), 0.0);
+        }
+        for (i, pin_index) in bottom_pins.iter().enumerate() {
+            pin_locations[*pin_index] = egui::Vec2::new((i as f32) / (bottom_pins.len() as f32), 1.0);
+        }
+        for (i, pin_index) in left_pins.iter().enumerate() {
+            pin_locations[*pin_index] = egui::Vec2::new(0.0, (i as f32) / (left_pins.len() as f32));
+        }
+        for (i, pin_index) in right_pins.iter().enumerate() {
+            pin_locations[*pin_index] = egui::Vec2::new(1.0, (i as f32) / (right_pins.len() as f32));
+        }
+
+        Ok(TilePinMapper {
+            tile_name: tile_name.to_string(),
+            pin_locations,
+            num_pins_in_tile,
+            pin_index_lookup,
+            pin_name_lookup,
+        })
+    }
+}
+
+fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &TilePinIndexMap) -> Result<Vec<usize>, String> {
+    let mut pins: Vec<usize> = Vec::new();
+    for pin_string in &loc.pin_strings {
+        let split_pin_string: Vec<&str> = pin_string.split(".").collect();
+        // Expect there to only be 2.
+        // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
+        if split_pin_string.len() != 2 {
+            return Err("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string());
+        }
+        let sub_tile_portion = split_pin_string[0];
+        let port_portion = split_pin_string[1];
+
+        // Parse the sub-tile portion.
+        let (sub_tile_name, sub_tile_bus_slice) = split_bus_name(sub_tile_portion)?;
+        if sub_tile_name != sub_tile.name {
+            return Err("Invalid pin string, does not start with the correct sub-tile.".to_string());
+        }
+        let sub_tile_bus = match sub_tile_bus_slice {
+            Some(bus_slice) => parse_bus(bus_slice)?,
+            None => 0..=(sub_tile.capacity-1),
+        };
+
+        // Parse port portion.
+        let (port_name, port_bus_slice) = split_bus_name(port_portion)?;
+        // TODO: We can make this lookup much faster by having a lookup between [sub-tile][port] -> num_pins
+        let port = sub_tile.ports.iter().find(|&port| {
+            let other_port_name = match &port {
+                Port::Input(input_port) => &input_port.name,
+                Port::Output(output_port) => &output_port.name,
+                Port::Clock(clock_port) => &clock_port.name,
+            };
+            other_port_name == port_name
+        });
+        let port = match port {
+            Some(p) => p,
+            None => { return Err("Cannot find port in pin string".to_string()) }
+        };
+        let num_port_pins = match &port {
+            Port::Input(input_port) => input_port.num_pins,
+            Port::Output(output_port) => output_port.num_pins,
+            Port::Clock(clock_port) => clock_port.num_pins,
+        };
+        let port_bus = match port_bus_slice {
+            Some(bus_slice) => parse_bus(bus_slice)?,
+            None => 0..=(num_port_pins-1),
+        };
+
+        // Get the pins.
+        for sub_tile_cap_index in sub_tile_bus {
+            if sub_tile_cap_index < 0 || sub_tile_cap_index >= sub_tile.capacity {
+                return Err("Invalid sub tile index.".to_string());
+            }
+            let sub_tile_pin_index_lookup = &pin_index_lookup[sub_tile_name][sub_tile_cap_index as usize][port_name];
+            for bit in port_bus.clone() {
+                if bit < 0 || bit >= num_port_pins {
+                    return Err("Invalid port bit position.".to_string());
+                }
+                pins.push(sub_tile_pin_index_lookup[bit as usize]);
+            }
+        }
+    }
+
+    Ok(pins)
+}
+
+fn split_bus_name(s: &str) -> Result<(&str, Option<&str>), String> {
+    if let Some(idx) = s.find('[') {
+        let (name, slice) = s.split_at(idx);
+
+        if !slice.ends_with(']') {
+            return Err(format!("Invalid bus slice: {}", s));
+        }
+
+        Ok((name, Some(slice)))
+    } else {
+        Ok((s, None))
+    }
+}
+
+fn parse_bus(bus: &str) -> Result<RangeInclusive<i32>, String> {
+    if !bus.starts_with('[') || !bus.ends_with(']') {
+        return Err(format!("Invalid bus format: {}", bus));
+    }
+
+    let inner = &bus[1..bus.len() - 1];
+
+    if let Some((a, b)) = inner.split_once(':') {
+        let msb: i32 = a.trim().parse().map_err(|_| "Invalid number")?;
+        let lsb: i32 = b.trim().parse().map_err(|_| "Invalid number")?;
+        Ok(msb.min(lsb)..=msb.max(lsb))
+    } else {
+        let bit: i32 = inner.trim().parse().map_err(|_| "Invalid number")?;
+        Ok(bit..=bit)
+    }
+}
+
+// fn get_full_tile_pin_name(pin_string: &str, sub_tile: &SubTile)

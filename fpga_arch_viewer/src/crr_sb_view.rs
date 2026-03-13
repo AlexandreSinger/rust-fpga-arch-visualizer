@@ -12,6 +12,7 @@ use crate::{block_style, color_scheme};
 pub struct CRRViewState {
     show_segment_connections: bool,
     show_switch_connections: bool,
+    show_lb_pin_connections: bool,
 }
 
 impl Default for CRRViewState {
@@ -19,6 +20,7 @@ impl Default for CRRViewState {
         Self {
             show_segment_connections: true,
             show_switch_connections: true,
+            show_lb_pin_connections: false,
         }
     }
 }
@@ -94,6 +96,10 @@ impl CRRSBView {
         ui.add_space(10.0);
 
         ui.checkbox(&mut self.crr_view_state.show_switch_connections, "Show Switch Connections");
+
+        ui.add_space(10.0);
+
+        ui.checkbox(&mut self.crr_view_state.show_lb_pin_connections, "Show LB Pin Connections");
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
@@ -490,6 +496,67 @@ impl CRRSBView {
                         ui.label(pin_name);
                     });
                 }
+
+                // Draw flylines from pins to their connections.
+                if crr_view_state.show_lb_pin_connections {
+                    for edge in &crr_sb_info.edges {
+                        let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
+                        let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
+
+                        // Skip non IPIN/OPINs now.
+                        if src_node.dir != CRRSwitchDir::OPIN && sink_node.dir != CRRSwitchDir::IPIN {
+                            continue;
+                        }
+
+                        let src_node_loc = if src_node.dir == CRRSwitchDir::OPIN {
+                            // TODO: Clean this up.
+                            if let CRRSwitchSourcePin::Pin { pin_name } = &src_node.source_pin {
+                                let pin_index = parse_pin_name(pin_name, &clb_pin_mapper.pin_index_lookup);
+                                let pin_index = match pin_index {
+                                    Ok(idx) => idx,
+                                    Err(e) => {
+                                        println!("{e}");
+                                        continue;
+                                    }
+                                };
+                                let pin_loc = clb_pin_mapper.pin_locations[pin_index];
+                                ((pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2()).to_pos2()
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            Self::get_source_node_loc(src_node, spacing_between_points, crr_sb) + sb_draw_offset.to_vec2()
+                        };
+
+                        let sink_node_loc = if sink_node.dir == CRRSwitchDir::IPIN {
+                            // TODO: Clean this up.
+                            if let Some(pin_name) = &sink_node.target_pin {
+                                let pin_index = parse_pin_name(pin_name, &clb_pin_mapper.pin_index_lookup);
+                                let pin_index = match pin_index {
+                                    Ok(idx) => idx,
+                                    Err(e) => {
+                                        println!("{e}");
+                                        continue;
+                                    }
+                                };
+                                let pin_loc = clb_pin_mapper.pin_locations[pin_index];
+                                ((pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2()).to_pos2()
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            Self::get_sink_node_loc(sink_node, spacing_between_points, crr_sb) + sb_draw_offset.to_vec2()
+                        };
+
+                        painter.line_segment(
+                            [
+                                src_node_loc,
+                                sink_node_loc,
+                            ],
+                            egui::Stroke::new(1.0, egui::Color32::BLACK),
+                        );
+                    }
+                }
             });
     }
 }
@@ -812,6 +879,33 @@ fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &Tile
     }
 
     Ok(pins)
+}
+
+fn parse_pin_name(pin_name: &str, pin_index_lookup: &TilePinIndexMap) -> Result<usize, String> {
+    let split_pin_string: Vec<&str> = pin_name.split(".").collect();
+    // Expect there to only be 2.
+    // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
+    if split_pin_string.len() != 2 {
+        return Err("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string());
+    }
+    let sub_tile_portion = split_pin_string[0];
+    let port_portion = split_pin_string[1];
+
+    let (port_name, port_bus_slice) = split_bus_name(port_portion)?;
+    let port_bus = match port_bus_slice {
+        Some(bus_slice) => parse_bus(bus_slice)?,
+        None => {return Err("Unsupported: Need to specify the bit.".to_string())},
+    };
+
+    if let Some(lookup) = pin_index_lookup.get(sub_tile_portion) {
+        if let Some(port_lookup_vec) = lookup[0].get(port_name) {
+            for bit in port_bus {
+                return Ok(port_lookup_vec[bit as usize]);
+            }
+        }
+    }
+
+    return Err("Could not find port!".to_string());
 }
 
 fn split_bus_name(s: &str) -> Result<(&str, Option<&str>), String> {

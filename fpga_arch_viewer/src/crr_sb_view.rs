@@ -9,11 +9,27 @@ use fpga_arch_parser::{FPGAArch, PinLoc, PinSide, Port, SubTile, SubTilePinLocat
 
 use crate::{block_style, color_scheme};
 
+pub struct CRRViewState {
+    show_segment_connections: bool,
+    show_switch_connections: bool,
+}
+
+impl Default for CRRViewState {
+    fn default() -> Self {
+        Self {
+            show_segment_connections: true,
+            show_switch_connections: true,
+        }
+    }
+}
+
 pub struct CRRSBView {
     crr_sb_info: Option<crr_sb_parser::CRRSwitchBlockDeserialized>,
     crr_sb: Option<CRRSwitchBlock>,
     zoom_factor: f32,
     last_error: Option<String>,
+
+    crr_view_state: CRRViewState,
 }
 
 impl Default for CRRSBView {
@@ -23,6 +39,7 @@ impl Default for CRRSBView {
             crr_sb: None,
             zoom_factor: 1.0,
             last_error: None,
+            crr_view_state: CRRViewState::default(),
         }
     }
 }
@@ -56,9 +73,27 @@ impl CRRSBView {
     }
 
     pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
+        egui::SidePanel::right("crr_view_controls")
+            .default_width(250.0)
+            .show(ctx, |ui| {
+                self.render_side_panel(ui);
+            });
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(arch, ui);
         });
+    }
+
+    fn render_side_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("CRR View");
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.checkbox(&mut self.crr_view_state.show_segment_connections, "Show Segment Connections");
+
+        ui.add_space(10.0);
+
+        ui.checkbox(&mut self.crr_view_state.show_switch_connections, "Show Switch Connections");
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
@@ -84,7 +119,7 @@ impl CRRSBView {
                     self.zoom_factor *= zoom_delta;
                 }
 
-                self.render_crr_sb(crr_sb, crr_sb_info, arch, ui);
+                self.render_crr_sb(&self.crr_view_state, crr_sb, crr_sb_info, arch, ui);
             } else if let Some(error_msg) = &self.last_error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             } else {
@@ -203,6 +238,7 @@ impl CRRSBView {
 
     fn render_crr_sb(
         &self,
+        crr_view_state: &CRRViewState,
         crr_sb: &CRRSwitchBlock,
         crr_sb_info: &CRRSwitchBlockDeserialized,
         arch: &FPGAArch,
@@ -293,126 +329,129 @@ impl CRRSBView {
                 }
 
                 // Draw the segment connections (i.e. the hardened connections along the segment).
-                for chan_x_lane in &crr_sb.chan_x_lanes {
-                    for i in 0..(chan_x_lane.segment_len - 1) {
-                        let left_source_ptc_num = chan_x_lane.starting_track_num + (i * 2);
-                        let right_source_ptc_num = left_source_ptc_num + 1;
-                        let right_sink_ptc_num = chan_x_lane.starting_track_num + ((i + 1) * 2);
-                        let left_sink_ptc_num = right_sink_ptc_num + 1;
+                if crr_view_state.show_segment_connections {
+                    for chan_x_lane in &crr_sb.chan_x_lanes {
+                        for i in 0..(chan_x_lane.segment_len - 1) {
+                            let left_source_ptc_num = chan_x_lane.starting_track_num + (i * 2);
+                            let right_source_ptc_num = left_source_ptc_num + 1;
+                            let right_sink_ptc_num = chan_x_lane.starting_track_num + ((i + 1) * 2);
+                            let left_sink_ptc_num = right_sink_ptc_num + 1;
 
-                        let left_source_loc = Self::get_ptc_loc(
-                            left_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Left,
-                            crr_sb.chan_x_width,
-                        );
-                        let left_sink_loc = Self::get_ptc_loc(
-                            left_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Left,
-                            crr_sb.chan_x_width,
-                        );
-                        let right_source_loc = Self::get_ptc_loc(
-                            right_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Right,
-                            crr_sb.chan_x_width,
-                        );
-                        let right_sink_loc = Self::get_ptc_loc(
-                            right_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Right,
-                            crr_sb.chan_x_width,
-                        );
+                            let left_source_loc = Self::get_ptc_loc(
+                                left_source_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Left,
+                                crr_sb.chan_x_width,
+                            );
+                            let left_sink_loc = Self::get_ptc_loc(
+                                left_sink_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Left,
+                                crr_sb.chan_x_width,
+                            );
+                            let right_source_loc = Self::get_ptc_loc(
+                                right_source_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Right,
+                                crr_sb.chan_x_width,
+                            );
+                            let right_sink_loc = Self::get_ptc_loc(
+                                right_sink_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Right,
+                                crr_sb.chan_x_width,
+                            );
 
-                        painter.line_segment(
-                            [
-                                left_source_loc + sb_draw_offset.to_vec2(),
-                                right_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                        painter.line_segment(
-                            [
-                                right_source_loc + sb_draw_offset.to_vec2(),
-                                left_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
+                            painter.line_segment(
+                                [
+                                    left_source_loc + sb_draw_offset.to_vec2(),
+                                    right_sink_loc + sb_draw_offset.to_vec2(),
+                                ],
+                                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                            );
+                            painter.line_segment(
+                                [
+                                    right_source_loc + sb_draw_offset.to_vec2(),
+                                    left_sink_loc + sb_draw_offset.to_vec2(),
+                                ],
+                                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                            );
+                        }
                     }
-                }
-                for chan_y_lane in &crr_sb.chan_y_lanes {
-                    for i in 0..(chan_y_lane.segment_len - 1) {
-                        let top_source_ptc_num = chan_y_lane.starting_track_num + (i * 2);
-                        let bottom_source_ptc_num = top_source_ptc_num + 1;
-                        let bottom_sink_ptc_num = chan_y_lane.starting_track_num + ((i + 1) * 2);
-                        let top_sink_ptc_num = bottom_sink_ptc_num + 1;
+                    for chan_y_lane in &crr_sb.chan_y_lanes {
+                        for i in 0..(chan_y_lane.segment_len - 1) {
+                            let top_source_ptc_num = chan_y_lane.starting_track_num + (i * 2);
+                            let bottom_source_ptc_num = top_source_ptc_num + 1;
+                            let bottom_sink_ptc_num = chan_y_lane.starting_track_num + ((i + 1) * 2);
+                            let top_sink_ptc_num = bottom_sink_ptc_num + 1;
 
-                        let top_source_loc = Self::get_ptc_loc(
-                            top_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Top,
-                            crr_sb.chan_y_width,
-                        );
-                        let top_sink_loc = Self::get_ptc_loc(
-                            top_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Top,
-                            crr_sb.chan_y_width,
-                        );
-                        let bottom_source_loc = Self::get_ptc_loc(
-                            bottom_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Bottom,
-                            crr_sb.chan_y_width,
-                        );
-                        let bottom_sink_loc = Self::get_ptc_loc(
-                            bottom_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Bottom,
-                            crr_sb.chan_y_width,
-                        );
+                            let top_source_loc = Self::get_ptc_loc(
+                                top_source_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Top,
+                                crr_sb.chan_y_width,
+                            );
+                            let top_sink_loc = Self::get_ptc_loc(
+                                top_sink_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Top,
+                                crr_sb.chan_y_width,
+                            );
+                            let bottom_source_loc = Self::get_ptc_loc(
+                                bottom_source_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Bottom,
+                                crr_sb.chan_y_width,
+                            );
+                            let bottom_sink_loc = Self::get_ptc_loc(
+                                bottom_sink_ptc_num,
+                                spacing_between_points,
+                                CRRSwitchDir::Bottom,
+                                crr_sb.chan_y_width,
+                            );
 
-                        painter.line_segment(
-                            [
-                                top_source_loc + sb_draw_offset.to_vec2(),
-                                bottom_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                        painter.line_segment(
-                            [
-                                bottom_source_loc + sb_draw_offset.to_vec2(),
-                                top_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
+                            painter.line_segment(
+                                [
+                                    top_source_loc + sb_draw_offset.to_vec2(),
+                                    bottom_sink_loc + sb_draw_offset.to_vec2(),
+                                ],
+                                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                            );
+                            painter.line_segment(
+                                [
+                                    bottom_source_loc + sb_draw_offset.to_vec2(),
+                                    top_sink_loc + sb_draw_offset.to_vec2(),
+                                ],
+                                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                            );
+                        }
                     }
                 }
 
                 // Draw all edges between points (i.e. switch edges).
-                // TODO: Add button to disable showing these.
-                for edge in &crr_sb_info.edges {
-                    let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
-                    let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
+                if crr_view_state.show_switch_connections {
+                    for edge in &crr_sb_info.edges {
+                        let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
+                        let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
 
-                    // Skip the IPIN/OPINs for now.
-                    if src_node.dir == CRRSwitchDir::OPIN || sink_node.dir == CRRSwitchDir::IPIN {
-                        continue;
+                        // Skip the IPIN/OPINs for now.
+                        if src_node.dir == CRRSwitchDir::OPIN || sink_node.dir == CRRSwitchDir::IPIN {
+                            continue;
+                        }
+
+                        let src_node_loc =
+                            Self::get_source_node_loc(src_node, spacing_between_points, crr_sb);
+                        let sink_node_loc =
+                            Self::get_sink_node_loc(sink_node, spacing_between_points, crr_sb);
+
+                        painter.line_segment(
+                            [
+                                src_node_loc + sb_draw_offset.to_vec2(),
+                                sink_node_loc + sb_draw_offset.to_vec2(),
+                            ],
+                            egui::Stroke::new(1.0, egui::Color32::BLACK),
+                        );
                     }
-
-                    let src_node_loc =
-                        Self::get_source_node_loc(src_node, spacing_between_points, crr_sb);
-                    let sink_node_loc =
-                        Self::get_sink_node_loc(sink_node, spacing_between_points, crr_sb);
-
-                    painter.line_segment(
-                        [
-                            src_node_loc + sb_draw_offset.to_vec2(),
-                            sink_node_loc + sb_draw_offset.to_vec2(),
-                        ],
-                        egui::Stroke::new(1.0, egui::Color32::BLACK),
-                    );
                 }
 
                 // Draw the logic block. For now, its just a rectangle.
@@ -688,16 +727,16 @@ impl TilePinMapper {
 
         let mut pin_locations: Vec<egui::Vec2> = vec![egui::Vec2::new(0.0, 0.0); num_pins_in_tile];
         for (i, pin_index) in top_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new((i as f32) / (top_pins.len() as f32), 0.0);
+            pin_locations[*pin_index] = egui::Vec2::new(((i + 1) as f32) / ((top_pins.len() + 1) as f32), 0.0);
         }
         for (i, pin_index) in bottom_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new((i as f32) / (bottom_pins.len() as f32), 1.0);
+            pin_locations[*pin_index] = egui::Vec2::new(((i + 1) as f32) / ((bottom_pins.len() + 1) as f32), 1.0);
         }
         for (i, pin_index) in left_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(0.0, (i as f32) / (left_pins.len() as f32));
+            pin_locations[*pin_index] = egui::Vec2::new(0.0, ((i + 1) as f32) / ((left_pins.len() + 1) as f32));
         }
         for (i, pin_index) in right_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(1.0, (i as f32) / (right_pins.len() as f32));
+            pin_locations[*pin_index] = egui::Vec2::new(1.0, ((i + 1) as f32) / ((right_pins.len() + 1) as f32));
         }
 
         Ok(TilePinMapper {

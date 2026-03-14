@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
-use fpga_arch_parser::{FPGAArch};
+use fpga_arch_parser::{FPGAArch, TilePinMapper};
 
-use crate::{color_scheme, tile_rendering::{tile_pin_mapper::TilePinMapper, tile_renderer::{TileRenderer, build_render_tile}}};
+use crate::{color_scheme, tile_rendering::{tile_renderer::{TileRenderer, build_render_tile}}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -507,7 +507,7 @@ impl CRRRenderTile {
                 panic!("Could not find clb tile. Hardcoded badness.");
             }
         };
-        let pin_mapper = TilePinMapper::new(tile).expect("What?");
+        let pin_mapper = &tile.pin_mapper;
 
         let sub_tile_size = tile_draw_area.size() / 2.0;
         let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);

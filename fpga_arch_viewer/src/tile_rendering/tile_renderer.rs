@@ -5,9 +5,9 @@
 //! NOTE: This only draws the logical block. It does not include the switch block
 //!       or the channel wires.
 
-use fpga_arch_parser::{PinSide};
+use fpga_arch_parser::{PinSide, TilePinMapper};
 
-use crate::{block_style, tile_rendering::tile_pin_mapper::TilePinMapper};
+use crate::{block_style};
 
 pub struct TileRenderer {
     /// The shapes that make up the logical block.

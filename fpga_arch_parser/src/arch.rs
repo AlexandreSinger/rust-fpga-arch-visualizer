@@ -1,3 +1,5 @@
+use crate::tile_pin_mapper::TilePinMapper;
+
 pub struct ModelPort {
     pub name: String,
     pub is_clock: bool,
@@ -167,6 +169,7 @@ pub struct Tile {
     pub height: i32,
     pub area: Option<f32>,
     pub switchblock_locations: Option<SwitchBlockLocations>,
+    pub pin_mapper: TilePinMapper,
 }
 
 // TODO: pb_type and priority is better served as a trait.

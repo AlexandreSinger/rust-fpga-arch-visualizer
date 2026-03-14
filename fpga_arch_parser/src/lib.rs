@@ -21,8 +21,10 @@ mod parse_segment_list;
 mod parse_switch_list;
 mod parse_tiles;
 mod parse_timing;
+mod tile_pin_mapper;
 
 pub use crate::arch::*;
+pub use crate::tile_pin_mapper::*;
 pub use crate::parse_error::FPGAArchParseError;
 
 use crate::parse_complex_block_list::parse_complex_block_list;

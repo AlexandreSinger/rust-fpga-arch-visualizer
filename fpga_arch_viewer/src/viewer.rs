@@ -225,7 +225,10 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
         }
         FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
             format!("Unexpected end of document:\n{}", msg)
-        }
+        },
+        FPGAArchParseError::PinParsingError(msg) => {
+            format!("Pin parsing error:\n{}", msg)
+        },
     }
 }
 

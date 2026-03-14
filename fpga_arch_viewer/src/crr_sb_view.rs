@@ -174,14 +174,18 @@ impl CRRSBView {
         egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                let grid_w = 10;
+                let grid_h = 10;
+
                 let max_chan_w = crr_sb.chan_x_width.max(crr_sb.chan_y_width);
                 let smaller_available_size = ui.available_height().min(ui.available_width());
                 let spacing_between_points =
                     ((smaller_available_size / max_chan_w as f32) / 2.0) * self.zoom_factor;
-                let draw_area_size = egui::vec2(
+                let tile_size = egui::vec2(
                     max_chan_w as f32 * spacing_between_points * 2.0,
                     max_chan_w as f32 * spacing_between_points * 2.0,
                 );
+                let draw_area_size = tile_size * egui::Vec2::new(grid_w as f32, grid_h as f32);
 
                 let (response, painter) = ui.allocate_painter(
                     draw_area_size,
@@ -190,53 +194,67 @@ impl CRRSBView {
 
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
-                let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), draw_area_size);
+                let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
                 let render_tile = CRRRenderTile::build_render_tile(crr_sb, crr_sb_info, arch, spacing_between_points, chan_wire_stroke, self.zoom_factor, &tile_draw_area);
 
                 let offset = response.rect.min;
 
-                let mut chan_shapes = render_tile.channel_wires.clone();
-                for shape in &mut chan_shapes {
-                    shape.translate(offset.to_vec2());
-                }
-                painter.extend(chan_shapes);
-
-                let mut lb_shapes = render_tile.logic_block_shapes.clone();
-                for shape in &mut lb_shapes {
-                    shape.translate(offset.to_vec2());
-                }
-                painter.extend(lb_shapes);
-
-                let mut lb_pin_shapes = render_tile.logic_block_pins.clone();
-                for shape in &mut lb_pin_shapes {
-                    shape.translate(offset.to_vec2());
-                }
-                painter.extend(lb_pin_shapes);
-
-                if crr_view_state.show_segment_connections {
-                    let mut segment_connections = render_tile.segment_connections.clone();
-                    for shape in &mut segment_connections {
-                        shape.translate(offset.to_vec2());
+                for i in 0..grid_w {
+                    for j in 0..grid_h {
+                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * j as f32);
+                        Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
                     }
-                    painter.extend(segment_connections);
-                }
-
-                if crr_view_state.show_switch_connections {
-                    let mut switch_connections = render_tile.switch_connections.clone();
-                    for shape in &mut switch_connections {
-                        shape.translate(offset.to_vec2());
-                    }
-                    painter.extend(switch_connections);
-                }
-
-                if crr_view_state.show_lb_pin_connections {
-                    let mut logic_block_connections = render_tile.logic_block_connections.clone();
-                    for shape in &mut logic_block_connections {
-                        shape.translate(offset.to_vec2());
-                    }
-                    painter.extend(logic_block_connections);
                 }
             });
+    }
+
+    fn render_tile(
+        render_tile: &CRRRenderTile,
+        offset: egui::Pos2,
+        crr_view_state: &CRRViewState,
+        painter: &egui::Painter,
+    ) {
+        let mut chan_shapes = render_tile.channel_wires.clone();
+        for shape in &mut chan_shapes {
+            shape.translate(offset.to_vec2());
+        }
+        painter.extend(chan_shapes);
+
+        let mut lb_shapes = render_tile.logic_block_shapes.clone();
+        for shape in &mut lb_shapes {
+            shape.translate(offset.to_vec2());
+        }
+        painter.extend(lb_shapes);
+
+        let mut lb_pin_shapes = render_tile.logic_block_pins.clone();
+        for shape in &mut lb_pin_shapes {
+            shape.translate(offset.to_vec2());
+        }
+        painter.extend(lb_pin_shapes);
+
+        if crr_view_state.show_segment_connections {
+            let mut segment_connections = render_tile.segment_connections.clone();
+            for shape in &mut segment_connections {
+                shape.translate(offset.to_vec2());
+            }
+            painter.extend(segment_connections);
+        }
+
+        if crr_view_state.show_switch_connections {
+            let mut switch_connections = render_tile.switch_connections.clone();
+            for shape in &mut switch_connections {
+                shape.translate(offset.to_vec2());
+            }
+            painter.extend(switch_connections);
+        }
+
+        if crr_view_state.show_lb_pin_connections {
+            let mut logic_block_connections = render_tile.logic_block_connections.clone();
+            for shape in &mut logic_block_connections {
+                shape.translate(offset.to_vec2());
+            }
+            painter.extend(logic_block_connections);
+        }
     }
 }
 

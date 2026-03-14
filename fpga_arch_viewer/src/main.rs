@@ -2,6 +2,7 @@
 //!
 //! A Rust-based visualizer for VTR FPGA architecture description files.
 
+mod tile_rendering;
 mod block_style;
 mod color_scheme;
 mod common_ui;

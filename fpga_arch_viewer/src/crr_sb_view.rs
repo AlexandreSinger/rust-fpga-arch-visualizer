@@ -7,7 +7,7 @@ use crr_sb_parser::{
 };
 use fpga_arch_parser::{FPGAArch, PinLoc, PinSide, Port, SubTile, SubTilePinLocations};
 
-use crate::{block_style, color_scheme};
+use crate::{color_scheme, tile_rendering::{tile_renderer::{TileRenderer, build_render_tile}}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -29,8 +29,7 @@ struct CRRRenderTile {
     channel_wires: Vec<egui::Shape>,
     segment_connections: Vec<egui::Shape>,
     switch_connections: Vec<egui::Shape>,
-    logic_block_shapes: Vec<egui::Shape>,
-    logic_block_pins: Vec<egui::Shape>,
+    logic_block_renderer: TileRenderer,
     logic_block_connections: Vec<egui::Shape>,
 }
 
@@ -195,7 +194,7 @@ impl CRRSBView {
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
                 let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
-                let render_tile = CRRRenderTile::build_render_tile(crr_sb, crr_sb_info, arch, spacing_between_points, chan_wire_stroke, self.zoom_factor, &tile_draw_area);
+                let render_tile = CRRRenderTile::build_render_tile(crr_sb, crr_sb_info, arch, spacing_between_points, chan_wire_stroke, &tile_draw_area);
 
                 let offset = response.rect.min;
 
@@ -220,13 +219,13 @@ impl CRRSBView {
         }
         painter.extend(chan_shapes);
 
-        let mut lb_shapes = render_tile.logic_block_shapes.clone();
+        let mut lb_shapes = render_tile.logic_block_renderer.lb_shapes.clone();
         for shape in &mut lb_shapes {
             shape.translate(offset.to_vec2());
         }
         painter.extend(lb_shapes);
 
-        let mut lb_pin_shapes = render_tile.logic_block_pins.clone();
+        let mut lb_pin_shapes = render_tile.logic_block_renderer.pin_shapes.clone();
         for shape in &mut lb_pin_shapes {
             shape.translate(offset.to_vec2());
         }
@@ -416,14 +415,14 @@ fn get_crr_switch_block(
 //      -- The pin locations would need to be moved out since they do not make sense in this context.
 type TilePinIndexMap = HashMap<String, Vec<HashMap<String, Vec<usize>>>>;
 
-struct TilePinMapper {
-    tile_name: String,
-    pin_locations: Vec<egui::Vec2>,
-    num_pins_in_tile: usize,
+pub struct TilePinMapper {
+    pub tile_name: String,
+    pub pin_locations: Vec<egui::Vec2>,
+    pub num_pins_in_tile: usize,
     // [sub_tile_name][sub_tile_cap_index][port_bus_name][port_index] -> pin_index
-    pin_index_lookup: TilePinIndexMap,
+    pub pin_index_lookup: TilePinIndexMap,
 
-    pin_name_lookup: Vec<String>,
+    pub pin_name_lookup: Vec<String>,
 }
 
 impl TilePinMapper {
@@ -721,7 +720,6 @@ impl CRRRenderTile {
         arch: &FPGAArch,
         spacing_between_points: f32,
         chan_wire_stroke: f32,
-        zoom_factor: f32,
         tile_draw_area: &egui::Rect,
     ) -> CRRRenderTile {
         // FIXME: Pass in the tile name.
@@ -759,11 +757,23 @@ impl CRRRenderTile {
             &sb_rect,
         );
         let switch_connections = Self::build_switch_connection_shapes(crr_sb, crr_sb_info, spacing_between_points, &sb_rect);
-        let logic_block_shapes = Self::build_logic_block_shapes(&lb_area_rect);
-        let logic_block_pins = Self::build_lb_pin_shapes(&pin_mapper, zoom_factor, &lb_area_rect);
-        let logic_block_connections = Self::build_lb_connection_shapes(&pin_mapper, crr_sb, crr_sb_info, spacing_between_points, &sb_rect, &lb_area_rect);
 
-        CRRRenderTile { channel_wires, segment_connections, switch_connections, logic_block_shapes, logic_block_pins, logic_block_connections }
+        let lb_rect = egui::Rect::from_center_size(
+            ((lb_area_rect.size() / 2.0) + lb_area_rect.min.to_vec2()).to_pos2(),
+            lb_area_rect.size() / 1.25,
+        );
+        let lb_color = color_scheme::grid_lb_color(false);
+        let logic_block_renderer = build_render_tile(&lb_rect, &lb_color, &pin_mapper);
+        let logic_block_connections = Self::build_lb_connection_shapes(
+            &pin_mapper,
+            crr_sb,
+            crr_sb_info,
+            spacing_between_points,
+            &logic_block_renderer,
+            &sb_rect,
+        );
+
+        CRRRenderTile { channel_wires, segment_connections, switch_connections, logic_block_renderer, logic_block_connections }
 
     }
 
@@ -961,81 +971,15 @@ impl CRRRenderTile {
         switch_connection_shapes
     }
 
-    fn build_logic_block_shapes(
-        lb_area_rect: &egui::Rect,
-    ) -> Vec<egui::Shape> {
-        let mut lb_shapes: Vec<egui::Shape> = Vec::new();
-
-        // Draw the logic block. For now, its just a rectangle.
-        let lb_rect = egui::Rect::from_center_size(
-            ((lb_area_rect.size() / 2.0) + lb_area_rect.min.to_vec2()).to_pos2(),
-            lb_area_rect.size() / 1.25,
-        );
-        let lb_color = color_scheme::grid_lb_color(false);
-        // Draw filled square
-        lb_shapes.push(egui::Shape::rect_filled(
-            lb_rect, 0.0, // No rounding for sharp corners
-            lb_color,
-        ));
-        // Draw outline
-        lb_shapes.push(egui::Shape::rect_stroke(
-            lb_rect,
-            egui::CornerRadius::ZERO,
-            egui::Stroke::new(2.0, block_style::darken_color(lb_color, 0.5)),
-            egui::epaint::StrokeKind::Inside,
-        ));
-
-        lb_shapes
-    }
-
-    fn build_lb_pin_shapes(
-        pin_mapper: &TilePinMapper,
-        zoom_factor: f32,
-        lb_area_rect: &egui::Rect,
-    ) -> Vec<egui::Shape> {
-        let mut lb_pin_shapes: Vec<egui::Shape> = Vec::new();
-
-        // FIXME: Duplicate code. Should turn into a function.
-        let lb_rect = egui::Rect::from_center_size(
-            ((lb_area_rect.size() / 2.0) + lb_area_rect.min.to_vec2()).to_pos2(),
-            lb_area_rect.size() / 1.25,
-        );
-
-        for (_pin_index, pin_loc) in pin_mapper.pin_locations.iter().enumerate() {
-            let pin_pos = (*pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2();
-            lb_pin_shapes.push(egui::Shape::circle_filled(
-                pin_pos.to_pos2(),
-                2.5 * zoom_factor,
-                egui::Color32::BLACK,
-            ));
-            // TODO: Revive this.
-            //  - We can have this object return all of the hit boxes and text.
-            // let hit_rect = egui::Rect::from_center_size(pin_pos.to_pos2(), egui::Vec2::new(5.0 * self.zoom_factor, 5.0 * self.zoom_factor));
-            // let response = ui.put(hit_rect, egui::Label::new(""));
-            // let pin_name = &clb_pin_mapper.pin_name_lookup[pin_index];
-            // response.on_hover_ui(|ui| {
-            //     ui.label(pin_name);
-            // });
-        }
-
-        lb_pin_shapes
-    }
-
     fn build_lb_connection_shapes(
         pin_mapper: &TilePinMapper,
         crr_sb: &CRRSwitchBlock,
         crr_sb_info: &CRRSwitchBlockDeserialized,
         spacing_between_points: f32,
+        logic_block_renderer: &TileRenderer,
         sb_rect: &egui::Rect,
-        lb_area_rect: &egui::Rect,
     ) -> Vec<egui::Shape> {
         let mut lb_connection_shapes: Vec<egui::Shape> = Vec::new();
-
-        // FIXME: Duplicate code. Should turn into a function.
-        let lb_rect = egui::Rect::from_center_size(
-            ((lb_area_rect.size() / 2.0) + lb_area_rect.min.to_vec2()).to_pos2(),
-            lb_area_rect.size() / 1.25,
-        );
 
         // Draw flylines from pins to their connections.
         for edge in &crr_sb_info.edges {
@@ -1058,8 +1002,7 @@ impl CRRRenderTile {
                             continue;
                         }
                     };
-                    let pin_loc = pin_mapper.pin_locations[pin_index];
-                    ((pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2()).to_pos2()
+                    logic_block_renderer.pin_locations[pin_index].to_pos2()
                 } else {
                     continue;
                 }
@@ -1078,8 +1021,7 @@ impl CRRRenderTile {
                             continue;
                         }
                     };
-                    let pin_loc = pin_mapper.pin_locations[pin_index];
-                    ((pin_loc * lb_rect.size()) + lb_rect.left_top().to_vec2()).to_pos2()
+                    logic_block_renderer.pin_locations[pin_index].to_pos2()
                 } else {
                     continue;
                 }

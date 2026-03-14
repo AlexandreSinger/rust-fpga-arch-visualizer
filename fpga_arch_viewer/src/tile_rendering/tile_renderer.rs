@@ -5,7 +5,7 @@
 //! NOTE: This only draws the logical block. It does not include the switch block
 //!       or the channel wires.
 
-use fpga_arch_parser::{PinSide, TilePinMapper};
+use fpga_arch_parser::{PinSide, Tile, TilePinMapper};
 
 use crate::{block_style};
 
@@ -24,6 +24,7 @@ pub struct TileRenderer {
 }
 
 pub fn build_render_tile(
+    tile: &Tile,
     tile_bounding_box: &egui::Rect,
     color: &egui::Color32,
     pin_mapper: &TilePinMapper,
@@ -43,6 +44,27 @@ pub fn build_render_tile(
         egui::Stroke::new(2.0,block_style::darken_color(*color, 0.5)),
         egui::epaint::StrokeKind::Inside,
     ));
+    // Draw lines to distinguish the grid-tile lines.
+    for i in 1..tile.width {
+        let x_offset = (tile_bounding_box.width() / (tile.width as f32)) * i as f32 + tile_bounding_box.left();
+        lb_shapes.push(egui::Shape::line_segment(
+            [
+                egui::pos2(x_offset, tile_bounding_box.top()),
+                egui::pos2(x_offset, tile_bounding_box.bottom()),
+            ],
+            egui::Stroke::new(1.0,block_style::darken_color(*color, 0.5)),
+        ));
+    }
+    for j in 1..tile.height {
+        let y_offset = (tile_bounding_box.height() / (tile.height as f32)) * j as f32 + tile_bounding_box.top();
+        lb_shapes.push(egui::Shape::line_segment(
+            [
+                egui::pos2(tile_bounding_box.left(), y_offset),
+                egui::pos2(tile_bounding_box.right(), y_offset),
+            ],
+            egui::Stroke::new(1.0,block_style::darken_color(*color, 0.5)),
+        ));
+    }
 
     // Get the locations of the pins.
     let mut pin_locations: Vec<Vec<egui::Vec2>> = vec![Vec::new(); pin_mapper.num_pins_in_tile];

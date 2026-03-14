@@ -547,7 +547,7 @@ impl CRRRenderTile {
             lb_area_rect.size() / 1.25,
         );
         let lb_color = color_scheme::grid_lb_color(false);
-        let logic_block_renderer = build_render_tile(&lb_rect, &lb_color, &pin_mapper);
+        let logic_block_renderer = build_render_tile(&tile, &lb_rect, &lb_color, &pin_mapper);
         let logic_block_connections = Self::build_lb_connection_shapes(
             &pin_mapper,
             crr_sb,

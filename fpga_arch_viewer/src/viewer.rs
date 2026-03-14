@@ -624,6 +624,7 @@ impl FpgaViewer {
                     arch,
                     &mut self.complex_block_view.complex_block_view_state,
                     &mut self.next_view_mode,
+                    &self.grid_view.tile_colors,
                     ctx,
                 ),
                 ViewMode::ComplexBlock => self.complex_block_view.render(

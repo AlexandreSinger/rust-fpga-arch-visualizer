@@ -5,7 +5,9 @@
 //! NOTE: This only draws the logical block. It does not include the switch block
 //!       or the channel wires.
 
-use crate::{block_style, crr_sb_view::TilePinMapper};
+use fpga_arch_parser::{PinSide};
+
+use crate::{block_style, tile_rendering::tile_pin_mapper::TilePinMapper};
 
 pub struct TileRenderer {
     /// The shapes that make up the logical block.
@@ -14,9 +16,11 @@ pub struct TileRenderer {
     /// The shapes that make up the pins on the tile.
     pub pin_shapes: Vec<egui::Shape>,
 
-    /// The locations of each of the pins.
-    ///     [pin_index] -> position
-    pub pin_locations: Vec<egui::Vec2>,
+    /// The locations of each of the pins. Pins may exist in multiple locations.
+    /// This occurs when a pin can exit different sides of the tile. Electrically,
+    /// there is a short between these locations.
+    ///     [pin_index] -> Vec<position>
+    pub pin_locations: Vec<Vec<egui::Vec2>>,
 }
 
 pub fn build_render_tile(
@@ -41,26 +45,66 @@ pub fn build_render_tile(
     ));
 
     // Get the locations of the pins.
-    // TODO: We should pull the pin locations out of the pin mapper struct.
-    let mut pin_locations: Vec<egui::Vec2> = vec![tile_bounding_box.min.to_vec2(); pin_mapper.num_pins_in_tile];
+    let mut pin_locations: Vec<Vec<egui::Vec2>> = vec![Vec::new(); pin_mapper.num_pins_in_tile];
     let mut pin_shapes: Vec<egui::Shape> = Vec::with_capacity(pin_mapper.num_pins_in_tile);
-    for (pin_index, pin_loc) in pin_mapper.pin_locations.iter().enumerate() {
-        let pin_pos = (*pin_loc * tile_bounding_box.size()) + tile_bounding_box.min.to_vec2();
-        pin_locations[pin_index] = pin_pos;
-        pin_shapes.push(egui::Shape::circle_filled(
-            pin_pos.to_pos2(),
-            2.5,    // FIXME: This should be relative to the bounding box.
-            egui::Color32::BLACK,
-        ));
-        // TODO: Revive this.
-        //      - The struct should return the hit-boxes for each of the pins.
-        //  - We can have this object return all of the hit boxes and text.
-        // let hit_rect = egui::Rect::from_center_size(pin_pos.to_pos2(), egui::Vec2::new(5.0 * self.zoom_factor, 5.0 * self.zoom_factor));
-        // let response = ui.put(hit_rect, egui::Label::new(""));
-        // let pin_name = &clb_pin_mapper.pin_name_lookup[pin_index];
-        // response.on_hover_ui(|ui| {
-        //     ui.label(pin_name);
-        // });
+    // TODO: To handle offsets, we need to have TileW x TileH of these.
+    let mut top_pins: Vec<usize> = Vec::new();
+    let mut bottom_pins: Vec<usize> = Vec::new();
+    let mut left_pins: Vec<usize> = Vec::new();
+    let mut right_pins: Vec<usize> = Vec::new();
+    for (pin_index, pin_locs) in pin_mapper.pin_locs.iter().enumerate() {
+        for pin_loc in pin_locs {
+            // TODO: Handle xoffset and yoffset
+            match pin_loc.side {
+                PinSide::Top => top_pins.push(pin_index),
+                PinSide::Bottom => bottom_pins.push(pin_index),
+                PinSide::Left => left_pins.push(pin_index),
+                PinSide::Right => right_pins.push(pin_index),
+            };
+        }
+    }
+    for (i, pin_index) in top_pins.iter().enumerate() {
+        pin_locations[*pin_index].push(egui::Vec2::new(((i + 1) as f32) / ((top_pins.len() + 1) as f32), 0.0));
+    }
+    for (i, pin_index) in bottom_pins.iter().enumerate() {
+        pin_locations[*pin_index].push(egui::Vec2::new(((i + 1) as f32) / ((bottom_pins.len() + 1) as f32), 1.0));
+    }
+    for (i, pin_index) in left_pins.iter().enumerate() {
+        pin_locations[*pin_index].push(egui::Vec2::new(0.0, ((i + 1) as f32) / ((left_pins.len() + 1) as f32)));
+    }
+    for (i, pin_index) in right_pins.iter().enumerate() {
+        pin_locations[*pin_index].push(egui::Vec2::new(1.0, ((i + 1) as f32) / ((right_pins.len() + 1) as f32)));
+    }
+
+    // A bit of a hack. All numbers above are normalized to the size of the tile. Fix it here.
+    for pin_location in &mut pin_locations {
+        for pin_pos in pin_location {
+            *pin_pos = *pin_pos * tile_bounding_box.size() + tile_bounding_box.min.to_vec2();
+        }
+    }
+
+    let max_pins_per_side = top_pins.len().max(bottom_pins.len()).max(left_pins.len()).max(right_pins.len());
+    let min_tile_length = tile_bounding_box.width().min(tile_bounding_box.height());
+    let max_pin_radius = min_tile_length / 50.0;
+    let pin_radius = (min_tile_length / (max_pins_per_side as f32 * 3.0)).min(max_pin_radius);
+
+    for pin_location in &pin_locations {
+        for pin_pos in pin_location {
+            pin_shapes.push(egui::Shape::circle_filled(
+                pin_pos.to_pos2(),
+                pin_radius,
+                egui::Color32::BLACK,
+            ));
+            // TODO: Revive this.
+            //      - The struct should return the hit-boxes for each of the pins.
+            //  - We can have this object return all of the hit boxes and text.
+            // let hit_rect = egui::Rect::from_center_size(pin_pos.to_pos2(), egui::Vec2::new(5.0 * self.zoom_factor, 5.0 * self.zoom_factor));
+            // let response = ui.put(hit_rect, egui::Label::new(""));
+            // let pin_name = &clb_pin_mapper.pin_name_lookup[pin_index];
+            // response.on_hover_ui(|ui| {
+            //     ui.label(pin_name);
+            // });
+        }
     }
 
     TileRenderer { lb_shapes, pin_shapes, pin_locations }

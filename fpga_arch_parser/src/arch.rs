@@ -94,6 +94,7 @@ pub struct SubTileFC {
     pub fc_overrides: Vec<SubTileFCOverride>,
 }
 
+#[derive(Clone)]
 pub enum PinSide {
     Left,
     Right,

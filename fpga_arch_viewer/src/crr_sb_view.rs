@@ -1,13 +1,12 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
-use std::{ops::RangeInclusive};
 
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
-use fpga_arch_parser::{FPGAArch, PinLoc, PinSide, Port, SubTile, SubTilePinLocations};
+use fpga_arch_parser::{FPGAArch};
 
-use crate::{color_scheme, tile_rendering::{tile_renderer::{TileRenderer, build_render_tile}}};
+use crate::{color_scheme, tile_rendering::{tile_pin_mapper::TilePinMapper, tile_renderer::{TileRenderer, build_render_tile}}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -411,230 +410,6 @@ fn get_crr_switch_block(
     })
 }
 
-// FIXME: Everything below belongs in the architecture parser in my opinion.
-//      -- The pin locations would need to be moved out since they do not make sense in this context.
-type TilePinIndexMap = HashMap<String, Vec<HashMap<String, Vec<usize>>>>;
-
-pub struct TilePinMapper {
-    pub tile_name: String,
-    pub pin_locations: Vec<egui::Vec2>,
-    pub num_pins_in_tile: usize,
-    // [sub_tile_name][sub_tile_cap_index][port_bus_name][port_index] -> pin_index
-    pub pin_index_lookup: TilePinIndexMap,
-
-    pub pin_name_lookup: Vec<String>,
-}
-
-impl TilePinMapper {
-    pub fn new(tile_name: &str, arch: &FPGAArch) -> Result<TilePinMapper, String> {
-        let tile = arch.tiles.iter().find(|&tile| {
-            tile.name == tile_name
-        });
-        let tile = match tile {
-            Some(t) => t,
-            None => {
-                return Err("Could not find a tile with the given name.".to_string());
-            }
-        };
-
-        let mut num_pins_in_tile: usize = 0;
-        let mut pin_index_lookup: TilePinIndexMap = HashMap::new();
-        let mut pin_name_lookup: Vec<String> = Vec::new();
-        for sub_tile in &tile.sub_tiles {
-            let mut sub_tile_pin_lookup = Vec::new();
-            for sub_tile_cap_index in 0..sub_tile.capacity {
-                let mut port_name_pin_lookup = HashMap::new();
-                for port in &sub_tile.ports {
-                    let (port_name, num_pins) = match port {
-                        Port::Input(input_port) => (&input_port.name, input_port.num_pins),
-                        Port::Output(output_port) => (&output_port.name, output_port.num_pins),
-                        Port::Clock(clock_port) => (&clock_port.name, clock_port.num_pins),
-                    };
-                    let num_pins = num_pins as usize;
-                    let mut pin_indices = Vec::new();
-                    for pin_index in num_pins_in_tile..num_pins_in_tile+num_pins {
-                        pin_indices.push(pin_index);
-                        pin_name_lookup.push(format!("{}[{}].{}[{}]", sub_tile.name, sub_tile_cap_index, port_name, pin_index - num_pins_in_tile));
-                    }
-                    num_pins_in_tile += num_pins;
-                    // TODO: Check for dupes.
-                    port_name_pin_lookup.insert(port_name.clone(), pin_indices);
-                }
-                sub_tile_pin_lookup.push(port_name_pin_lookup);
-            }
-            // TODO: Check for dupes.
-            pin_index_lookup.insert(sub_tile.name.clone(), sub_tile_pin_lookup);
-        }
-
-        let mut top_pins: Vec<usize> = Vec::new();
-        let mut bottom_pins: Vec<usize> = Vec::new();
-        let mut left_pins: Vec<usize> = Vec::new();
-        let mut right_pins: Vec<usize> = Vec::new();
-        for sub_tile in &tile.sub_tiles {
-            match &sub_tile.pin_locations {
-                SubTilePinLocations::Custom(custom_pin_locations) => {
-                    for loc in &custom_pin_locations.pin_locations {
-                        // TODO: Handle xoffset and yoffset
-                        let mut pins = get_pins_in_pin_loc(loc, sub_tile, &pin_index_lookup)?;
-                        match loc.side {
-                            PinSide::Top => top_pins.append(&mut pins),
-                            PinSide::Bottom => bottom_pins.append(&mut pins),
-                            PinSide::Left => left_pins.append(&mut pins),
-                            PinSide::Right => right_pins.append(&mut pins),
-                        }
-                    }
-                },
-                _ => {},
-            }
-        }
-
-        let mut pin_locations: Vec<egui::Vec2> = vec![egui::Vec2::new(0.0, 0.0); num_pins_in_tile];
-        for (i, pin_index) in top_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(((i + 1) as f32) / ((top_pins.len() + 1) as f32), 0.0);
-        }
-        for (i, pin_index) in bottom_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(((i + 1) as f32) / ((bottom_pins.len() + 1) as f32), 1.0);
-        }
-        for (i, pin_index) in left_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(0.0, ((i + 1) as f32) / ((left_pins.len() + 1) as f32));
-        }
-        for (i, pin_index) in right_pins.iter().enumerate() {
-            pin_locations[*pin_index] = egui::Vec2::new(1.0, ((i + 1) as f32) / ((right_pins.len() + 1) as f32));
-        }
-
-        Ok(TilePinMapper {
-            tile_name: tile_name.to_string(),
-            pin_locations,
-            num_pins_in_tile,
-            pin_index_lookup,
-            pin_name_lookup,
-        })
-    }
-}
-
-fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &TilePinIndexMap) -> Result<Vec<usize>, String> {
-    let mut pins: Vec<usize> = Vec::new();
-    for pin_string in &loc.pin_strings {
-        let split_pin_string: Vec<&str> = pin_string.split(".").collect();
-        // Expect there to only be 2.
-        // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
-        if split_pin_string.len() != 2 {
-            return Err("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string());
-        }
-        let sub_tile_portion = split_pin_string[0];
-        let port_portion = split_pin_string[1];
-
-        // Parse the sub-tile portion.
-        let (sub_tile_name, sub_tile_bus_slice) = split_bus_name(sub_tile_portion)?;
-        if sub_tile_name != sub_tile.name {
-            return Err("Invalid pin string, does not start with the correct sub-tile.".to_string());
-        }
-        let sub_tile_bus = match sub_tile_bus_slice {
-            Some(bus_slice) => parse_bus(bus_slice)?,
-            None => 0..=(sub_tile.capacity-1),
-        };
-
-        // Parse port portion.
-        let (port_name, port_bus_slice) = split_bus_name(port_portion)?;
-        // TODO: We can make this lookup much faster by having a lookup between [sub-tile][port] -> num_pins
-        let port = sub_tile.ports.iter().find(|&port| {
-            let other_port_name = match &port {
-                Port::Input(input_port) => &input_port.name,
-                Port::Output(output_port) => &output_port.name,
-                Port::Clock(clock_port) => &clock_port.name,
-            };
-            other_port_name == port_name
-        });
-        let port = match port {
-            Some(p) => p,
-            None => { return Err("Cannot find port in pin string".to_string()) }
-        };
-        let num_port_pins = match &port {
-            Port::Input(input_port) => input_port.num_pins,
-            Port::Output(output_port) => output_port.num_pins,
-            Port::Clock(clock_port) => clock_port.num_pins,
-        };
-        let port_bus = match port_bus_slice {
-            Some(bus_slice) => parse_bus(bus_slice)?,
-            None => 0..=(num_port_pins-1),
-        };
-
-        // Get the pins.
-        for sub_tile_cap_index in sub_tile_bus {
-            if sub_tile_cap_index < 0 || sub_tile_cap_index >= sub_tile.capacity {
-                return Err("Invalid sub tile index.".to_string());
-            }
-            let sub_tile_pin_index_lookup = &pin_index_lookup[sub_tile_name][sub_tile_cap_index as usize][port_name];
-            for bit in port_bus.clone() {
-                if bit < 0 || bit >= num_port_pins {
-                    return Err("Invalid port bit position.".to_string());
-                }
-                pins.push(sub_tile_pin_index_lookup[bit as usize]);
-            }
-        }
-    }
-
-    Ok(pins)
-}
-
-fn parse_pin_name(pin_name: &str, pin_index_lookup: &TilePinIndexMap) -> Result<usize, String> {
-    let split_pin_string: Vec<&str> = pin_name.split(".").collect();
-    // Expect there to only be 2.
-    // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
-    if split_pin_string.len() != 2 {
-        return Err("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string());
-    }
-    let sub_tile_portion = split_pin_string[0];
-    let port_portion = split_pin_string[1];
-
-    let (port_name, port_bus_slice) = split_bus_name(port_portion)?;
-    let port_bus = match port_bus_slice {
-        Some(bus_slice) => parse_bus(bus_slice)?,
-        None => {return Err("Unsupported: Need to specify the bit.".to_string())},
-    };
-
-    if let Some(lookup) = pin_index_lookup.get(sub_tile_portion) {
-        if let Some(port_lookup_vec) = lookup[0].get(port_name) {
-            for bit in port_bus {
-                return Ok(port_lookup_vec[bit as usize]);
-            }
-        }
-    }
-
-    return Err("Could not find port!".to_string());
-}
-
-fn split_bus_name(s: &str) -> Result<(&str, Option<&str>), String> {
-    if let Some(idx) = s.find('[') {
-        let (name, slice) = s.split_at(idx);
-
-        if !slice.ends_with(']') {
-            return Err(format!("Invalid bus slice: {}", s));
-        }
-
-        Ok((name, Some(slice)))
-    } else {
-        Ok((s, None))
-    }
-}
-
-fn parse_bus(bus: &str) -> Result<RangeInclusive<i32>, String> {
-    if !bus.starts_with('[') || !bus.ends_with(']') {
-        return Err(format!("Invalid bus format: {}", bus));
-    }
-
-    let inner = &bus[1..bus.len() - 1];
-
-    if let Some((a, b)) = inner.split_once(':') {
-        let msb: i32 = a.trim().parse().map_err(|_| "Invalid number")?;
-        let lsb: i32 = b.trim().parse().map_err(|_| "Invalid number")?;
-        Ok(msb.min(lsb)..=msb.max(lsb))
-    } else {
-        let bit: i32 = inner.trim().parse().map_err(|_| "Invalid number")?;
-        Ok(bit..=bit)
-    }
-}
-
 fn get_source_node_loc(
     source_node: &CRRSwitchSourceNodeInfo,
     spacing_between_points: f32,
@@ -723,7 +498,16 @@ impl CRRRenderTile {
         tile_draw_area: &egui::Rect,
     ) -> CRRRenderTile {
         // FIXME: Pass in the tile name.
-        let pin_mapper = TilePinMapper::new("clb", arch).expect("What?");
+        let tile = arch.tiles.iter().find(|&tile| {
+            tile.name == "clb"
+        });
+        let tile = match tile {
+            Some(t) => t,
+            None => {
+                panic!("Could not find clb tile. Hardcoded badness.");
+            }
+        };
+        let pin_mapper = TilePinMapper::new(tile).expect("What?");
 
         let sub_tile_size = tile_draw_area.size() / 2.0;
         let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
@@ -991,10 +775,10 @@ impl CRRRenderTile {
                 continue;
             }
 
-            let src_node_loc = if src_node.dir == CRRSwitchDir::OPIN {
+            let src_node_locs = if src_node.dir == CRRSwitchDir::OPIN {
                 // TODO: Clean this up.
                 if let CRRSwitchSourcePin::Pin { pin_name } = &src_node.source_pin {
-                    let pin_index = parse_pin_name(pin_name, &pin_mapper.pin_index_lookup);
+                    let pin_index = pin_mapper.parse_pin_name(pin_name);
                     let pin_index = match pin_index {
                         Ok(idx) => idx,
                         Err(e) => {
@@ -1002,18 +786,18 @@ impl CRRRenderTile {
                             continue;
                         }
                     };
-                    logic_block_renderer.pin_locations[pin_index].to_pos2()
+                    &logic_block_renderer.pin_locations[pin_index]
                 } else {
                     continue;
                 }
             } else {
-                get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()
+                &vec![(get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
             };
 
-            let sink_node_loc = if sink_node.dir == CRRSwitchDir::IPIN {
+            let sink_node_locs = if sink_node.dir == CRRSwitchDir::IPIN {
                 // TODO: Clean this up.
                 if let Some(pin_name) = &sink_node.target_pin {
-                    let pin_index = parse_pin_name(pin_name, &pin_mapper.pin_index_lookup);
+                    let pin_index = pin_mapper.parse_pin_name(pin_name);
                     let pin_index = match pin_index {
                         Ok(idx) => idx,
                         Err(e) => {
@@ -1021,21 +805,25 @@ impl CRRRenderTile {
                             continue;
                         }
                     };
-                    logic_block_renderer.pin_locations[pin_index].to_pos2()
+                    &logic_block_renderer.pin_locations[pin_index]
                 } else {
                     continue;
                 }
             } else {
-                get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()
+                &vec![(get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
             };
 
-            lb_connection_shapes.push(egui::Shape::line_segment(
-                [
-                    src_node_loc,
-                    sink_node_loc,
-                ],
-                egui::Stroke::new(1.0, egui::Color32::BLACK),
-            ));
+            for src_node_loc in src_node_locs {
+                for sink_node_loc in sink_node_locs {
+                    lb_connection_shapes.push(egui::Shape::line_segment(
+                        [
+                            src_node_loc.to_pos2(),
+                            sink_node_loc.to_pos2(),
+                        ],
+                        egui::Stroke::new(1.0, egui::Color32::BLACK),
+                    ));
+                }
+            }
         }
 
         lb_connection_shapes

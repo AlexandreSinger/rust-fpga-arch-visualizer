@@ -176,6 +176,21 @@ impl TileView {
                     let tile_renderer = build_render_tile(&tile, &tile_bounding_box, &color, &tile.pin_mapper);
                     painter.extend(tile_renderer.lb_shapes);
                     painter.extend(tile_renderer.pin_shapes);
+
+                    // When hovering over a pin, print the name of the pin.
+                    for (pin_index, pin_locations) in tile_renderer.pin_locations.iter().enumerate() {
+                        let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
+                        for pin_location in pin_locations {
+                            let hit_rect = egui::Rect::from_center_size(
+                                pin_location.to_pos2(),
+                                egui::Vec2::ONE * tile_renderer.pin_radius * 3.0,
+                            );
+                            let pin_hit_response = ui.put(hit_rect, egui::Label::new(""));
+                            pin_hit_response.on_hover_ui(|ui| {
+                                ui.label(pin_name);
+                            });
+                        }
+                    }
                 });
         });
         

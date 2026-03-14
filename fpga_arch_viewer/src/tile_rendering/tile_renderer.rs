@@ -21,6 +21,9 @@ pub struct TileRenderer {
     /// there is a short between these locations.
     ///     [pin_index] -> Vec<position>
     pub pin_locations: Vec<Vec<egui::Vec2>>,
+
+    /// The radius of drawn pins.
+    pub pin_radius: f32,
 }
 
 pub fn build_render_tile(
@@ -117,17 +120,8 @@ pub fn build_render_tile(
                 pin_radius,
                 egui::Color32::BLACK,
             ));
-            // TODO: Revive this.
-            //      - The struct should return the hit-boxes for each of the pins.
-            //  - We can have this object return all of the hit boxes and text.
-            // let hit_rect = egui::Rect::from_center_size(pin_pos.to_pos2(), egui::Vec2::new(5.0 * self.zoom_factor, 5.0 * self.zoom_factor));
-            // let response = ui.put(hit_rect, egui::Label::new(""));
-            // let pin_name = &clb_pin_mapper.pin_name_lookup[pin_index];
-            // response.on_hover_ui(|ui| {
-            //     ui.label(pin_name);
-            // });
         }
     }
 
-    TileRenderer { lb_shapes, pin_shapes, pin_locations }
+    TileRenderer { lb_shapes, pin_shapes, pin_locations, pin_radius }
 }

@@ -4,7 +4,7 @@ use crate::{FPGAArchParseError, arch::{PinLoc, PinSide, Port, SubTile, SubTilePi
 
 type TilePinIndexMap = HashMap<String, Vec<HashMap<String, Vec<usize>>>>;
 
-// FIXME: This should be consolidated with PinLoc.
+// TODO: This should be consolidated with PinLoc.
 #[derive(Clone)]
 pub struct PhysicalPinLoc {
     pub side: PinSide,
@@ -80,15 +80,29 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
                 let mut pin_indices = Vec::new();
                 for pin_index in num_pins_in_tile..num_pins_in_tile+num_pins {
                     pin_indices.push(pin_index);
-                    pin_name_lookup.push(format!("{}[{}].{}[{}]", sub_tile.name, sub_tile_cap_index, port_name, pin_index - num_pins_in_tile));
+                    let sub_tile_name = if sub_tile.capacity > 1 {
+                        format!("{}[{}]", sub_tile.name, sub_tile_cap_index)
+                    } else {
+                        format!("{}", sub_tile.name)
+                    };
+                    let pin_port_name = if num_pins > 1 {
+                        format!("{}[{}]", port_name, pin_index - num_pins_in_tile)
+                    } else {
+                        format!("{}", port_name)
+                    };
+                    pin_name_lookup.push(format!("{}.{}", sub_tile_name, pin_port_name));
                 }
                 num_pins_in_tile += num_pins;
-                // TODO: Check for dupes.
+                if port_name_pin_lookup.contains_key(port_name) {
+                    return Err(FPGAArchParseError::PinParsingError(format!("Found duplicate port name: {}", port_name)));
+                }
                 port_name_pin_lookup.insert(port_name.clone(), pin_indices);
             }
             sub_tile_pin_lookup.push(port_name_pin_lookup);
         }
-        // TODO: Check for dupes.
+        if pin_index_lookup.contains_key(&sub_tile.name) {
+            return Err(FPGAArchParseError::PinParsingError(format!("Found duplicate port name: {}", sub_tile.name)));
+        }
         pin_index_lookup.insert(sub_tile.name.clone(), sub_tile_pin_lookup);
     }
 
@@ -97,19 +111,18 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
         match &sub_tile.pin_locations {
             SubTilePinLocations::Custom(custom_pin_locations) => {
                 for loc in &custom_pin_locations.pin_locations {
-                    // TODO: Handle xoffset and yoffset
                     let pins = get_pins_in_pin_loc(loc, sub_tile, &pin_index_lookup)?;
                     let pin_loc = PhysicalPinLoc {
                         side: loc.side.clone(),
-                        // TODO: Add error checking for this.
-                        xoffset: loc.xoffset as usize,
-                        yoffset: loc.yoffset as usize,
+                        xoffset: loc.xoffset,
+                        yoffset: loc.yoffset,
                     };
                     for pin in pins {
                         pin_locs[pin].push(pin_loc.clone());
                     }
                 }
             },
+            // TODO: Implement for other pin locations.
             _ => {},
         }
     }

@@ -785,8 +785,8 @@ fn parse_pin_loc<R: BufRead>(
     assert!(name.to_string() == "loc");
 
     let mut side: Option<PinSide> = None;
-    let mut xoffset: Option<i32> = None;
-    let mut yoffset: Option<i32> = None;
+    let mut xoffset: Option<usize> = None;
+    let mut yoffset: Option<usize> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "side" => {

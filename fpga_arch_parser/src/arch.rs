@@ -106,8 +106,8 @@ pub enum PinSide {
 
 pub struct PinLoc {
     pub side: PinSide,
-    pub xoffset: i32,
-    pub yoffset: i32,
+    pub xoffset: usize,
+    pub yoffset: usize,
     pub pin_strings: Vec<String>,
 }
 

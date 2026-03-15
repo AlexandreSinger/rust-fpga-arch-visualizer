@@ -1,0 +1,331 @@
+use std::{fs::{self, File}, path::Path};
+
+use yaml_rust::YamlLoader;
+
+pub struct SBMaps {
+    pub patterns: Vec<SBMapPattern>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SBPatternVal {
+    Constant { val: usize },
+    Wildcard,
+    List { vals: Vec<usize> },
+    Range { start: usize, end: usize, step: usize },
+}
+
+pub struct SBPattern {
+    x_pattern: SBPatternVal,
+    y_pattern: SBPatternVal,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SBMapTemplate {
+    File { file_name: String },
+    Null,
+}
+
+pub struct SBMapPattern {
+    pub pattern: SBPattern,
+    pub template: SBMapTemplate,
+}
+
+impl SBMaps {
+    pub fn get_sb_template(&self, x: usize, y: usize) -> Option<&SBMapTemplate> {
+        // Return the first pattern match.
+        for pattern in &self.patterns {
+            if check_for_pattern_match(&pattern.pattern, x, y) {
+                return Some(&pattern.template);
+            }
+        }
+
+        // If none are matched, return none.
+        None
+    }
+}
+
+fn check_for_pattern_match(pattern: &SBPattern, x: usize, y: usize) -> bool {
+    if check_for_val_pattern_match(&pattern.x_pattern, x) && check_for_val_pattern_match(&pattern.y_pattern, y) {
+        true
+    } else {
+        false
+    }
+}
+
+fn check_for_val_pattern_match(pattern: &SBPatternVal, v: usize) -> bool {
+    match pattern {
+        // If wildcard, always return true.
+        SBPatternVal::Wildcard => true,
+        // If constant, return true if the value matches.
+        SBPatternVal::Constant { val } => v == *val,
+        // If list, return true if the list contains the value.
+        SBPatternVal::List { vals } => vals.contains(&v),
+        // For range, return true if the value is within the range.
+        SBPatternVal::Range { start, end, step } => {
+            if v > *end || v < *start {
+                // Return false if out of range.
+                false
+            } else {
+                // Return true if hits one of the step points.
+                (v - *start) % *step == 0
+            }
+        }
+    }
+}
+
+fn parse_sb_maps_yaml(sb_maps_file_path: &Path) -> Result<SBMaps, String> {
+    let sb_maps_str = fs::read_to_string(sb_maps_file_path).map_err(|e| { format!("{e}") })?;
+
+    parse_sb_maps_yaml_from_string(&sb_maps_str)
+}
+
+fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {
+
+    let docs = YamlLoader::load_from_str(sb_maps_str);
+    let docs = match docs {
+        Ok(d) => d,
+        Err(e) => { return Err(format!("{e}")) },
+    };
+
+    if docs.len() != 1 {
+        return Err("YAML file has more than one document. Something went wrong.".to_string());
+    }
+
+    let doc = match docs.get(0) {
+        Some(v) => v,
+        None => return Err("YAML Docs are empty. Something went wrong.".to_string()),
+    };
+
+    // Verify the top-level hash.
+    if let Some(top_level_hash) = doc.as_hash() {
+        if top_level_hash.len() != 1 {
+            return Err("Top-level hash expected to only contain the key 'SB_MAPS'".to_string());
+        }
+    } else {
+        return Err("Top-level YAML object expected to be a hash.".to_string());
+    }
+
+    let sb_patterns_yaml = &doc["SB_MAPS"];
+    if sb_patterns_yaml.is_badvalue() {
+        return Err("Missing top-level key 'SB_MAPS'.".to_string());
+    }
+
+    let mut patterns: Vec<SBMapPattern> = Vec::new();
+    if let Some(sb_patterns_hash) = sb_patterns_yaml.as_hash() {
+        for (key, value) in sb_patterns_hash.iter() {
+            let sb_pattern_string = match key.as_str() {
+                Some(v) => v,
+                None => return Err("SB pattern expected to be a string.".to_string()),
+            };
+            let pattern = parse_sb_pattern(sb_pattern_string)?;
+            let sb_template =  match value {
+                yaml_rust::Yaml::String(str) => SBMapTemplate::File { file_name: str.clone() },
+                yaml_rust::Yaml::Null => SBMapTemplate::Null,
+                _ => return Err("SB template expected to be a string or null.".to_string()),
+            };
+            patterns.push(SBMapPattern { pattern, template: sb_template });
+        }
+    } else {
+        return Err("SB_MAPS YAML object expected to be a hash.".to_string());
+    }
+
+    Ok(SBMaps {
+        patterns,
+    })
+}
+
+fn parse_sb_pattern(sb_pattern_string: &str) -> Result<SBPattern, String> {
+    if !sb_pattern_string.starts_with("SB_") {
+        return Err(format!("SB pattern should start with 'SB_'. Pattern found: {}", sb_pattern_string));
+    }
+    if !sb_pattern_string.ends_with("_") {
+        return Err(format!("SB pattern should end with '_'. Pattern found: {}", sb_pattern_string));
+    }
+    let sb_pattern_string = &sb_pattern_string[3..(sb_pattern_string.len() - 1)];
+
+    let split_pattern: Vec<&str> = sb_pattern_string.split("__").collect();
+
+    if split_pattern.len() != 2 {
+        return Err(format!("SB pattern should have two pattern dimensions. Pattern found: {}", sb_pattern_string));
+    }
+
+    let x_pattern = parse_sb_pattern_val(split_pattern[0])?;
+    let y_pattern = parse_sb_pattern_val(split_pattern[1])?;
+
+    Ok(SBPattern { x_pattern, y_pattern })
+}
+
+fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
+    // If this looks like a wildcard, it is a wildcard.
+    // TODO: Talk to Amin about the raw wildcard being supported.
+    if pattern_str == "\\*" || pattern_str == "*" {
+        return Ok(SBPatternVal::Wildcard);
+    }
+
+    // If it can be parsed as an integer, it is a constant.
+    if let Ok(val) = pattern_str.parse::<usize>() {
+        return Ok(SBPatternVal::Constant { val });
+    }
+
+    // If it has a comma in it, we assume it is a list.
+    if pattern_str.contains(",") {
+        let list_vals: Vec<&str> = pattern_str.split(",").collect();
+        let mut vals: Vec<usize> = Vec::new();
+        for list_val in list_vals {
+            let val = match list_val.parse::<usize>() {
+                Ok(v) => v,
+                Err(e) => return Err(format!("Error parsing list element: {e}")),
+            };
+            vals.push(val);
+        }
+
+        return Ok(SBPatternVal::List { vals });
+    }
+
+    // If it has colons in it and starts and ends with brackets, we assume it is a range.
+    if pattern_str.contains(":") && pattern_str.starts_with("[") && pattern_str.ends_with("]") {
+        // Remove the brackets.
+        let no_brackets_str = &pattern_str[1..(pattern_str.len() - 1)];
+        // Split the colons.
+        let range_vals: Vec<&str> = no_brackets_str.split(":").collect();
+        if range_vals.len() != 3 {
+            return Err(format!("Range expected to have 3 elements: {}", pattern_str));
+        }
+        // Parse the start, step, and end.
+        let start = match range_vals[0].parse::<usize>() {
+            Ok(v) => v,
+            Err(e) => return Err(format!("Error parsing range start element in pattern {pattern_str}: {e}")),
+        };
+        let end = match range_vals[1].parse::<usize>() {
+            Ok(v) => v,
+            Err(e) => return Err(format!("Error parsing range end element in pattern {pattern_str}: {e}")),
+        };
+        let step = match range_vals[2].parse::<usize>() {
+            Ok(v) => v,
+            Err(e) => return Err(format!("Error parsing range step element in pattern {pattern_str}: {e}")),
+        };
+
+        return Ok(SBPatternVal::Range { start, end, step });
+    }
+
+    // If none of the above matched, return an error.
+    Err(format!("Could not parse SB pattern: {}", pattern_str))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doc_example() -> Result<(), String> {
+        let s =
+"
+SB_MAPS:
+   SB_0__*_: null
+   SB_*__0_: null
+   SB_1__*_: sb_perimeter.csv
+   SB_*__1_: sb_perimeter.csv
+   SB_[2:10:2]__*_: sb_dsp.csv
+   SB_*__*_: sb_main.csv
+";
+        let sb_maps = parse_sb_maps_yaml_from_string(&s)?;
+
+        assert_eq!(sb_maps.patterns.len(), 6);
+
+        assert_eq!(sb_maps.patterns[0].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[0].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[0].template, SBMapTemplate::Null);
+
+        assert_eq!(sb_maps.patterns[1].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[1].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[1].template, SBMapTemplate::Null);
+
+        assert_eq!(sb_maps.patterns[2].pattern.x_pattern, SBPatternVal::Constant { val: 1 });
+        assert_eq!(sb_maps.patterns[2].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[2].template, SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[3].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[3].pattern.y_pattern, SBPatternVal::Constant { val: 1 });
+        assert_eq!(sb_maps.patterns[3].template, SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[4].pattern.x_pattern, SBPatternVal::Range { start: 2, end: 10, step: 2 });
+        assert_eq!(sb_maps.patterns[4].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[4].template, SBMapTemplate::File { file_name: "sb_dsp.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[5].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[5].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[5].template, SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+
+        // From the first 2 templates, these rows should be null.
+        for i in 0..10 {
+            assert_eq!(*sb_maps.get_sb_template(i, 0).expect("template should match"), SBMapTemplate::Null);
+            assert_eq!(*sb_maps.get_sb_template(0, i).expect("template should match"), SBMapTemplate::Null);
+        }
+        // From the following 2 templates, these should be perimeter.
+        for i in 1..10 {
+            assert_eq!(*sb_maps.get_sb_template(i, 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+            assert_eq!(*sb_maps.get_sb_template(1, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+        }
+
+        for i in 2..10 {
+            for j in (2..=10).step_by(2) {
+                // From the dsp pattern.
+                assert_eq!(*sb_maps.get_sb_template(j, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_dsp.csv".to_string() });
+                // Everywhere else.
+                assert_eq!(*sb_maps.get_sb_template(j + 1, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+            }
+        }
+
+        // Check that the end step is working for the dsp.
+        for i in 2..10 {
+            assert_eq!(*sb_maps.get_sb_template(12, 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn sample_example() -> Result<(), String> {
+        let s =
+"
+SB_MAPS:
+  # ==================================================
+  # Corners
+  # ==================================================
+  SB_0__0_: null
+  SB_0__41_: null
+  SB_41__0_: null
+  SB_41__41_: null
+  # ==================================================
+  # IO Switchboxes
+  # ==================================================
+  SB_\\*__0_: sb_io.csv
+  SB_0__\\*_: sb_io.csv
+  SB_41__\\*_: sb_io.csv
+  SB_\\*__41_: sb_io.csv
+  # ==================================================
+  # DSP Related Column 1
+  # ==================================================
+  SB_[6:41:8]__[1:41:4]_: sb_mult_36_0.csv
+  SB_[6:41:8]__[2:41:4]_: sb_mult_36_1.csv
+  SB_[6:41:8]__[3:41:4]_: sb_mult_36_2.csv
+  SB_[6:41:8]__[4:41:4]_: sb_mult_36_3.csv
+  # ==================================================
+  # BRAM Related
+  # ==================================================
+  SB_[2:41:8]__[1:41:6]_: sb_memory_0.csv
+  SB_[2:41:8]__[2:41:6]_: sb_memory_1.csv
+  SB_[2:41:8]__[3:41:6]_: sb_memory_2.csv
+  SB_[2:41:8]__[4:41:6]_: sb_memory_3.csv
+  SB_[2:41:8]__[5:41:6]_: sb_memory_4.csv
+  SB_[2:41:8]__[6:41:6]_: sb_memory_5.csv
+  # ==================================================
+  SB_\\*__\\*_: sb_main.csv
+";
+        let sb_maps = parse_sb_maps_yaml_from_string(&s)?;
+
+        assert_eq!(sb_maps.patterns.len(), 19);
+
+        Ok(())
+    }
+}

@@ -326,6 +326,99 @@ SB_MAPS:
 
         assert_eq!(sb_maps.patterns.len(), 19);
 
+        // Validate corner patterns
+        assert_eq!(sb_maps.patterns[0].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[0].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[0].template, SBMapTemplate::Null);
+
+        assert_eq!(sb_maps.patterns[1].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[1].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[1].template, SBMapTemplate::Null);
+
+        assert_eq!(sb_maps.patterns[2].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[2].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[2].template, SBMapTemplate::Null);
+
+        assert_eq!(sb_maps.patterns[3].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[3].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[3].template, SBMapTemplate::Null);
+
+        // Validate IO edge patterns
+        assert_eq!(sb_maps.patterns[4].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[4].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[4].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[5].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(sb_maps.patterns[5].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[5].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[6].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[6].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[6].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+
+        assert_eq!(sb_maps.patterns[7].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[7].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(sb_maps.patterns[7].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+
+        // Validate DSP patterns
+        for i in 0..4 {
+            assert_eq!(sb_maps.patterns[8 + i].pattern.x_pattern, SBPatternVal::Range { start: 6, end: 41, step: 8 });
+            assert_eq!(sb_maps.patterns[8 + i].pattern.y_pattern, SBPatternVal::Range { start: (1 + i) as usize, end: 41, step: 4 });
+            assert_eq!(sb_maps.patterns[8 + i].template, SBMapTemplate::File { file_name: format!("sb_mult_36_{}.csv", i) });
+        }
+
+        // Validate BRAM patterns
+        for i in 0..6 {
+            assert_eq!(sb_maps.patterns[12 + i].pattern.x_pattern, SBPatternVal::Range { start: 2, end: 41, step: 8 });
+            assert_eq!(sb_maps.patterns[12 + i].pattern.y_pattern, SBPatternVal::Range { start: (1 + i) as usize, end: 41, step: 6 });
+            assert_eq!(sb_maps.patterns[12 + i].template, SBMapTemplate::File { file_name: format!("sb_memory_{}.csv", i) });
+        }
+
+        // Validate catch-all pattern
+        assert_eq!(sb_maps.patterns[18].pattern.x_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[18].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(sb_maps.patterns[18].template, SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+
+        // Test get_sb_template for a 41x41 device
+        // Corners should return null
+        assert_eq!(*sb_maps.get_sb_template(0, 0).expect("template should match"), SBMapTemplate::Null);
+        assert_eq!(*sb_maps.get_sb_template(0, 41).expect("template should match"), SBMapTemplate::Null);
+        assert_eq!(*sb_maps.get_sb_template(41, 0).expect("template should match"), SBMapTemplate::Null);
+        assert_eq!(*sb_maps.get_sb_template(41, 41).expect("template should match"), SBMapTemplate::Null);
+
+        // IO edges should return sb_io.csv
+        assert_eq!(*sb_maps.get_sb_template(5, 0).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(*sb_maps.get_sb_template(0, 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(*sb_maps.get_sb_template(41, 20).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(*sb_maps.get_sb_template(15, 41).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+
+        // DSP positions should return sb_mult files
+        for x in (6..=40).step_by(8) {
+            for y in (1..=40).step_by(4) {
+                assert_eq!(*sb_maps.get_sb_template(x, y).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_0.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_1.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_2.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 3).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_3.csv".to_string() });
+            }
+        }
+
+        // BRAM positions should return sb_memory files
+        for x in (2..=40).step_by(8) {
+            for y in (1..=31).step_by(6) {
+                assert_eq!(*sb_maps.get_sb_template(x, y).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_0.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_1.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_2.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 3).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_3.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 4).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_4.csv".to_string() });
+                assert_eq!(*sb_maps.get_sb_template(x, y + 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_5.csv".to_string() });
+            }
+        }
+
+        // Regular interior positions should return sb_main.csv (catch-all)
+        assert_eq!(*sb_maps.get_sb_template(5, 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        assert_eq!(*sb_maps.get_sb_template(15, 20).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        assert_eq!(*sb_maps.get_sb_template(35, 35).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+
         Ok(())
     }
 }

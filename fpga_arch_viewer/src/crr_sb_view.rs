@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
-use fpga_arch_parser::{FPGAArch, TilePinMapper};
+use fpga_arch_parser::{FPGAArch, Tile, TilePinMapper};
 
 use crate::{color_scheme, tile_rendering::{tile_renderer::{TileRenderer, build_render_tile}}};
 
@@ -193,7 +193,16 @@ impl CRRSBView {
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
                 let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
-                let render_tile = CRRRenderTile::build_render_tile(crr_sb, crr_sb_info, arch, spacing_between_points, chan_wire_stroke, &tile_draw_area);
+                let tile = arch.tiles.iter().find(|&tile| {
+                    tile.name == "clb"
+                });
+                let tile = match tile {
+                    Some(t) => t,
+                    None => {
+                        panic!("Could not find clb tile. Hardcoded badness.");
+                    }
+                };
+                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area);
 
                 let offset = response.rect.min;
 
@@ -490,23 +499,13 @@ fn get_ptc_loc(
 
 impl CRRRenderTile {
     pub fn build_render_tile(
+        tile: &Tile,
         crr_sb: &CRRSwitchBlock,
         crr_sb_info: &CRRSwitchBlockDeserialized,
-        arch: &FPGAArch,
         spacing_between_points: f32,
         chan_wire_stroke: f32,
         tile_draw_area: &egui::Rect,
     ) -> CRRRenderTile {
-        // FIXME: Pass in the tile name.
-        let tile = arch.tiles.iter().find(|&tile| {
-            tile.name == "clb"
-        });
-        let tile = match tile {
-            Some(t) => t,
-            None => {
-                panic!("Could not find clb tile. Hardcoded badness.");
-            }
-        };
         let pin_mapper = &tile.pin_mapper;
 
         let sub_tile_size = tile_draw_area.size() / 2.0;

@@ -4,22 +4,66 @@ use std::collections::HashMap;
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
 };
-use fpga_arch_parser::{FPGAArch, Tile, TilePinMapper};
+use fpga_arch_parser::{FPGAArch, Layout, Tile, TilePinMapper};
 
-use crate::{color_scheme, tile_rendering::{tile_renderer::{TileRenderer, build_render_tile}}};
+use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{self, SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string}, grid::DeviceGrid, grid_view::get_layout_name, tile_rendering::tile_renderer::{TileRenderer, build_render_tile}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
     show_switch_connections: bool,
     show_lb_pin_connections: bool,
+
+    pub selected_layout_index: usize,
+
+    sb_maps: SBMaps,
 }
 
 impl Default for CRRViewState {
     fn default() -> Self {
+        // HACK! For now I am just going to hard-code the sb_maps file to make debugging easier.
+        let sb_maps_str =
+"
+SB_MAPS:
+    # ==================================================
+    # Corners
+    # ==================================================
+    SB_0__0_: null
+    SB_0__41_: null
+    SB_41__0_: null
+    SB_41__41_: null
+    # ==================================================
+    # IO Switchboxes
+    # ==================================================
+    SB_\\*__0_: sb_io.csv
+    SB_0__\\*_: sb_io.csv
+    SB_41__\\*_: sb_io.csv
+    SB_\\*__41_: sb_io.csv
+    # ==================================================
+    # DSP Related Column 1
+    # ==================================================
+    SB_[6:41:8]__[1:41:4]_: sb_mult_36_0.csv
+    SB_[6:41:8]__[2:41:4]_: sb_mult_36_1.csv
+    SB_[6:41:8]__[3:41:4]_: sb_mult_36_2.csv
+    SB_[6:41:8]__[4:41:4]_: sb_mult_36_3.csv
+    # ==================================================
+    # BRAM Related
+    # ==================================================
+    SB_[2:41:8]__[1:41:6]_: sb_memory_0.csv
+    SB_[2:41:8]__[2:41:6]_: sb_memory_1.csv
+    SB_[2:41:8]__[3:41:6]_: sb_memory_2.csv
+    SB_[2:41:8]__[4:41:6]_: sb_memory_3.csv
+    SB_[2:41:8]__[5:41:6]_: sb_memory_4.csv
+    SB_[2:41:8]__[6:41:6]_: sb_memory_5.csv
+    # ==================================================
+    SB_\\*__\\*_: sb_main.csv
+";
+        let sb_maps = parse_sb_maps_yaml_from_string(sb_maps_str).expect("This should work.");
         Self {
             show_segment_connections: true,
             show_switch_connections: true,
             show_lb_pin_connections: false,
+            selected_layout_index: 0,
+            sb_maps,
         }
     }
 }
@@ -85,14 +129,14 @@ impl CRRSBView {
         egui::SidePanel::right("crr_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
-                self.render_side_panel(ui);
+                self.render_side_panel(arch, ui);
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(arch, ui);
         });
     }
 
-    fn render_side_panel(&mut self, ui: &mut egui::Ui) {
+    fn render_side_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
         ui.heading("CRR View");
         ui.add_space(10.0);
         ui.separator();
@@ -107,6 +151,41 @@ impl CRRSBView {
         ui.add_space(10.0);
 
         ui.checkbox(&mut self.crr_view_state.show_lb_pin_connections, "Show LB Pin Connections");
+
+        // Layout selection dropdown
+        ui.add_space(10.0);
+        if arch.layouts.layout_list.len() > 1 {
+            ui.label("Layout:");
+            let mut layout_changed = false;
+            egui::ComboBox::from_id_salt("layout_selector")
+                .selected_text(get_layout_name(arch, self.crr_view_state.selected_layout_index))
+                .show_ui(ui, |ui| {
+                    for (idx, layout) in arch.layouts.layout_list.iter().enumerate() {
+                        let layout_name = match &layout {
+                            fpga_arch_parser::Layout::AutoLayout(_) => {
+                                "Auto Layout".to_string()
+                            }
+                            fpga_arch_parser::Layout::FixedLayout(fl) => {
+                                format!("Fixed: {}", fl.name)
+                            }
+                        };
+                        if ui
+                            .selectable_value(
+                                &mut self.crr_view_state.selected_layout_index,
+                                idx,
+                                layout_name,
+                            )
+                            .clicked()
+                        {
+                            layout_changed = true;
+                        }
+                    }
+                });
+            if layout_changed {
+                // grid_changed = true;
+                // state.selected_die_id = 0;
+            }
+        }
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
@@ -132,7 +211,10 @@ impl CRRSBView {
                     self.zoom_factor *= zoom_delta;
                 }
 
-                self.render_crr_sb(&self.crr_view_state, crr_sb, crr_sb_info, arch, ui);
+                if let Some(Layout::FixedLayout(_)) = arch.layouts.layout_list.get(self.crr_view_state.selected_layout_index) {
+                    let grid = DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
+                    self.render_crr_sb(&self.crr_view_state, crr_sb, crr_sb_info, &self.crr_view_state.sb_maps, &grid, arch, ui);
+                }
             } else if let Some(error_msg) = &self.last_error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             } else {
@@ -166,14 +248,16 @@ impl CRRSBView {
         crr_view_state: &CRRViewState,
         crr_sb: &CRRSwitchBlock,
         crr_sb_info: &CRRSwitchBlockDeserialized,
+        sb_maps: &SBMaps,
+        grid: &DeviceGrid,
         arch: &FPGAArch,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let grid_w = 10;
-                let grid_h = 10;
+                let grid_w = grid.width;
+                let grid_h = grid.height;
 
                 let max_chan_w = crr_sb.chan_x_width.max(crr_sb.chan_y_width);
                 let smaller_available_size = ui.available_height().min(ui.available_width());
@@ -210,6 +294,23 @@ impl CRRSBView {
                     for j in 0..grid_h {
                         let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * j as f32);
                         Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
+
+                        let sb_template = sb_maps.get_sb_template(i, j);
+                        let text = match &sb_template {
+                            Some(SBMapTemplate::Null) => "NULL",
+                            Some(SBMapTemplate::File { file_name }) => &file_name,
+                            _ => "ERROR",
+                        };
+
+                        let font_size = tile_size.x / 10.0;
+
+                        painter.text(
+                            tile_offset + tile_size / 2.0,
+                            egui::Align2::CENTER_CENTER,
+                            text,
+                            egui::FontId::proportional(font_size),
+                            egui::Color32::RED,
+                        );
                     }
                 }
             });
@@ -506,8 +607,6 @@ impl CRRRenderTile {
         chan_wire_stroke: f32,
         tile_draw_area: &egui::Rect,
     ) -> CRRRenderTile {
-        let pin_mapper = &tile.pin_mapper;
-
         let sub_tile_size = tile_draw_area.size() / 2.0;
         let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
         let chan_y_rect = egui::Rect::from_min_size(tile_draw_area.min + sub_tile_size, sub_tile_size);
@@ -546,9 +645,9 @@ impl CRRRenderTile {
             lb_area_rect.size() / 1.25,
         );
         let lb_color = color_scheme::grid_lb_color(false);
-        let logic_block_renderer = build_render_tile(&tile, &lb_rect, &lb_color, &pin_mapper);
+        let logic_block_renderer = build_render_tile(&tile, &lb_rect, &lb_color);
         let logic_block_connections = Self::build_lb_connection_shapes(
-            &pin_mapper,
+            &tile.pin_mapper,
             crr_sb,
             crr_sb_info,
             spacing_between_points,

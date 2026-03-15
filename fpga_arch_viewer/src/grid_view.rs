@@ -498,7 +498,7 @@ fn render_grid_controls_panel(
     grid_changed
 }
 
-fn get_layout_name(arch: &FPGAArch, index: usize) -> String {
+pub fn get_layout_name(arch: &FPGAArch, index: usize) -> String {
     if let Some(layout) = arch.layouts.layout_list.get(index) {
         match &layout {
             fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),

@@ -79,7 +79,7 @@ fn parse_sb_maps_yaml(sb_maps_file_path: &Path) -> Result<SBMaps, String> {
     parse_sb_maps_yaml_from_string(&sb_maps_str)
 }
 
-fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {
+pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {
 
     let docs = YamlLoader::load_from_str(sb_maps_str);
     let docs = match docs {

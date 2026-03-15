@@ -30,7 +30,6 @@ pub fn build_render_tile(
     tile: &Tile,
     tile_bounding_box: &egui::Rect,
     color: &egui::Color32,
-    pin_mapper: &TilePinMapper,
 ) -> TileRenderer {
     // Build the logic block. For now its just a rectangle the size of the tile.
     let mut lb_shapes: Vec<egui::Shape> = Vec::new();
@@ -70,14 +69,14 @@ pub fn build_render_tile(
     }
 
     // Get the locations of the pins.
-    let mut pin_locations: Vec<Vec<egui::Vec2>> = vec![Vec::new(); pin_mapper.num_pins_in_tile];
-    let mut pin_shapes: Vec<egui::Shape> = Vec::with_capacity(pin_mapper.num_pins_in_tile);
+    let mut pin_locations: Vec<Vec<egui::Vec2>> = vec![Vec::new(); tile.pin_mapper.num_pins_in_tile];
+    let mut pin_shapes: Vec<egui::Shape> = Vec::with_capacity(tile.pin_mapper.num_pins_in_tile);
     // TODO: To handle offsets, we need to have TileW x TileH of these.
     let mut top_pins: Vec<usize> = Vec::new();
     let mut bottom_pins: Vec<usize> = Vec::new();
     let mut left_pins: Vec<usize> = Vec::new();
     let mut right_pins: Vec<usize> = Vec::new();
-    for (pin_index, pin_locs) in pin_mapper.pin_locs.iter().enumerate() {
+    for (pin_index, pin_locs) in tile.pin_mapper.pin_locs.iter().enumerate() {
         for pin_loc in pin_locs {
             // TODO: Handle xoffset and yoffset
             match pin_loc.side {

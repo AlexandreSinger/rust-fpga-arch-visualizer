@@ -173,7 +173,7 @@ impl TileView {
                         .get(&tile.name)
                         .copied()
                         .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
-                    let tile_renderer = build_render_tile(&tile, &tile_bounding_box, &color, &tile.pin_mapper);
+                    let tile_renderer = build_render_tile(&tile, &tile_bounding_box, &color);
                     painter.extend(tile_renderer.lb_shapes);
                     painter.extend(tile_renderer.pin_shapes);
 

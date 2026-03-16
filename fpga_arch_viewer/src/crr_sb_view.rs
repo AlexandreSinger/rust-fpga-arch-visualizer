@@ -6,7 +6,7 @@ use crr_sb_parser::{
 };
 use fpga_arch_parser::{FPGAArch, Layout, Tile, TilePinMapper};
 
-use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string}, grid::DeviceGrid, grid_view::get_layout_name, tile_rendering::tile_renderer::{TileRenderer, build_render_tile}};
+use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{parse_sb_maps_yaml_from_string, SBMapTemplate, SBMaps}, grid::{DeviceGrid, GridCell}, grid_view::get_layout_name, tile_rendering::tile_renderer::{build_render_tile, TileRenderer}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -16,6 +16,8 @@ pub struct CRRViewState {
     pub selected_layout_index: usize,
 
     sb_maps: SBMaps,
+    switch_blocks: HashMap<String, (CRRSwitchBlockDeserialized, CRRSwitchBlock)>,
+    selected_dir: Option<String>,
 }
 
 impl Default for CRRViewState {
@@ -64,6 +66,8 @@ SB_MAPS:
             show_lb_pin_connections: false,
             selected_layout_index: 0,
             sb_maps,
+            switch_blocks: HashMap::new(),
+            selected_dir: None,
         }
     }
 }
@@ -77,8 +81,6 @@ struct CRRRenderTile {
 }
 
 pub struct CRRSBView {
-    crr_sb_info: Option<crr_sb_parser::CRRSwitchBlockDeserialized>,
-    crr_sb: Option<CRRSwitchBlock>,
     zoom_factor: f32,
     last_error: Option<String>,
 
@@ -88,8 +90,6 @@ pub struct CRRSBView {
 impl Default for CRRSBView {
     fn default() -> Self {
         Self {
-            crr_sb_info: None,
-            crr_sb: None,
             zoom_factor: 1.0,
             last_error: None,
             crr_view_state: CRRViewState::default(),
@@ -99,30 +99,36 @@ impl Default for CRRSBView {
 
 impl CRRSBView {
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_crr_csv_file(&mut self, file_path: std::path::PathBuf) {
-        self.crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
-            Ok(crr_sb_info) => {
-                self.last_error = None;
-                Some(crr_sb_info)
-            }
-            Err(e) => {
-                self.last_error = Some(e.to_string());
-                None
-            }
-        };
-
-        if let Some(crr_sb_info) = &self.crr_sb_info {
-            self.crr_sb = match get_crr_switch_block(crr_sb_info) {
-                Ok(crr_sb) => {
+    fn load_crr_csv_dir(&mut self, dir_path: std::path::PathBuf) {
+        for unique_file in self.crr_view_state.sb_maps.get_unique_file_names() {
+            // Create the CSV file path.
+            let file_path = dir_path.join(unique_file);
+            // Parse the CSV file.
+            let crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
+                Ok(crr_sb_info) => {
                     self.last_error = None;
-                    Some(crr_sb)
+                    crr_sb_info
                 }
                 Err(e) => {
                     self.last_error = Some(e.to_string());
-                    None
+                    return;
                 }
-            }
+            };
+            // Prepare the switch block.
+            let crr_sb = match get_crr_switch_block(&crr_sb_info) {
+                Ok(crr_sb) => {
+                    self.last_error = None;
+                    crr_sb
+                }
+                Err(e) => {
+                    self.last_error = Some(e.to_string());
+                    return;
+                }
+            };
+            // Store the switch block info.
+            self.crr_view_state.switch_blocks.insert(unique_file.clone(), (crr_sb_info, crr_sb));
         }
+        self.crr_view_state.selected_dir = Some(dir_path.into_os_string().into_string().expect("AHHHH!"));
     }
 
     pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
@@ -189,52 +195,55 @@ impl CRRSBView {
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
-        if let Some(crr_sb_info) = &self.crr_sb_info {
-            if let Some(crr_sb) = &self.crr_sb {
-                // Handle zoom input (Cmd + scroll wheel or pinch gesture)
-                let input = ui.input(|i| {
-                    let scroll_delta = i.raw_scroll_delta.y;
-                    let zoom_modifier = i.modifiers.command;
-                    (scroll_delta, zoom_modifier)
-                });
-                let (scroll_delta, zoom_modifier) = input;
-                if zoom_modifier && scroll_delta != 0.0 {
-                    if scroll_delta > 0.0 {
-                        self.zoom_factor *= 1.1;
-                    } else {
-                        self.zoom_factor /= 1.1;
-                    }
+        if let Some(error_msg) = &self.last_error {
+            ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            return;
+        }
+        if self.crr_view_state.selected_dir.is_some() {
+            // Handle zoom input (Cmd + scroll wheel or pinch gesture)
+            let input = ui.input(|i| {
+                let scroll_delta = i.raw_scroll_delta.y;
+                let zoom_modifier = i.modifiers.command;
+                (scroll_delta, zoom_modifier)
+            });
+            let (scroll_delta, zoom_modifier) = input;
+            if zoom_modifier && scroll_delta != 0.0 {
+                if scroll_delta > 0.0 {
+                    self.zoom_factor *= 1.1;
+                } else {
+                    self.zoom_factor /= 1.1;
                 }
-                // Check for pinch gesture (trackpad zoom on macOS)
-                let zoom_delta = ui.input(|i| i.zoom_delta());
-                if zoom_delta != 1.0 {
-                    self.zoom_factor *= zoom_delta;
-                }
-
-                if let Some(Layout::FixedLayout(_)) = arch.layouts.layout_list.get(self.crr_view_state.selected_layout_index) {
-                    let grid = DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
-                    self.render_crr_sb(&self.crr_view_state, crr_sb, crr_sb_info, &self.crr_view_state.sb_maps, &grid, arch, ui);
-                }
-            } else if let Some(error_msg) = &self.last_error {
-                ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
-            } else {
-                ui.label("Error occurred while interpreting the CRR SB.");
             }
+            // Check for pinch gesture (trackpad zoom on macOS)
+            let zoom_delta = ui.input(|i| i.zoom_delta());
+            if zoom_delta != 1.0 {
+                self.zoom_factor *= zoom_delta;
+            }
+
+            if let Some(Layout::FixedLayout(_)) = arch.layouts.layout_list.get(self.crr_view_state.selected_layout_index) {
+                let grid = DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
+                self.render_crr_sb(&self.crr_view_state, &grid, arch, ui);
+            }
+            // } else if let Some(error_msg) = &self.last_error {
+            //     ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            // } else {
+            //     ui.label("Error occurred while interpreting the CRR SB.");
+            // }
         } else {
             ui.label("The CRR View is currently under development.");
             if let Some(error_msg) = &self.last_error {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             }
             #[cfg(not(target_arch = "wasm32"))]
-            if ui.button("Select CSV file to view").clicked() {
+            if ui.button("Select directory containing CSV files.").clicked() {
                 // TODO: Make this cleaner by combining with view.
                 // TODO: Add WASM support.
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("CRR CSV Files", &["csv"])
-                    .set_title("Open CRR CSV File")
-                    .pick_file()
+                    // .add_filter("CRR CSV Files", &["csv"])
+                    .set_title("Open CRR CSV Directory")
+                    .pick_folder()
                 {
-                    self.load_crr_csv_file(path);
+                    self.load_crr_csv_dir(path);
                 }
             }
 
@@ -246,9 +255,6 @@ impl CRRSBView {
     fn render_crr_sb(
         &self,
         crr_view_state: &CRRViewState,
-        crr_sb: &CRRSwitchBlock,
-        crr_sb_info: &CRRSwitchBlockDeserialized,
-        sb_maps: &SBMaps,
         grid: &DeviceGrid,
         arch: &FPGAArch,
         ui: &mut egui::Ui,
@@ -259,7 +265,12 @@ impl CRRSBView {
                 let grid_w = grid.width;
                 let grid_h = grid.height;
 
-                let max_chan_w = crr_sb.chan_x_width.max(crr_sb.chan_y_width);
+                let mut max_chan_w = 2;
+                for unique_file in self.crr_view_state.sb_maps.get_unique_file_names() {
+                    let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[unique_file];
+                    max_chan_w = max_chan_w.max(crr_sb.chan_x_width.max(crr_sb.chan_y_width));
+                }
+
                 let smaller_available_size = ui.available_height().min(ui.available_width());
                 let spacing_between_points =
                     ((smaller_available_size / max_chan_w as f32) / 2.0) * self.zoom_factor;
@@ -277,40 +288,82 @@ impl CRRSBView {
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
                 let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
-                let tile = arch.tiles.iter().find(|&tile| {
-                    tile.name == "clb"
-                });
-                let tile = match tile {
-                    Some(t) => t,
-                    None => {
-                        panic!("Could not find clb tile. Hardcoded badness.");
-                    }
-                };
-                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area);
+                // let tile = arch.tiles.iter().find(|&tile| {
+                //     tile.name == "clb"
+                // });
+                // let tile = match tile {
+                //     Some(t) => t,
+                //     None => {
+                //         panic!("Could not find clb tile. Hardcoded badness.");
+                //     }
+                // };
+                // let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area);
 
                 let offset = response.rect.min;
 
+                let mut lazy_render_tile_cache: HashMap<(String, String), CRRRenderTile> = HashMap::new();
+
                 for i in 0..grid_w {
                     for j in 0..grid_h {
-                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * j as f32);
-                        Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
+                        let tile_name = match grid.get(j, i, 0) {
+                            Some(GridCell::BlockAnchor { pb_type, width, height }) => {
+                                pb_type
+                            },
+                            Some(GridCell::BlockOccupied { pb_type, anchor_row, anchor_col }) => {
+                                pb_type
+                            },
+                            _ => continue,
+                        };
+                        let crr_sb_template_file_name = match self.crr_view_state.sb_maps.get_sb_template(i, j) {
+                            Some(SBMapTemplate::File { file_name }) => {
+                                file_name
+                            },
+                            _ => continue,
+                        };
+                        let render_tile = match lazy_render_tile_cache.get(&(tile_name.clone(), crr_sb_template_file_name.clone())) {
+                            Some(r) => r,
+                            None => {
+                                let tile = arch.tiles.iter().find(|&tile| {
+                                    tile.name == *tile_name
+                                });
+                                let tile = match tile {
+                                    Some(t) => t,
+                                    None => continue,
+                                };
+                                let (crr_sb_info, crr_sb) = match self.crr_view_state.sb_maps.get_sb_template(i, j) {
+                                    Some(SBMapTemplate::File { file_name }) => {
+                                        &self.crr_view_state.switch_blocks[file_name]
+                                    },
+                                    _ => continue,
+                                };
+                                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area);
 
-                        let sb_template = sb_maps.get_sb_template(i, j);
-                        let text = match &sb_template {
-                            Some(SBMapTemplate::Null) => "NULL",
-                            Some(SBMapTemplate::File { file_name }) => &file_name,
-                            _ => "ERROR",
+                                lazy_render_tile_cache.insert((tile_name.clone(), crr_sb_template_file_name.clone()), render_tile);
+
+                                &lazy_render_tile_cache[&(tile_name.clone(), crr_sb_template_file_name.clone())]
+                            },
                         };
 
-                        let font_size = tile_size.x / 10.0;
+                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
+                        Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
 
-                        painter.text(
-                            tile_offset + tile_size / 2.0,
-                            egui::Align2::CENTER_CENTER,
-                            text,
-                            egui::FontId::proportional(font_size),
-                            egui::Color32::RED,
-                        );
+
+                        // let sb_template = sb_maps.get_sb_template(i, j);
+                        // let text = match &sb_template {
+                        //     Some(SBMapTemplate::Null) => "NULL",
+                        //     Some(SBMapTemplate::File { file_name }) => &file_name,
+                        //     _ => "ERROR",
+                        // };
+
+                        // let font_size = tile_size.x / 10.0;
+
+                        // painter.text(
+                        //     tile_offset + tile_size / 2.0,
+                        //     egui::Align2::CENTER_CENTER,
+                        //     text,
+                        //     egui::FontId::proportional(font_size),
+                        //     egui::Color32::RED,
+                        // );
                     }
                 }
             });
@@ -880,7 +933,7 @@ impl CRRRenderTile {
                     let pin_index = match pin_index {
                         Ok(idx) => idx,
                         Err(e) => {
-                            println!("{e}");
+                            // println!("{e}");
                             continue;
                         }
                     };
@@ -899,7 +952,7 @@ impl CRRRenderTile {
                     let pin_index = match pin_index {
                         Ok(idx) => idx,
                         Err(e) => {
-                            println!("{e}");
+                            // println!("{e}");
                             continue;
                         }
                     };

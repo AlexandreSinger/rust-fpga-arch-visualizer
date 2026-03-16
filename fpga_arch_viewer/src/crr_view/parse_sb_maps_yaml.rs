@@ -1,9 +1,11 @@
-use std::{fs::{self}, path::Path};
+use std::{collections::HashSet, fs::{self}, path::Path};
 
 use yaml_rust::YamlLoader;
 
 pub struct SBMaps {
-    pub patterns: Vec<SBMapPattern>,
+    patterns: Vec<SBMapPattern>,
+
+    unique_file_names: HashSet<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -41,6 +43,10 @@ impl SBMaps {
 
         // If none are matched, return none.
         None
+    }
+
+    pub fn get_unique_file_names(&self) -> &HashSet<String> {
+        return &self.unique_file_names;
     }
 }
 
@@ -111,6 +117,7 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
     }
 
     let mut patterns: Vec<SBMapPattern> = Vec::new();
+    let mut unique_file_names: HashSet<String> = HashSet::new();
     if let Some(sb_patterns_hash) = sb_patterns_yaml.as_hash() {
         for (key, value) in sb_patterns_hash.iter() {
             let sb_pattern_string = match key.as_str() {
@@ -119,7 +126,10 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
             };
             let pattern = parse_sb_pattern(sb_pattern_string)?;
             let sb_template =  match value {
-                yaml_rust::Yaml::String(str) => SBMapTemplate::File { file_name: str.clone() },
+                yaml_rust::Yaml::String(str) => {
+                    unique_file_names.insert(str.clone());
+                    SBMapTemplate::File { file_name: str.clone() }
+                },
                 yaml_rust::Yaml::Null => SBMapTemplate::Null,
                 _ => return Err("SB template expected to be a string or null.".to_string()),
             };
@@ -131,6 +141,7 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
 
     Ok(SBMaps {
         patterns,
+        unique_file_names,
     })
 }
 
@@ -281,6 +292,13 @@ SB_MAPS:
             assert_eq!(*sb_maps.get_sb_template(12, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
         }
 
+        // Check the unique file names all exist.
+        let unique_file_names = sb_maps.get_unique_file_names();
+        assert_eq!(unique_file_names.len(), 3);
+        assert!(unique_file_names.contains("sb_perimeter.csv"));
+        assert!(unique_file_names.contains("sb_dsp.csv"));
+        assert!(unique_file_names.contains("sb_main.csv"));
+
         Ok(())
     }
 
@@ -418,6 +436,22 @@ SB_MAPS:
         assert_eq!(*sb_maps.get_sb_template(5, 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
         assert_eq!(*sb_maps.get_sb_template(15, 20).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
         assert_eq!(*sb_maps.get_sb_template(35, 35).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+
+        // Check the unique file names all exist.
+        let unique_file_names = sb_maps.get_unique_file_names();
+        assert_eq!(unique_file_names.len(), 12);
+        assert!(unique_file_names.contains("sb_io.csv"));
+        assert!(unique_file_names.contains("sb_mult_36_0.csv"));
+        assert!(unique_file_names.contains("sb_mult_36_1.csv"));
+        assert!(unique_file_names.contains("sb_mult_36_2.csv"));
+        assert!(unique_file_names.contains("sb_mult_36_3.csv"));
+        assert!(unique_file_names.contains("sb_memory_0.csv"));
+        assert!(unique_file_names.contains("sb_memory_1.csv"));
+        assert!(unique_file_names.contains("sb_memory_2.csv"));
+        assert!(unique_file_names.contains("sb_memory_3.csv"));
+        assert!(unique_file_names.contains("sb_memory_4.csv"));
+        assert!(unique_file_names.contains("sb_memory_5.csv"));
+        assert!(unique_file_names.contains("sb_main.csv"));
 
         Ok(())
     }

@@ -5,7 +5,7 @@
 //! NOTE: This only draws the logical block. It does not include the switch block
 //!       or the channel wires.
 
-use fpga_arch_parser::{PinSide, Tile, TilePinMapper};
+use fpga_arch_parser::{PinSide, Tile};
 
 use crate::{block_style};
 

@@ -197,9 +197,9 @@ fn test_sb_autogen_w8_fw10_fi8_f04() -> Result<(), CRRSBParseError> {
         CRRSwitchDir::Top,
         CRRSwitchDir::Bottom,
     ];
-    for i in 0..4 {
+    for (i, side) in sides_in_order.iter().enumerate() {
         let chan_sink_node = &res.sink_nodes[i];
-        assert_eq!(chan_sink_node.dir, sides_in_order[i]);
+        assert_eq!(chan_sink_node.dir, *side);
         assert_eq!(chan_sink_node.segment_type, "L4");
         assert_eq!(chan_sink_node.fan_in, Some(30));
         assert_eq!(chan_sink_node.lane_num, 1);

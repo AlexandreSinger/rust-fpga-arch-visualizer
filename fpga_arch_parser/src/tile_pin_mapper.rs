@@ -35,6 +35,7 @@ pub struct TilePinMapper {
 
 impl TilePinMapper {
     pub fn parse_pin_name(&self, pin_name: &str) -> Result<usize, String> {
+        // FIXME: This function may need to be rethought. If the string refers to multiple pins, this will be incorrect.
         let split_pin_string: Vec<&str> = pin_name.split(".").collect();
         // Expect there to only be 2.
         // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
@@ -47,18 +48,18 @@ impl TilePinMapper {
         let (port_name, port_bus_slice) = split_bus_name(port_portion).map_err(|e| { format!("{:?}", e) })?;
         let port_bus = match port_bus_slice {
             Some(bus_slice) => parse_bus(bus_slice).map_err(|e| { format!("{:?}", e) })?,
+            // FIXME: This should be handled.
             None => {return Err("Unsupported: Need to specify the bit.".to_string())},
         };
 
-        if let Some(lookup) = self.pin_index_lookup.get(sub_tile_portion) {
-            if let Some(port_lookup_vec) = lookup[0].get(port_name) {
+        if let Some(lookup) = self.pin_index_lookup.get(sub_tile_portion)
+            && let Some(port_lookup_vec) = lookup[0].get(port_name) {
                 for bit in port_bus {
                     return Ok(port_lookup_vec[bit as usize]);
                 }
             }
-        }
 
-        return Err("Could not find port!".to_string());
+        Err("Could not find port!".to_string())
     }
 }
 
@@ -83,12 +84,12 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
                     let sub_tile_name = if sub_tile.capacity > 1 {
                         format!("{}[{}]", sub_tile.name, sub_tile_cap_index)
                     } else {
-                        format!("{}", sub_tile.name)
+                        sub_tile.name.clone()
                     };
                     let pin_port_name = if num_pins > 1 {
                         format!("{}[{}]", port_name, pin_index - num_pins_in_tile)
                     } else {
-                        format!("{}", port_name)
+                        port_name.clone()
                     };
                     pin_name_lookup.push(format!("{}.{}", sub_tile_name, pin_port_name));
                 }

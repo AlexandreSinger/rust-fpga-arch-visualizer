@@ -1,4 +1,4 @@
-use std::{fs::{self, File}, path::Path};
+use std::{fs::{self}, path::Path};
 
 use yaml_rust::YamlLoader;
 
@@ -278,7 +278,7 @@ SB_MAPS:
 
         // Check that the end step is working for the dsp.
         for i in 2..10 {
-            assert_eq!(*sb_maps.get_sb_template(12, 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+            assert_eq!(*sb_maps.get_sb_template(12, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
         }
 
         Ok(())

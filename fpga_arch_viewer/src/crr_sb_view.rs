@@ -6,7 +6,7 @@ use crr_sb_parser::{
 };
 use fpga_arch_parser::{FPGAArch, Layout, Tile, TilePinMapper};
 
-use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{self, SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string}, grid::DeviceGrid, grid_view::get_layout_name, tile_rendering::tile_renderer::{TileRenderer, build_render_tile}};
+use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string}, grid::DeviceGrid, grid_view::get_layout_name, tile_rendering::tile_renderer::{TileRenderer, build_render_tile}};
 
 pub struct CRRViewState {
     show_segment_connections: bool,

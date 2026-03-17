@@ -34,8 +34,7 @@ pub struct TilePinMapper {
 }
 
 impl TilePinMapper {
-    pub fn parse_pin_name(&self, pin_name: &str) -> Result<usize, String> {
-        // FIXME: This function may need to be rethought. If the string refers to multiple pins, this will be incorrect.
+    pub fn parse_pin_name(&self, pin_name: &str) -> Result<Vec<usize>, String> {
         let split_pin_string: Vec<&str> = pin_name.split(".").collect();
         // Expect there to only be 2.
         // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
@@ -45,21 +44,55 @@ impl TilePinMapper {
         let sub_tile_portion = split_pin_string[0];
         let port_portion = split_pin_string[1];
 
-        let (port_name, port_bus_slice) = split_bus_name(port_portion).map_err(|e| { format!("{:?}", e) })?;
-        let port_bus = match port_bus_slice {
+        // Split the sub-tile name and the bus.
+        let (sub_tile, sub_tile_bus_slice) = split_bus_name(sub_tile_portion).map_err(|e| { format!("{:?}", e) })?;
+        // Get the sub-tile lookup. We will use this to get the capacity of the sub-tile.
+        let sub_tile_lookup = match self.pin_index_lookup.get(sub_tile) {
+            Some(l) => l,
+            None => return Err(format!("Could not find sub-tile for pin: {}", sub_tile)),
+        };
+        let sub_tile_capacity = sub_tile_lookup.len() as i32;
+        // Parse the bus.
+        let sub_tile_bus = match sub_tile_bus_slice {
             Some(bus_slice) => parse_bus(bus_slice).map_err(|e| { format!("{:?}", e) })?,
-            // FIXME: This should be handled.
-            None => {return Err("Unsupported: Need to specify the bit.".to_string())},
+            None => {
+                0..=(sub_tile_capacity - 1)
+            }
         };
 
-        if let Some(lookup) = self.pin_index_lookup.get(sub_tile_portion)
-            && let Some(port_lookup_vec) = lookup[0].get(port_name) {
-                for bit in port_bus {
-                    return Ok(port_lookup_vec[bit as usize]);
-                }
-            }
+        // Split the port name from the bus
+        let (port_name, port_bus_slice) = split_bus_name(port_portion).map_err(|e| { format!("{:?}", e) })?;
+        // Get the number of pins in the port.
+        // Note: Here we assume that each sub-tile with the same name has the same ports.
+        //       This is currently guaranteed by the architecture description.
+        let num_port_pins = match sub_tile_lookup[*sub_tile_bus.start() as usize].get(port_name) {
+            Some(lookup) => lookup.len() as i32,
+            None => return Err(format!("Unable to find port with name: {}", port_name)),
+        };
+        // Parse the bus.
+        let port_bus = match port_bus_slice {
+            Some(bus_slice) => parse_bus(bus_slice).map_err(|e| { format!("{:?}", e) })?,
+            None => {
+                0..=(num_port_pins - 1)
+            },
+        };
 
-        Err("Could not find port!".to_string())
+        // Get the pins.
+        let mut pins: Vec<usize> = Vec::new();
+        for sub_tile_cap_index in sub_tile_bus {
+            if sub_tile_cap_index < 0 || sub_tile_cap_index >= sub_tile_capacity {
+                return Err("Invalid sub tile index.".to_string());
+            }
+            let sub_tile_pin_index_lookup = &sub_tile_lookup[sub_tile_cap_index as usize][port_name];
+            for bit in port_bus.clone() {
+                if bit < 0 || bit >= num_port_pins {
+                    return Err("Invalid port bit position.".to_string());
+                }
+                pins.push(sub_tile_pin_index_lookup[bit as usize]);
+            }
+        }
+
+        Ok(pins)
     }
 }
 

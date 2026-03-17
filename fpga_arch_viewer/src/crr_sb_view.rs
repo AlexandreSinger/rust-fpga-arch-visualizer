@@ -131,14 +131,14 @@ impl CRRSBView {
         self.crr_view_state.selected_dir = Some(dir_path.into_os_string().into_string().expect("AHHHH!"));
     }
 
-    pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
+    pub fn render(&mut self, arch: &FPGAArch, tile_colors: &HashMap<String, egui::Color32>, ctx: &egui::Context) {
         egui::SidePanel::right("crr_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
                 self.render_side_panel(arch, ui);
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, ui);
+            self.render_central_panel(arch, tile_colors, ui);
         });
     }
 
@@ -194,7 +194,7 @@ impl CRRSBView {
         }
     }
 
-    fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
+    fn render_central_panel(&mut self, arch: &FPGAArch, tile_colors: &HashMap<String, egui::Color32>, ui: &mut egui::Ui) {
         if let Some(error_msg) = &self.last_error {
             ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             return;
@@ -222,7 +222,7 @@ impl CRRSBView {
 
             if let Some(Layout::FixedLayout(_)) = arch.layouts.layout_list.get(self.crr_view_state.selected_layout_index) {
                 let grid = DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
-                self.render_crr_sb(&self.crr_view_state, &grid, arch, ui);
+                self.render_crr_sb(&self.crr_view_state, &grid, arch, tile_colors, ui);
             }
             // } else if let Some(error_msg) = &self.last_error {
             //     ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
@@ -257,6 +257,7 @@ impl CRRSBView {
         crr_view_state: &CRRViewState,
         grid: &DeviceGrid,
         arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
@@ -303,6 +304,11 @@ impl CRRSBView {
 
                 let mut lazy_render_tile_cache: HashMap<(String, String), CRRRenderTile> = HashMap::new();
 
+                let mut tile_lookup: HashMap<String, &Tile> = HashMap::new();
+                for tile in &arch.tiles {
+                    tile_lookup.insert(tile.name.clone(), tile);
+                }
+
                 for i in 0..grid_w {
                     for j in 0..grid_h {
                         let tile_name = match grid.get(j, i, 0) {
@@ -323,9 +329,7 @@ impl CRRSBView {
                         let render_tile = match lazy_render_tile_cache.get(&(tile_name.clone(), crr_sb_template_file_name.clone())) {
                             Some(r) => r,
                             None => {
-                                let tile = arch.tiles.iter().find(|&tile| {
-                                    tile.name == *tile_name
-                                });
+                                let tile = tile_lookup.get(tile_name);
                                 let tile = match tile {
                                     Some(t) => t,
                                     None => continue,
@@ -336,7 +340,7 @@ impl CRRSBView {
                                     },
                                     _ => continue,
                                 };
-                                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area);
+                                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area, tile_colors);
 
                                 lazy_render_tile_cache.insert((tile_name.clone(), crr_sb_template_file_name.clone()), render_tile);
 
@@ -659,6 +663,7 @@ impl CRRRenderTile {
         spacing_between_points: f32,
         chan_wire_stroke: f32,
         tile_draw_area: &egui::Rect,
+        tile_colors: &HashMap<String, egui::Color32>,
     ) -> CRRRenderTile {
         let sub_tile_size = tile_draw_area.size() / 2.0;
         let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
@@ -697,7 +702,10 @@ impl CRRRenderTile {
             ((lb_area_rect.size() / 2.0) + lb_area_rect.min.to_vec2()).to_pos2(),
             lb_area_rect.size() / 1.25,
         );
-        let lb_color = color_scheme::grid_lb_color(false);
+        let lb_color = match tile_colors.get(&tile.name) {
+            Some(c) => *c,
+            None => color_scheme::grid_lb_color(false),
+        };
         let logic_block_renderer = build_render_tile(&tile, &lb_rect, &lb_color);
         let logic_block_connections = Self::build_lb_connection_shapes(
             &tile.pin_mapper,
@@ -929,43 +937,51 @@ impl CRRRenderTile {
             let src_node_locs = if src_node.dir == CRRSwitchDir::OPIN {
                 // TODO: Clean this up.
                 if let CRRSwitchSourcePin::Pin { pin_name } = &src_node.source_pin {
-                    let pin_index = pin_mapper.parse_pin_name(pin_name);
-                    let pin_index = match pin_index {
+                    let pin_indices = pin_mapper.parse_pin_name(pin_name);
+                    let pin_indices = match pin_indices {
                         Ok(idx) => idx,
                         Err(e) => {
                             // println!("{e}");
                             continue;
                         }
                     };
-                    &logic_block_renderer.pin_locations[pin_index]
+                    let mut pin_locs = Vec::new();
+                    for pin_index in pin_indices {
+                        pin_locs.append(&mut logic_block_renderer.pin_locations[pin_index].clone())
+                    }
+                    pin_locs
                 } else {
                     continue;
                 }
             } else {
-                &vec![(get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
+                vec![(get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
             };
 
             let sink_node_locs = if sink_node.dir == CRRSwitchDir::IPIN {
                 // TODO: Clean this up.
                 if let Some(pin_name) = &sink_node.target_pin {
-                    let pin_index = pin_mapper.parse_pin_name(pin_name);
-                    let pin_index = match pin_index {
+                    let pin_indices = pin_mapper.parse_pin_name(pin_name);
+                    let pin_indices = match pin_indices {
                         Ok(idx) => idx,
                         Err(e) => {
                             // println!("{e}");
                             continue;
                         }
                     };
-                    &logic_block_renderer.pin_locations[pin_index]
+                    let mut pin_locs = Vec::new();
+                    for pin_index in pin_indices {
+                        pin_locs.append(&mut logic_block_renderer.pin_locations[pin_index].clone())
+                    }
+                    pin_locs
                 } else {
                     continue;
                 }
             } else {
-                &vec![(get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
+                vec![(get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
             };
 
             for src_node_loc in src_node_locs {
-                for sink_node_loc in sink_node_locs {
+                for sink_node_loc in &sink_node_locs {
                     lb_connection_shapes.push(egui::Shape::line_segment(
                         [
                             src_node_loc.to_pos2(),

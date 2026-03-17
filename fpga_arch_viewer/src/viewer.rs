@@ -633,7 +633,7 @@ impl FpgaViewer {
                     self.viewer_ctx.dark_mode,
                     ctx,
                 ),
-                ViewMode::CRRSwitchBlock => self.crr_sb_view.render(arch, ctx),
+                ViewMode::CRRSwitchBlock => self.crr_sb_view.render(arch, &self.grid_view.tile_colors, ctx),
             },
             None => {
                 // If no architecture is loaded, no view can be seen, so show a welcome message.

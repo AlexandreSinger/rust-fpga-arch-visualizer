@@ -15,7 +15,8 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check models.
-    assert_eq!(res.models.len(), 0);
+    // Should have the 4 built-in models.
+    assert_eq!(res.models.len(), 4);
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 2);
@@ -229,8 +230,9 @@ fn test_vtr_flagship_parse() -> Result<(), FPGAArchParseError> {
     let res = fpga_arch_parser::parse(&input_xml)?;
 
     // Check models.
-    assert_eq!(res.models.len(), 4);
-    let multiply_model = &res.models[0];
+    // There are 4 specified in the file and 4 built-in.
+    assert_eq!(res.models.len(), 4 + 4);
+    let multiply_model = &res.models[4];
     assert_eq!(multiply_model.name, "multiply");
     assert_eq!(multiply_model.input_ports.len(), 2);
     let multiply_model_port_a = &multiply_model.input_ports[0];

@@ -15,6 +15,7 @@ use crate::common_ui;
 use crate::complex_block_view::ComplexBlockView;
 use crate::crr_sb_view::CRRSBView;
 use crate::grid_view::GridView;
+use crate::primitive_view::PrimitiveView;
 use crate::samples::SampleArchitecture;
 use crate::settings;
 use crate::summary_view::SummaryView;
@@ -33,6 +34,7 @@ pub enum ViewMode {
     Grid,
     Tile,
     ComplexBlock,
+    Primitive,
     CRRSwitchBlock,
 }
 
@@ -74,6 +76,7 @@ pub struct FpgaViewer {
     grid_view: GridView,
     tile_view: TileView,
     complex_block_view: ComplexBlockView,
+    primitive_view: PrimitiveView,
     crr_sb_view: CRRSBView,
 
     view_mode: ViewMode,
@@ -250,6 +253,7 @@ impl FpgaViewer {
             grid_view: GridView::default(),
             tile_view: TileView::default(),
             complex_block_view: ComplexBlockView::default(),
+            primitive_view: PrimitiveView::default(),
             crr_sb_view: CRRSBView::default(),
             view_mode: ViewMode::Summary,
             next_view_mode: ViewMode::Summary,
@@ -560,6 +564,10 @@ impl FpgaViewer {
                         self.next_view_mode = ViewMode::ComplexBlock;
                         ui.close();
                     }
+                    if ui.button("Primitive View").clicked() {
+                        self.next_view_mode = ViewMode::Primitive;
+                        ui.close();
+                    }
                     if ui.button("CRR Switch Block View").clicked() {
                         self.next_view_mode = ViewMode::CRRSwitchBlock;
                         ui.close();
@@ -629,6 +637,7 @@ impl FpgaViewer {
                     self.viewer_ctx.dark_mode,
                     ctx,
                 ),
+                ViewMode::Primitive => self.primitive_view.render(arch, ctx),
                 ViewMode::CRRSwitchBlock => self.crr_sb_view.render(ctx),
             },
             None => {

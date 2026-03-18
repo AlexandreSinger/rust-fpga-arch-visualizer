@@ -13,6 +13,7 @@ mod grid_view;
 mod intra_block_drawing;
 mod intra_hierarchy_tree;
 mod intra_tile;
+mod primitive_view;
 mod samples;
 mod settings;
 mod summary_view;

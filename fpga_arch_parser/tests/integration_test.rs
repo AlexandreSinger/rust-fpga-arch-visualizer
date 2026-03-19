@@ -17,6 +17,10 @@ fn test_k4_n4_90nm_parse() -> Result<(), FPGAArchParseError> {
     // Check models.
     // Should have the 4 built-in models.
     assert_eq!(res.models.len(), 4);
+    assert_eq!(res.models[0].name, ".input");
+    assert_eq!(res.models[1].name, ".output");
+    assert_eq!(res.models[2].name, ".latch");
+    assert_eq!(res.models[3].name, ".names");
 
     // Check tiles.
     assert_eq!(res.tiles.len(), 2);

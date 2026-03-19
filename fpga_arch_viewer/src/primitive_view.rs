@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use egui::{epaint::QuadraticBezierShape, Color32};
+use egui::{Color32, epaint::QuadraticBezierShape};
 use fpga_arch_parser::{FPGAArch, Model};
 
 pub struct PrimitiveView {
@@ -20,11 +20,7 @@ impl Default for PrimitiveView {
 }
 
 impl PrimitiveView {
-    pub fn render(
-        &mut self,
-        arch: &FPGAArch,
-        ctx: &egui::Context,
-    ) {
+    pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
         egui::SidePanel::right("primitive_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
@@ -78,9 +74,11 @@ impl PrimitiveView {
         ui.label("Primitive View");
         if let Some(selected_model_name) = &self.selected_model_name {
             ui.label(format!("Selected Model: {}", selected_model_name));
-            if let Some(model) = arch.models.iter().find(|&model| {
-                model.name == *selected_model_name
-            }) {
+            if let Some(model) = arch
+                .models
+                .iter()
+                .find(|&model| model.name == *selected_model_name)
+            {
                 self.render_model(model, ui);
             }
         }
@@ -92,7 +90,8 @@ impl PrimitiveView {
             // a sequential block.
             let block_outline = egui::Rect::from_center_size(
                 ui.min_rect().center(),
-                egui::vec2(250.0, ui.available_height() / 2.0));
+                egui::vec2(250.0, ui.available_height() / 2.0),
+            );
             ui.painter().rect(
                 block_outline,
                 egui::CornerRadius::ZERO,
@@ -123,42 +122,76 @@ impl PrimitiveView {
             let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
             let triangle_step_size = block_outline.width() / (clock_ports.len() + 1) as f32;
             for (clk_idx, clock_port) in clock_ports.iter().enumerate() {
-                let triangle_base_center = block_outline.left_bottom() + egui::vec2(triangle_step_size * (clk_idx + 1) as f32, 0.0);
+                let triangle_base_center = block_outline.left_bottom()
+                    + egui::vec2(triangle_step_size * (clk_idx + 1) as f32, 0.0);
                 let triangle_top = triangle_base_center + egui::vec2(0.0, -20.0);
                 let triangle_left = triangle_base_center + egui::vec2(-10.0, 0.0);
                 let triangle_right = triangle_base_center + egui::vec2(10.0, 0.0);
-                ui.painter().line(vec![triangle_left, triangle_top, triangle_right, triangle_left], egui::Stroke::new(1.0, egui::Color32::BLACK));
-
-                let arrow_steiner_point = triangle_base_center + egui::vec2(0.0, 50.0 * (clk_idx + 1) as f32);
-                let arrow_start_point = egui::pos2(
-                    block_outline.left() - 100.0,
-                    arrow_steiner_point.y,
+                ui.painter().line(
+                    vec![triangle_left, triangle_top, triangle_right, triangle_left],
+                    egui::Stroke::new(1.0, egui::Color32::BLACK),
                 );
+
+                let arrow_steiner_point =
+                    triangle_base_center + egui::vec2(0.0, 50.0 * (clk_idx + 1) as f32);
+                let arrow_start_point =
+                    egui::pos2(block_outline.left() - 100.0, arrow_steiner_point.y);
                 // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
-                ui.painter().line(vec![arrow_start_point, arrow_steiner_point, triangle_base_center], egui::Stroke::new(5.0, egui::Color32::BLACK));
-                ui.painter().text(arrow_start_point - egui::vec2(10.0, 0.0), egui::Align2::RIGHT_CENTER, &clock_port.name, egui::FontId::proportional(24.0), egui::Color32::BLACK);
+                ui.painter().line(
+                    vec![arrow_start_point, arrow_steiner_point, triangle_base_center],
+                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                );
+                ui.painter().text(
+                    arrow_start_point - egui::vec2(10.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    &clock_port.name,
+                    egui::FontId::proportional(24.0),
+                    egui::Color32::BLACK,
+                );
                 clock_triangle_top.insert(clock_port.name.clone(), triangle_top);
             }
 
             // Draw the inputs
             let input_step_size = block_outline.height() / (input_ports.len() + 2) as f32;
             for (input_idx, input_port) in input_ports.iter().enumerate() {
-                let arrow_end_point = block_outline.left_top() + egui::vec2(0.0, input_step_size * (input_idx + 1) as f32);
+                let arrow_end_point = block_outline.left_top()
+                    + egui::vec2(0.0, input_step_size * (input_idx + 1) as f32);
                 let arrow_start_point = arrow_end_point - egui::vec2(100.0, 0.0);
-                ui.painter().arrow(arrow_start_point, arrow_end_point - arrow_start_point, egui::Stroke::new(5.0, egui::Color32::BLACK));
-                ui.painter().text(arrow_start_point - egui::vec2(10.0, 0.0), egui::Align2::RIGHT_CENTER, &input_port.name, egui::FontId::proportional(24.0), egui::Color32::BLACK);
+                ui.painter().arrow(
+                    arrow_start_point,
+                    arrow_end_point - arrow_start_point,
+                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                );
+                ui.painter().text(
+                    arrow_start_point - egui::vec2(10.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    &input_port.name,
+                    egui::FontId::proportional(24.0),
+                    egui::Color32::BLACK,
+                );
                 // Draw the setup constraints.
-                if self.show_setup_constraints && let Some(setup_clock_name) = &input_port.clock {
+                if self.show_setup_constraints
+                    && let Some(setup_clock_name) = &input_port.clock
+                {
                     let setup_source_point = match clock_triangle_top.get(setup_clock_name) {
                         Some(p) => p,
                         None => {
-                            ui.painter().debug_text(arrow_end_point, egui::Align2::LEFT_CENTER, egui::Color32::RED, format!("Cannot find clock: {}", setup_clock_name));
-                            continue
+                            ui.painter().debug_text(
+                                arrow_end_point,
+                                egui::Align2::LEFT_CENTER,
+                                egui::Color32::RED,
+                                format!("Cannot find clock: {}", setup_clock_name),
+                            );
+                            continue;
                         }
                     };
                     let setup_sink_point = arrow_end_point;
                     let bezier_shape = QuadraticBezierShape::from_points_stroke(
-                        [*setup_source_point, egui::pos2(setup_source_point.x, setup_sink_point.y), setup_sink_point],
+                        [
+                            *setup_source_point,
+                            egui::pos2(setup_source_point.x, setup_sink_point.y),
+                            setup_sink_point,
+                        ],
                         false,
                         Color32::TRANSPARENT,
                         egui::Stroke::new(0.5, egui::Color32::RED),
@@ -170,22 +203,44 @@ impl PrimitiveView {
             // Draw the outputs
             let output_step_size = block_outline.height() / (output_ports.len() + 2) as f32;
             for (output_idx, output_port) in output_ports.iter().enumerate() {
-                let arrow_start_point = block_outline.right_top() + egui::vec2(0.0, output_step_size * (output_idx + 1) as f32);
+                let arrow_start_point = block_outline.right_top()
+                    + egui::vec2(0.0, output_step_size * (output_idx + 1) as f32);
                 let arrow_end_point = arrow_start_point + egui::vec2(100.0, 0.0);
-                ui.painter().arrow(arrow_start_point, arrow_end_point - arrow_start_point, egui::Stroke::new(5.0, egui::Color32::BLACK));
-                ui.painter().text(arrow_end_point + egui::vec2(10.0, 0.0), egui::Align2::LEFT_CENTER, &output_port.name, egui::FontId::proportional(24.0), egui::Color32::BLACK);
+                ui.painter().arrow(
+                    arrow_start_point,
+                    arrow_end_point - arrow_start_point,
+                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                );
+                ui.painter().text(
+                    arrow_end_point + egui::vec2(10.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    &output_port.name,
+                    egui::FontId::proportional(24.0),
+                    egui::Color32::BLACK,
+                );
                 // Draw the hold constraints.
-                if self.show_hold_constraints && let Some(hold_clock_name) = &output_port.clock {
+                if self.show_hold_constraints
+                    && let Some(hold_clock_name) = &output_port.clock
+                {
                     let hold_source_point = match clock_triangle_top.get(hold_clock_name) {
                         Some(p) => p,
                         None => {
-                            ui.painter().debug_text(arrow_start_point, egui::Align2::RIGHT_CENTER, egui::Color32::RED, format!("Cannot find clock: {}", hold_clock_name));
-                            continue
-                        },
+                            ui.painter().debug_text(
+                                arrow_start_point,
+                                egui::Align2::RIGHT_CENTER,
+                                egui::Color32::RED,
+                                format!("Cannot find clock: {}", hold_clock_name),
+                            );
+                            continue;
+                        }
                     };
                     let hold_sink_point = arrow_start_point;
                     let bezier_shape = QuadraticBezierShape::from_points_stroke(
-                        [*hold_source_point, egui::pos2(hold_source_point.x, hold_sink_point.y), hold_sink_point],
+                        [
+                            *hold_source_point,
+                            egui::pos2(hold_source_point.x, hold_sink_point.y),
+                            hold_sink_point,
+                        ],
                         false,
                         Color32::TRANSPARENT,
                         egui::Stroke::new(0.5, egui::Color32::RED),

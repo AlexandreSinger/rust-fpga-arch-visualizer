@@ -348,26 +348,22 @@ fn get_built_in_models() -> Vec<Model> {
             name: String::from(".input"),
             never_prune: false,
             input_ports: vec![],
-            output_ports: vec![
-                ModelPort {
-                    name: String::from("inpad"),
-                    is_clock: false,
-                    clock: None,
-                    combinational_sink_ports: vec![],
-                },
-            ],
+            output_ports: vec![ModelPort {
+                name: String::from("inpad"),
+                is_clock: false,
+                clock: None,
+                combinational_sink_ports: vec![],
+            }],
         },
         Model {
             name: String::from(".output"),
             never_prune: false,
-            input_ports: vec![
-                ModelPort {
-                    name: String::from("outpad"),
-                    is_clock: false,
-                    clock: None,
-                    combinational_sink_ports: vec![],
-                }
-            ],
+            input_ports: vec![ModelPort {
+                name: String::from("outpad"),
+                is_clock: false,
+                clock: None,
+                combinational_sink_ports: vec![],
+            }],
             output_ports: vec![],
         },
         Model {
@@ -387,34 +383,28 @@ fn get_built_in_models() -> Vec<Model> {
                     combinational_sink_ports: vec![],
                 },
             ],
-            output_ports: vec![
-                ModelPort {
-                    name: String::from("Q"),
-                    is_clock: false,
-                    clock: Some(String::from("clk")),
-                    combinational_sink_ports: vec![],
-                },
-            ],
+            output_ports: vec![ModelPort {
+                name: String::from("Q"),
+                is_clock: false,
+                clock: Some(String::from("clk")),
+                combinational_sink_ports: vec![],
+            }],
         },
         Model {
             name: String::from(".names"),
             never_prune: false,
-            input_ports: vec![
-                ModelPort {
-                    name: String::from("in"),
-                    is_clock: false,
-                    clock: None,
-                    combinational_sink_ports: vec![String::from("out")],
-                },
-            ],
-            output_ports: vec![
-                ModelPort {
-                    name: String::from("out"),
-                    is_clock: false,
-                    clock: None,
-                    combinational_sink_ports: vec![],
-                },
-            ],
+            input_ports: vec![ModelPort {
+                name: String::from("in"),
+                is_clock: false,
+                clock: None,
+                combinational_sink_ports: vec![String::from("out")],
+            }],
+            output_ports: vec![ModelPort {
+                name: String::from("out"),
+                is_clock: false,
+                clock: None,
+                combinational_sink_ports: vec![],
+            }],
         },
     ]
 }

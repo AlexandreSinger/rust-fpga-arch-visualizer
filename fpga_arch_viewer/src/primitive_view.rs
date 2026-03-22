@@ -959,8 +959,10 @@ impl PrimitiveView {
                     ),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                // Output FF: the clock-to-Q delay (clock → Q output) is annotated on the
-                // clock-to-Q arc inside the FF symbol.
+                // Output FF: annotate both setup/hold (internal D→clock) and clock-to-Q.
+                // Some blocks (e.g. RAMs) specify T_setup on output ports for internal
+                // output registers, in addition to T_clock_to_Q for the external output.
+                let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
                 let ctq_ann = match delays {
                     None => DelayAnnotation::NotActive,
                     Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
@@ -975,7 +977,7 @@ impl PrimitiveView {
                 };
                 draw_flip_flop(
                     &ff_outline,
-                    &DelayAnnotation::NotActive,
+                    &setup_ann,
                     &ctq_ann,
                     self.show_setup_constraints,
                     self.show_clock_to_q,
@@ -1013,14 +1015,27 @@ impl PrimitiveView {
                     egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET * zoom),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                // Input FF: the setup time (D → clock) is annotated on the setup arc inside
-                // the FF symbol.
-                let setup_ann =
-                    build_setup_hold_annotation(delays, &port.name, clock_name);
+                // Input FF: annotate both setup/hold (D→clock) and clock-to-Q.
+                // Some blocks (e.g. RAMs) specify T_clock_to_Q on input ports for
+                // internal input registers, in addition to T_setup for the external
+                // input constraint.
+                let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
+                let ctq_ann = match delays {
+                    None => DelayAnnotation::NotActive,
+                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
+                        Some((min, max)) => DelayAnnotation::Present(format!(
+                            "Tcq = {}",
+                            format_delay_range(min, max)
+                        )),
+                        None => DelayAnnotation::Missing(
+                            "Tcq = ⚠ MISSING".to_string(),
+                        ),
+                    },
+                };
                 draw_flip_flop(
                     &ff_outline,
                     &setup_ann,
-                    &DelayAnnotation::NotActive,
+                    &ctq_ann,
                     self.show_setup_constraints,
                     self.show_clock_to_q,
                     zoom,

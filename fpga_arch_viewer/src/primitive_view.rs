@@ -189,44 +189,60 @@ impl PrimitiveView {
 
         ui.label("Timing Constraints:");
         ui.add_space(4.0);
-        constraint_checkbox(ui, &mut self.show_setup_constraints, "Setup Constraints", SETUP_COLOR);
+        constraint_checkbox(
+            ui,
+            &mut self.show_setup_constraints,
+            "Setup Constraints",
+            SETUP_COLOR,
+        );
         ui.add_space(4.0);
-        constraint_checkbox(ui, &mut self.show_hold_constraints, "Hold Constraints", HOLD_COLOR);
+        constraint_checkbox(
+            ui,
+            &mut self.show_hold_constraints,
+            "Hold Constraints",
+            HOLD_COLOR,
+        );
         ui.add_space(4.0);
-        constraint_checkbox(ui, &mut self.show_combinational_paths, "Combinational Paths", COMB_PATH_COLOR);
+        constraint_checkbox(
+            ui,
+            &mut self.show_combinational_paths,
+            "Combinational Paths",
+            COMB_PATH_COLOR,
+        );
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
-        if let Some(selected_model_name) = &self.selected_model_name {
-            if let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name) {
-                // Handle zoom via Cmd+scroll and pinch gestures when the pointer is over the canvas.
-                // This must happen before the ScrollArea is created so we can consume scroll
-                // events that should zoom rather than scroll.
-                if ui.rect_contains_pointer(ui.max_rect()) {
-                    let zoom_delta = ui.input_mut(|i| {
-                        // Pinch-to-zoom on trackpad.
-                        let mut delta = i.zoom_delta();
-                        // Cmd+scroll wheel.
-                        if i.modifiers.command && i.smooth_scroll_delta.y != 0.0 {
-                            delta *= (i.smooth_scroll_delta.y * SCROLL_ZOOM_SENSITIVITY).exp();
-                            // Consume the scroll so the ScrollArea does not also pan.
-                            i.smooth_scroll_delta = egui::Vec2::ZERO;
-                            i.raw_scroll_delta = egui::Vec2::ZERO;
-                        }
-                        delta
-                    });
-                    if (zoom_delta - 1.0).abs() > f32::EPSILON {
-                        self.zoom = Some((self.effective_zoom() * zoom_delta).clamp(ZOOM_MIN, ZOOM_MAX));
+        if let Some(selected_model_name) = &self.selected_model_name
+            && let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name)
+        {
+            // Handle zoom via Cmd+scroll and pinch gestures when the pointer is over the canvas.
+            // This must happen before the ScrollArea is created so we can consume scroll
+            // events that should zoom rather than scroll.
+            if ui.rect_contains_pointer(ui.max_rect()) {
+                let zoom_delta = ui.input_mut(|i| {
+                    // Pinch-to-zoom on trackpad.
+                    let mut delta = i.zoom_delta();
+                    // Cmd+scroll wheel.
+                    if i.modifiers.command && i.smooth_scroll_delta.y != 0.0 {
+                        delta *= (i.smooth_scroll_delta.y * SCROLL_ZOOM_SENSITIVITY).exp();
+                        // Consume the scroll so the ScrollArea does not also pan.
+                        i.smooth_scroll_delta = egui::Vec2::ZERO;
+                        i.raw_scroll_delta = egui::Vec2::ZERO;
                     }
+                    delta
+                });
+                if (zoom_delta - 1.0).abs() > f32::EPSILON {
+                    self.zoom =
+                        Some((self.effective_zoom() * zoom_delta).clamp(ZOOM_MIN, ZOOM_MAX));
                 }
-
-                let available_size = ui.available_size();
-                egui::ScrollArea::both()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        self.render_model(model, ui, available_size);
-                    });
             }
+
+            let available_size = ui.available_size();
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    self.render_model(model, ui, available_size);
+                });
         }
     }
 
@@ -273,12 +289,20 @@ impl PrimitiveView {
         // Each side needs: ARROW_LENGTH (outside block) + ARROW_GAP + LABEL_MARGIN + label width.
         let font_id = egui::FontId::proportional(PORT_LABEL_FONT_SIZE);
         let measure = |name: &str| -> f32 {
-            ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE).size().x)
+            ui.fonts(|f| {
+                f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            })
         };
-        let max_left_label_width = input_ports.iter().chain(input_clock_ports.iter())
+        let max_left_label_width = input_ports
+            .iter()
+            .chain(input_clock_ports.iter())
             .map(|p| measure(&p.name))
             .fold(0.0_f32, f32::max);
-        let max_right_label_width = output_ports.iter().chain(output_clock_ports.iter())
+        let max_right_label_width = output_ports
+            .iter()
+            .chain(output_clock_ports.iter())
             .map(|p| measure(&p.name))
             .fold(0.0_f32, f32::max);
         let left_padding = ARROW_LENGTH + ARROW_GAP + LABEL_MARGIN + max_left_label_width;
@@ -289,24 +313,36 @@ impl PrimitiveView {
         let block_height = if is_sequential {
             (max_ports + 2) as f32 * PORT_STEP
         } else {
-            let has_flops = input_ports.iter().chain(output_ports.iter()).any(|p| p.clock.is_some());
-            let port_step = if has_flops { FF_HEIGHT + FF_PORT_STEP_PADDING } else { PORT_STEP };
+            let has_flops = input_ports
+                .iter()
+                .chain(output_ports.iter())
+                .any(|p| p.clock.is_some());
+            let port_step = if has_flops {
+                FF_HEIGHT + FF_PORT_STEP_PADDING
+            } else {
+                PORT_STEP
+            };
             (max_ports + 2) as f32 * port_step
         };
 
         // Compute the natural (zoom = 1) canvas dimensions and update the fit zoom.
         let natural_width = left_padding + block_width + right_padding;
         let natural_height = block_height + clock_extra_height + 2.0 * V_MARGIN;
-        self.fit_zoom = (ZOOM_FIT_MARGIN * (available_size.x / natural_width)
-            .min(available_size.y / natural_height))
+        self.fit_zoom = (ZOOM_FIT_MARGIN
+            * (available_size.x / natural_width).min(available_size.y / natural_height))
         .clamp(ZOOM_MIN, ZOOM_MAX);
 
         let zoom = self.effective_zoom();
 
         let block_outline = allocate_block_canvas(
-            ui, block_width, block_height,
-            left_padding, right_padding,
-            clock_extra_height, available_size.x, zoom,
+            ui,
+            block_width,
+            block_height,
+            left_padding,
+            right_padding,
+            clock_extra_height,
+            available_size.x,
+            zoom,
         );
         draw_block_outline(model, block_outline, zoom, ui);
 
@@ -326,7 +362,9 @@ impl PrimitiveView {
     ) {
         // Draw clock triangles along the bottom edge and their wires.
         // Input clocks: wire from the left. Output clocks: wire to the right.
-        let all_clocks: Vec<&ModelPort> = ports.input_clock_ports.iter()
+        let all_clocks: Vec<&ModelPort> = ports
+            .input_clock_ports
+            .iter()
             .chain(ports.output_clock_ports.iter())
             .copied()
             .collect();
@@ -334,11 +372,15 @@ impl PrimitiveView {
         let triangle_step = block_outline.width() / (all_clocks.len() + 1) as f32;
         for (idx, port) in all_clocks.iter().enumerate() {
             let is_output = ports.output_clock_ports.iter().any(|p| p.name == port.name);
-            let base = block_outline.left_bottom()
-                + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
+            let base =
+                block_outline.left_bottom() + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
             let top = base + egui::vec2(0.0, -20.0 * zoom);
             ui.painter().add(egui::Shape::convex_polygon(
-                vec![base + egui::vec2(-10.0 * zoom, 0.0), top, base + egui::vec2(10.0 * zoom, 0.0)],
+                vec![
+                    base + egui::vec2(-10.0 * zoom, 0.0),
+                    top,
+                    base + egui::vec2(10.0 * zoom, 0.0),
+                ],
                 CLOCK_FILL,
                 egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
             ));
@@ -379,7 +421,11 @@ impl PrimitiveView {
         for (idx, port) in ports.input_ports.iter().enumerate() {
             let tip = block_outline.left_top() + egui::vec2(0.0, input_step * (idx + 1) as f32);
             let start = tip - egui::vec2(ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR));
+            ui.painter().arrow(
+                start,
+                tip - start,
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR),
+            );
             ui.painter().text(
                 start - egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::RIGHT_CENTER,
@@ -393,14 +439,19 @@ impl PrimitiveView {
                 let clock_top = match clock_triangle_top.get(clock_name) {
                     Some(p) => p,
                     None => {
-                        ui.painter().debug_text(tip, egui::Align2::LEFT_CENTER, Color32::RED,
-                            format!("Cannot find clock: {clock_name}"));
+                        ui.painter().debug_text(
+                            tip,
+                            egui::Align2::LEFT_CENTER,
+                            Color32::RED,
+                            format!("Cannot find clock: {clock_name}"),
+                        );
                         continue;
                     }
                 };
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, egui::pos2(clock_top.x, tip.y), tip],
-                    false, Color32::TRANSPARENT,
+                    false,
+                    Color32::TRANSPARENT,
                     egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
                 ));
             }
@@ -411,7 +462,11 @@ impl PrimitiveView {
         for (idx, port) in ports.output_ports.iter().enumerate() {
             let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
             let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR));
+            ui.painter().arrow(
+                start,
+                tip - start,
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR),
+            );
             ui.painter().text(
                 tip + egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::LEFT_CENTER,
@@ -425,14 +480,19 @@ impl PrimitiveView {
                 let clock_top = match clock_triangle_top.get(clock_name) {
                     Some(p) => p,
                     None => {
-                        ui.painter().debug_text(start, egui::Align2::RIGHT_CENTER, Color32::RED,
-                            format!("Cannot find clock: {clock_name}"));
+                        ui.painter().debug_text(
+                            start,
+                            egui::Align2::RIGHT_CENTER,
+                            Color32::RED,
+                            format!("Cannot find clock: {clock_name}"),
+                        );
                         continue;
                     }
                 };
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, egui::pos2(clock_top.x, start.y), start],
-                    false, Color32::TRANSPARENT,
+                    false,
+                    Color32::TRANSPARENT,
                     egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
                 ));
             }
@@ -486,7 +546,11 @@ impl PrimitiveView {
             let arrow_start = block_outline.right_top()
                 + egui::vec2(-NON_SEQ_ARROW_INNER * zoom, output_step * (idx + 1) as f32);
             let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR));
+            ui.painter().arrow(
+                arrow_start,
+                arrow_tip - arrow_start,
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR),
+            );
             ui.painter().text(
                 arrow_tip + egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::LEFT_CENTER,
@@ -498,10 +562,19 @@ impl PrimitiveView {
             let mut signal_start = arrow_start;
             if let Some(clock_name) = &port.clock {
                 let ff_outline = egui::Rect::from_min_size(
-                    egui::pos2(signal_start.x - FF_WIDTH * zoom, signal_start.y - FF_PORT_OFFSET * zoom),
+                    egui::pos2(
+                        signal_start.x - FF_WIDTH * zoom,
+                        signal_start.y - FF_PORT_OFFSET * zoom,
+                    ),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, zoom, ui);
+                draw_flip_flop(
+                    &ff_outline,
+                    self.show_setup_constraints,
+                    self.show_hold_constraints,
+                    zoom,
+                    ui,
+                );
                 signal_start -= egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
             }
@@ -514,7 +587,11 @@ impl PrimitiveView {
             let arrow_tip = block_outline.left_top()
                 + egui::vec2(NON_SEQ_ARROW_INNER * zoom, input_step * (idx + 1) as f32);
             let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR));
+            ui.painter().arrow(
+                arrow_start,
+                arrow_tip - arrow_start,
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR),
+            );
             ui.painter().text(
                 arrow_start - egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::RIGHT_CENTER,
@@ -529,7 +606,13 @@ impl PrimitiveView {
                     egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET * zoom),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, zoom, ui);
+                draw_flip_flop(
+                    &ff_outline,
+                    self.show_setup_constraints,
+                    self.show_hold_constraints,
+                    zoom,
+                    ui,
+                );
                 signal_start += egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
             }
@@ -545,7 +628,9 @@ impl PrimitiveView {
                         }
                         None => {
                             ui.painter().debug_text(
-                                arrow_tip, egui::Align2::RIGHT_CENTER, Color32::RED,
+                                arrow_tip,
+                                egui::Align2::RIGHT_CENTER,
+                                Color32::RED,
                                 format!("Cannot find port: {sink_name}"),
                             );
                         }
@@ -578,7 +663,10 @@ fn allocate_block_canvas(
         canvas_rect.left() + extra_x / 2.0 + left_padding * zoom + block_width * zoom / 2.0,
         canvas_rect.top() + V_MARGIN * zoom + block_height * zoom / 2.0,
     );
-    egui::Rect::from_center_size(block_center, egui::vec2(block_width * zoom, block_height * zoom))
+    egui::Rect::from_center_size(
+        block_center,
+        egui::vec2(block_width * zoom, block_height * zoom),
+    )
 }
 
 /// Draws the block rectangle and its name label.
@@ -617,7 +705,9 @@ fn draw_ff_clock_path(
         }
         None => {
             ui.painter().debug_text(
-                ff_outline.center_bottom(), egui::Align2::CENTER_CENTER, Color32::RED,
+                ff_outline.center_bottom(),
+                egui::Align2::CENTER_CENTER,
+                Color32::RED,
                 format!("Unable to find clock: {clock_name}"),
             );
         }
@@ -657,14 +747,16 @@ fn draw_flip_flop(
     if show_setup_constraints {
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, d_port],
-            false, Color32::TRANSPARENT,
+            false,
+            Color32::TRANSPARENT,
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
         ));
     }
     if show_hold_constraints {
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, q_port],
-            false, Color32::TRANSPARENT,
+            false,
+            Color32::TRANSPARENT,
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
         ));
     }
@@ -688,19 +780,30 @@ fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: 
     ui.horizontal(|ui| {
         ui.checkbox(value, "");
         let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
-        let dimmed = if *value { color } else { color.gamma_multiply(0.35) };
+        let dimmed = if *value {
+            color
+        } else {
+            color.gamma_multiply(0.35)
+        };
         ui.painter().line_segment(
             [rect.left_center(), rect.right_center()],
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, dimmed),
         );
         ui.add_space(4.0);
-        let text_color = if *value { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let text_color = if *value {
+            ui.visuals().text_color()
+        } else {
+            ui.visuals().weak_text_color()
+        };
         ui.colored_label(text_color, label);
     });
 }
 
 fn is_sequential_block(model: &Model) -> bool {
     // A sequential block has no combinational timing paths between input and output ports.
-    model.input_ports.iter().chain(model.output_ports.iter())
+    model
+        .input_ports
+        .iter()
+        .chain(model.output_ports.iter())
         .all(|p| p.combinational_sink_ports.is_empty())
 }

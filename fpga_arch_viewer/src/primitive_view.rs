@@ -38,11 +38,22 @@ const ARROW_GAP: f32 = 10.0;              // Gap between arrow tip and port labe
 const NON_SEQ_ARROW_INNER: f32 = 50.0;
 const NON_SEQ_ARROW_LENGTH: f32 = ARROW_LENGTH + NON_SEQ_ARROW_INNER;
 
+// Zoom constants
+const ZOOM_STEP: f32 = 1.25;
+const ZOOM_MIN: f32 = 0.1;
+const ZOOM_MAX: f32 = 4.0;
+// Leave this fraction of margin around the block when computing the fit zoom.
+const ZOOM_FIT_MARGIN: f32 = 0.9;
+
 pub struct PrimitiveView {
     selected_model_name: Option<String>,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
     show_combinational_paths: bool,
+    /// Current zoom level. 0.0 is a sentinel meaning "auto-fit on next frame".
+    zoom: f32,
+    /// Most recently computed fit-to-view zoom, updated each frame by render_model.
+    fit_zoom: f32,
 }
 
 impl Default for PrimitiveView {
@@ -52,6 +63,8 @@ impl Default for PrimitiveView {
             show_setup_constraints: true,
             show_hold_constraints: true,
             show_combinational_paths: true,
+            zoom: 0.0,
+            fit_zoom: 1.0,
         }
     }
 }
@@ -96,10 +109,31 @@ impl PrimitiveView {
 
             if selected_model_name_str != self.selected_model_name.as_deref().unwrap_or("") {
                 self.selected_model_name = Some(selected_model_name_str.to_string());
+                self.zoom = 0.0; // Reset to auto-fit when the model changes.
             }
         } else {
             ui.label("No models available in architecture");
         }
+        ui.add_space(10.0);
+
+        // Zoom controls
+        let effective_zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
+        ui.separator();
+        ui.add_space(10.0);
+        ui.label("Zoom:");
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button("−").clicked() {
+                self.zoom = (effective_zoom / ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX);
+            }
+            ui.label(format!("{:.0}%", effective_zoom * 100.0));
+            if ui.button("+").clicked() {
+                self.zoom = (effective_zoom * ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX);
+            }
+            if ui.button("Fit").clicked() {
+                self.zoom = 0.0;
+            }
+        });
         ui.add_space(10.0);
 
         ui.separator();
@@ -128,17 +162,39 @@ impl PrimitiveView {
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
         if let Some(selected_model_name) = &self.selected_model_name {
             if let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name) {
-                let available_width = ui.available_width();
+                // Handle zoom via Cmd+scroll and pinch gestures when the pointer is over the canvas.
+                // This must happen before the ScrollArea is created so we can consume scroll
+                // events that should zoom rather than scroll.
+                if ui.rect_contains_pointer(ui.max_rect()) {
+                    let zoom_delta = ui.input_mut(|i| {
+                        // Pinch-to-zoom on trackpad.
+                        let mut delta = i.zoom_delta();
+                        // Cmd+scroll wheel.
+                        if i.modifiers.command && i.smooth_scroll_delta.y != 0.0 {
+                            delta *= (i.smooth_scroll_delta.y * 0.005).exp();
+                            // Consume the scroll so the ScrollArea does not also pan.
+                            i.smooth_scroll_delta = egui::Vec2::ZERO;
+                            i.raw_scroll_delta = egui::Vec2::ZERO;
+                        }
+                        delta
+                    });
+                    if (zoom_delta - 1.0).abs() > f32::EPSILON {
+                        let effective_zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
+                        self.zoom = (effective_zoom * zoom_delta).clamp(ZOOM_MIN, ZOOM_MAX);
+                    }
+                }
+
+                let available_size = ui.available_size();
                 egui::ScrollArea::both()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        self.render_model(model, ui, available_width);
+                        self.render_model(model, ui, available_size);
                     });
             }
         }
     }
 
-    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_width: f32) {
+    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_size: egui::Vec2) {
         // Classify ports: separate data ports from clocks, and input clocks from output clocks.
         let mut input_ports: Vec<&ModelPort> = Vec::new();
         let mut output_ports: Vec<&ModelPort> = Vec::new();
@@ -160,12 +216,11 @@ impl PrimitiveView {
         }
 
         let max_ports = input_ports.len().max(output_ports.len());
-        // Input and output clocks each occupy their own rows below the block.
         let clock_extra_height =
             (input_clock_ports.len() + output_clock_ports.len()) as f32 * CLOCK_STEP;
         let v_margin = 50.0;
 
-        // Measure label widths to compute exact horizontal padding.
+        // Measure label widths to compute exact horizontal padding (at zoom = 1).
         // Each side needs: ARROW_LENGTH (outside block) + ARROW_GAP + 20px margin + label width.
         let font_id = egui::FontId::proportional(PORT_LABEL_FONT_SIZE);
         let measure = |name: &str| -> f32 {
@@ -180,33 +235,40 @@ impl PrimitiveView {
         let left_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_left_label_width;
         let right_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_right_label_width;
 
-        if is_sequential_block(model) {
-            let block_width = 250.0_f32;
-            let block_height = (max_ports + 2) as f32 * PORT_STEP;
-            let block_outline = allocate_block_canvas(
-                ui, block_width, block_height,
-                left_padding, right_padding,
-                clock_extra_height, v_margin, available_width,
-            );
-            draw_block_outline(model, block_outline, ui);
-            self.render_sequential_block(
-                block_outline, &input_clock_ports, &output_clock_ports,
-                &input_ports, &output_ports, ui,
-            );
+        let block_width = if is_sequential_block(model) { 250.0_f32 } else { 500.0_f32 };
+        let block_height = if is_sequential_block(model) {
+            (max_ports + 2) as f32 * PORT_STEP
         } else {
             let has_flops = input_ports.iter().chain(output_ports.iter()).any(|p| p.clock.is_some());
             let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
-            let block_width = 500.0_f32;
-            let block_height = (max_ports + 2) as f32 * port_step;
-            let block_outline = allocate_block_canvas(
-                ui, block_width, block_height,
-                left_padding, right_padding,
-                clock_extra_height, v_margin, available_width,
+            (max_ports + 2) as f32 * port_step
+        };
+
+        // Compute the natural (zoom = 1) canvas dimensions and update the fit zoom.
+        let natural_width = left_padding + block_width + right_padding;
+        let natural_height = block_height + clock_extra_height + 2.0 * v_margin;
+        self.fit_zoom = (ZOOM_FIT_MARGIN * (available_size.x / natural_width)
+            .min(available_size.y / natural_height))
+        .clamp(ZOOM_MIN, ZOOM_MAX);
+
+        let zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
+
+        let block_outline = allocate_block_canvas(
+            ui, block_width, block_height,
+            left_padding, right_padding,
+            clock_extra_height, v_margin, available_size.x, zoom,
+        );
+        draw_block_outline(model, block_outline, zoom, ui);
+
+        if is_sequential_block(model) {
+            self.render_sequential_block(
+                block_outline, &input_clock_ports, &output_clock_ports,
+                &input_ports, &output_ports, zoom, ui,
             );
-            draw_block_outline(model, block_outline, ui);
+        } else {
             self.render_combinational_block(
                 block_outline, &input_clock_ports, &output_clock_ports,
-                &input_ports, &output_ports, ui,
+                &input_ports, &output_ports, zoom, ui,
             );
         }
     }
@@ -218,11 +280,11 @@ impl PrimitiveView {
         output_clock_ports: &[&ModelPort],
         input_ports: &[&ModelPort],
         output_ports: &[&ModelPort],
+        zoom: f32,
         ui: &mut egui::Ui,
     ) {
         // Draw clock triangles along the bottom edge and their wires.
         // Input clocks: wire from the left. Output clocks: wire to the right.
-        // Both share the same triangle positions spaced across the block bottom.
         let all_clocks: Vec<&ModelPort> = input_clock_ports.iter()
             .chain(output_clock_ports.iter())
             .copied()
@@ -233,38 +295,38 @@ impl PrimitiveView {
             let is_output = output_clock_ports.iter().any(|p| p.name == port.name);
             let base = block_outline.left_bottom()
                 + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
-            let top = base + egui::vec2(0.0, -20.0);
+            let top = base + egui::vec2(0.0, -20.0 * zoom);
             ui.painter().add(egui::Shape::convex_polygon(
-                vec![base + egui::vec2(-10.0, 0.0), top, base + egui::vec2(10.0, 0.0)],
+                vec![base + egui::vec2(-10.0 * zoom, 0.0), top, base + egui::vec2(10.0 * zoom, 0.0)],
                 CLOCK_FILL,
-                egui::Stroke::new(FF_STROKE_WIDTH, CLOCK_COLOR),
+                egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
             ));
 
-            let steiner = base + egui::vec2(0.0, CLOCK_STEP * (idx + 1) as f32);
+            let steiner = base + egui::vec2(0.0, CLOCK_STEP * zoom * (idx + 1) as f32);
             if is_output {
-                let end = egui::pos2(block_outline.right() + ARROW_LENGTH, steiner.y);
+                let end = egui::pos2(block_outline.right() + ARROW_LENGTH * zoom, steiner.y);
                 ui.painter().line(
                     vec![base, steiner, end],
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, CLOCK_COLOR),
                 );
                 ui.painter().text(
-                    end + egui::vec2(ARROW_GAP, 0.0),
+                    end + egui::vec2(ARROW_GAP * zoom, 0.0),
                     egui::Align2::LEFT_CENTER,
                     &port.name,
-                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                     CLOCK_COLOR,
                 );
             } else {
-                let start = egui::pos2(block_outline.left() - ARROW_LENGTH, steiner.y);
+                let start = egui::pos2(block_outline.left() - ARROW_LENGTH * zoom, steiner.y);
                 ui.painter().line(
                     vec![start, steiner, base],
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, CLOCK_COLOR),
                 );
                 ui.painter().text(
-                    start - egui::vec2(ARROW_GAP, 0.0),
+                    start - egui::vec2(ARROW_GAP * zoom, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     &port.name,
-                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                     CLOCK_COLOR,
                 );
             }
@@ -275,13 +337,13 @@ impl PrimitiveView {
         let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
         for (idx, port) in input_ports.iter().enumerate() {
             let tip = block_outline.left_top() + egui::vec2(0.0, input_step * (idx + 1) as f32);
-            let start = tip - egui::vec2(ARROW_LENGTH, 0.0);
-            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR));
+            let start = tip - egui::vec2(ARROW_LENGTH * zoom, 0.0);
+            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR));
             ui.painter().text(
-                start - egui::vec2(ARROW_GAP, 0.0),
+                start - egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::RIGHT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 INPUT_COLOR,
             );
             if self.show_setup_constraints
@@ -298,7 +360,7 @@ impl PrimitiveView {
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, egui::pos2(clock_top.x, tip.y), tip],
                     false, Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
                 ));
             }
         }
@@ -307,13 +369,13 @@ impl PrimitiveView {
         let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
         for (idx, port) in output_ports.iter().enumerate() {
             let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
-            let tip = start + egui::vec2(ARROW_LENGTH, 0.0);
-            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR));
+            let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
+            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR));
             ui.painter().text(
-                tip + egui::vec2(ARROW_GAP, 0.0),
+                tip + egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::LEFT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 OUTPUT_COLOR,
             );
             if self.show_hold_constraints
@@ -330,7 +392,7 @@ impl PrimitiveView {
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, egui::pos2(clock_top.x, start.y), start],
                     false, Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
                 ));
             }
         }
@@ -343,6 +405,7 @@ impl PrimitiveView {
         output_clock_ports: &[&ModelPort],
         input_ports: &[&ModelPort],
         output_ports: &[&ModelPort],
+        zoom: f32,
         ui: &mut egui::Ui,
     ) {
         // Draw clock labels and record their drive points.
@@ -350,14 +413,14 @@ impl PrimitiveView {
         let mut clock_drive_point: HashMap<String, egui::Pos2> = HashMap::new();
         for (idx, port) in input_clock_ports.iter().enumerate() {
             let point = egui::pos2(
-                block_outline.left() - ARROW_LENGTH,
-                block_outline.bottom() + CLOCK_STEP * (idx + 1) as f32,
+                block_outline.left() - ARROW_LENGTH * zoom,
+                block_outline.bottom() + CLOCK_STEP * zoom * (idx + 1) as f32,
             );
             ui.painter().text(
-                point - egui::vec2(ARROW_GAP, 0.0),
+                point - egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::RIGHT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 CLOCK_COLOR,
             );
             clock_drive_point.insert(port.name.clone(), point);
@@ -365,14 +428,14 @@ impl PrimitiveView {
         for (idx, port) in output_clock_ports.iter().enumerate() {
             let row = input_clock_ports.len() + idx + 1;
             let point = egui::pos2(
-                block_outline.right() + ARROW_LENGTH,
-                block_outline.bottom() + CLOCK_STEP * row as f32,
+                block_outline.right() + ARROW_LENGTH * zoom,
+                block_outline.bottom() + CLOCK_STEP * zoom * row as f32,
             );
             ui.painter().text(
-                point + egui::vec2(ARROW_GAP, 0.0),
+                point + egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::LEFT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 CLOCK_COLOR,
             );
             clock_drive_point.insert(port.name.clone(), point);
@@ -383,26 +446,26 @@ impl PrimitiveView {
         let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
         for (idx, port) in output_ports.iter().enumerate() {
             let arrow_start = block_outline.right_top()
-                + egui::vec2(-NON_SEQ_ARROW_INNER, output_step * (idx + 1) as f32);
-            let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH, 0.0);
-            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR));
+                + egui::vec2(-NON_SEQ_ARROW_INNER * zoom, output_step * (idx + 1) as f32);
+            let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
+            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR));
             ui.painter().text(
-                arrow_tip + egui::vec2(ARROW_GAP, 0.0),
+                arrow_tip + egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::LEFT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 OUTPUT_COLOR,
             );
 
             let mut signal_start = arrow_start;
             if let Some(clock_name) = &port.clock {
                 let ff_outline = egui::Rect::from_min_size(
-                    egui::pos2(signal_start.x - FF_WIDTH, signal_start.y - FF_PORT_OFFSET),
-                    egui::vec2(FF_WIDTH, FF_HEIGHT),
+                    egui::pos2(signal_start.x - FF_WIDTH * zoom, signal_start.y - FF_PORT_OFFSET * zoom),
+                    egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, ui);
-                signal_start -= egui::vec2(FF_WIDTH, 0.0);
-                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, ui);
+                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, zoom, ui);
+                signal_start -= egui::vec2(FF_WIDTH * zoom, 0.0);
+                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
             }
             output_signal_start.insert(port.name.clone(), signal_start);
         }
@@ -411,26 +474,26 @@ impl PrimitiveView {
         let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
         for (idx, port) in input_ports.iter().enumerate() {
             let arrow_tip = block_outline.left_top()
-                + egui::vec2(NON_SEQ_ARROW_INNER, input_step * (idx + 1) as f32);
-            let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH, 0.0);
-            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR));
+                + egui::vec2(NON_SEQ_ARROW_INNER * zoom, input_step * (idx + 1) as f32);
+            let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
+            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR));
             ui.painter().text(
-                arrow_start - egui::vec2(ARROW_GAP, 0.0),
+                arrow_start - egui::vec2(ARROW_GAP * zoom, 0.0),
                 egui::Align2::RIGHT_CENTER,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 INPUT_COLOR,
             );
 
             let mut signal_start = arrow_tip;
             if let Some(clock_name) = &port.clock {
                 let ff_outline = egui::Rect::from_min_size(
-                    egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET),
-                    egui::vec2(FF_WIDTH, FF_HEIGHT),
+                    egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET * zoom),
+                    egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
-                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, ui);
-                signal_start += egui::vec2(FF_WIDTH, 0.0);
-                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, ui);
+                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, zoom, ui);
+                signal_start += egui::vec2(FF_WIDTH * zoom, 0.0);
+                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
             }
 
             if self.show_combinational_paths {
@@ -439,7 +502,7 @@ impl PrimitiveView {
                         Some(sink) => {
                             ui.painter().line_segment(
                                 [signal_start, *sink],
-                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, COMB_PATH_COLOR),
+                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, COMB_PATH_COLOR),
                             );
                         }
                         None => {
@@ -455,7 +518,7 @@ impl PrimitiveView {
     }
 }
 
-/// Allocates a canvas of the required size and returns the block outline rect centered within it.
+/// Allocates a scaled canvas and returns the block outline rect centered within it.
 fn allocate_block_canvas(
     ui: &mut egui::Ui,
     block_width: f32,
@@ -465,35 +528,36 @@ fn allocate_block_canvas(
     clock_extra_height: f32,
     v_margin: f32,
     available_width: f32,
+    zoom: f32,
 ) -> egui::Rect {
-    let content_width = left_padding + block_width + right_padding;
+    let content_width = (left_padding + block_width + right_padding) * zoom;
     let canvas_size = egui::vec2(
         content_width.max(available_width),
-        block_height + clock_extra_height + 2.0 * v_margin,
+        (block_height + clock_extra_height + 2.0 * v_margin) * zoom,
     );
     let (canvas_rect, _) = ui.allocate_exact_size(canvas_size, egui::Sense::empty());
     let extra_x = (canvas_rect.width() - content_width).max(0.0);
     let block_center = egui::pos2(
-        canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
-        canvas_rect.top() + v_margin + block_height / 2.0,
+        canvas_rect.left() + extra_x / 2.0 + left_padding * zoom + block_width * zoom / 2.0,
+        canvas_rect.top() + v_margin * zoom + block_height * zoom / 2.0,
     );
-    egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height))
+    egui::Rect::from_center_size(block_center, egui::vec2(block_width * zoom, block_height * zoom))
 }
 
 /// Draws the block rectangle and its name label.
-fn draw_block_outline(model: &Model, block_outline: egui::Rect, ui: &mut egui::Ui) {
+fn draw_block_outline(model: &Model, block_outline: egui::Rect, zoom: f32, ui: &mut egui::Ui) {
     ui.painter().rect(
         block_outline,
-        egui::CornerRadius::same(8),
+        egui::CornerRadius::same((8.0 * zoom) as u8),
         BLOCK_FILL,
-        egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
+        egui::Stroke::new(BLOCK_STROKE_WIDTH * zoom, BLOCK_STROKE_COLOR),
         egui::epaint::StrokeKind::Middle,
     );
     ui.painter().text(
-        block_outline.center_top() + egui::vec2(0.0, 8.0),
+        block_outline.center_top() + egui::vec2(0.0, 8.0 * zoom),
         egui::Align2::CENTER_TOP,
         &model.name,
-        egui::FontId::proportional(MODEL_NAME_FONT_SIZE),
+        egui::FontId::proportional(MODEL_NAME_FONT_SIZE * zoom),
         BLOCK_STROKE_COLOR,
     );
 }
@@ -503,6 +567,7 @@ fn draw_ff_clock_path(
     ff_outline: &egui::Rect,
     clock_name: &str,
     clock_drive_points: &HashMap<String, egui::Pos2>,
+    zoom: f32,
     ui: &mut egui::Ui,
 ) {
     match clock_drive_points.get(clock_name) {
@@ -510,7 +575,7 @@ fn draw_ff_clock_path(
             let steiner = egui::pos2(ff_outline.center().x, drive_point.y);
             ui.painter().line(
                 vec![*drive_point, steiner, ff_outline.center_bottom()],
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, CLOCK_COLOR),
             );
         }
         None => {
@@ -526,13 +591,14 @@ fn draw_flip_flop(
     ff_outline: &egui::Rect,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
+    zoom: f32,
     ui: &mut egui::Ui,
 ) {
     ui.painter().rect(
         *ff_outline,
-        egui::CornerRadius::same(4),
+        egui::CornerRadius::same((4.0 * zoom) as u8),
         FF_FILL,
-        egui::Stroke::new(FF_STROKE_WIDTH, FF_STROKE_COLOR),
+        egui::Stroke::new(FF_STROKE_WIDTH * zoom, FF_STROKE_COLOR),
         egui::epaint::StrokeKind::Middle,
     );
 
@@ -544,25 +610,25 @@ fn draw_flip_flop(
     ui.painter().add(egui::Shape::convex_polygon(
         vec![triangle_bl, triangle_t, triangle_br],
         CLOCK_FILL,
-        egui::Stroke::new(FF_STROKE_WIDTH, CLOCK_COLOR),
+        egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
     ));
 
     // Draw setup and hold constraint curves from the clock triangle to D and Q ports.
-    let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET);
-    let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET);
+    let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
+    let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let control = egui::pos2(triangle_t.x, d_port.y);
     if show_setup_constraints {
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, d_port],
             false, Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
         ));
     }
     if show_hold_constraints {
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, q_port],
             false, Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
         ));
     }
 }

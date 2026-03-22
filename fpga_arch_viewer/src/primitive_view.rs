@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
-use fpga_arch_parser::{FPGAArch, Model, ModelPort, PBType};
+use fpga_arch_parser::{DelayInfo, FPGAArch, Model, ModelPort, PBType, TimingConstraintType};
 
 // --- Visual style constants ---
 
@@ -22,10 +22,17 @@ const SETUP_COLOR: Color32 = Color32::from_rgb(210, 40, 40);
 const HOLD_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
 const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
+/// Color used for missing delay annotations and the constraint arcs they affect.
+const MISSING_COLOR: Color32 = Color32::from_rgb(220, 30, 30);
+/// Subtle color for present delay value labels (shown in tooltips only).
+const DELAY_LABEL_COLOR: Color32 = Color32::from_rgb(60, 60, 60);
+
 const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
 const SIGNAL_STROKE_WIDTH: f32 = 3.0;
 const PORT_LABEL_FONT_SIZE: f32 = 24.0;
 const MODEL_NAME_FONT_SIZE: f32 = 32.0;
+/// Font size for the "⚠ MISSING" annotation labels (at zoom = 1).
+const DELAY_LABEL_FONT_SIZE: f32 = 11.0;
 
 // --- Layout constants ---
 
@@ -84,6 +91,205 @@ impl<'a> PBTypeMatch<'a> {
     /// Returns the path formatted as "a > b > c".
     pub fn path_display(&self) -> String {
         self.path.join(" > ")
+    }
+}
+
+// --- Delay annotation helpers ---
+
+/// State of a single timing annotation for one arc or wire.
+enum DelayAnnotation {
+    /// No pb_type is selected; show nothing.
+    NotActive,
+    /// Pb_type is selected and a matching delay was found. Holds the formatted label.
+    Present(String),
+    /// Pb_type is selected but no matching delay annotation exists — shown prominently.
+    Missing,
+}
+
+/// Looks up delay and timing-constraint annotations from a selected `PBType`.
+struct DelayLookup<'a> {
+    pb_type: &'a PBType,
+}
+
+impl<'a> DelayLookup<'a> {
+    fn new(pb_type: &'a PBType) -> Self {
+        Self { pb_type }
+    }
+
+    /// Strip the "pb_type_name." prefix from port references like `"adder.a"` → `"a"`.
+    fn strip_prefix(port_ref: &str) -> &str {
+        port_ref
+            .split_once('.')
+            .map(|(_, p)| p)
+            .unwrap_or(port_ref)
+    }
+
+    /// Look up a combinational delay from `in_port` to `out_port`.
+    /// Returns `Some((min_s, max_s))` if found, `None` otherwise.
+    fn comb_delay(&self, in_port: &str, out_port: &str) -> Option<(f32, f32)> {
+        for delay in &self.pb_type.delays {
+            match delay {
+                DelayInfo::Constant {
+                    min,
+                    max,
+                    in_port: ip,
+                    out_port: op,
+                } => {
+                    if Self::strip_prefix(ip) == in_port && Self::strip_prefix(op) == out_port {
+                        return Some((*min, *max));
+                    }
+                }
+                DelayInfo::Matrix {
+                    matrix,
+                    in_port: ip,
+                    out_port: op,
+                    ..
+                } => {
+                    if Self::strip_prefix(ip) == in_port && Self::strip_prefix(op) == out_port {
+                        let flat: Vec<f32> = matrix.iter().flatten().copied().collect();
+                        if !flat.is_empty() {
+                            let min = flat.iter().cloned().fold(f32::MAX, f32::min);
+                            let max = flat.iter().cloned().fold(f32::MIN, f32::max);
+                            return Some((min, max));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Look up `T_setup` for `(port, clock)`. Returns `Some(value_s)` if found.
+    fn t_setup(&self, port: &str, clock: &str) -> Option<f32> {
+        self.pb_type
+            .timing_constraints
+            .iter()
+            .find(|tc| {
+                matches!(tc.constraint_type, TimingConstraintType::Setup)
+                    && Self::strip_prefix(&tc.port) == port
+                    && tc.clock == clock
+            })
+            .map(|tc| tc.max_value)
+    }
+
+    /// Look up `T_clock_to_Q` for `(port, clock)`. Returns `Some((min_s, max_s))` if found.
+    fn t_clock_to_q(&self, port: &str, clock: &str) -> Option<(f32, f32)> {
+        self.pb_type
+            .timing_constraints
+            .iter()
+            .find(|tc| {
+                matches!(tc.constraint_type, TimingConstraintType::ClockToQ)
+                    && Self::strip_prefix(&tc.port) == port
+                    && tc.clock == clock
+            })
+            .map(|tc| (tc.min_value, tc.max_value))
+    }
+}
+
+/// Format a delay value in seconds as a human-readable string (ps or ns).
+fn format_delay(v: f32) -> String {
+    let ps = v * 1e12;
+    if ps.abs() >= 1000.0 {
+        format!("{:.3} ns", ps / 1000.0)
+    } else {
+        format!("{:.2} ps", ps)
+    }
+}
+
+/// Format a (min, max) delay range. Shows a single value when min ≈ max.
+fn format_delay_range(min: f32, max: f32) -> String {
+    if (max - min).abs() <= 1e-15 * max.abs().max(1.0) {
+        format_delay(max)
+    } else {
+        format!("{} – {}", format_delay(min), format_delay(max))
+    }
+}
+
+/// Returns the effective stroke color for a timing arc, turning it bright red when missing.
+fn annotation_stroke_color(normal: Color32, ann: &DelayAnnotation) -> Color32 {
+    match ann {
+        DelayAnnotation::Missing => MISSING_COLOR,
+        _ => normal,
+    }
+}
+
+/// Midpoint of a quadratic Bézier at t = 0.5.
+fn bezier_midpoint(p0: egui::Pos2, p1: egui::Pos2, p2: egui::Pos2) -> egui::Pos2 {
+    egui::pos2(
+        0.25 * p0.x + 0.5 * p1.x + 0.25 * p2.x,
+        0.25 * p0.y + 0.5 * p1.y + 0.25 * p2.y,
+    )
+}
+
+/// Draws a timing annotation near `midpoint`:
+/// - `NotActive`: nothing drawn.
+/// - `Present(label)`: invisible hover zone; tooltip shows the delay value on hover.
+/// - `Missing`: always-visible bold **"⚠ MISSING"** in red; tooltip explains on hover.
+///
+/// `id` must be unique per element per frame.
+fn draw_timing_label(
+    ui: &mut egui::Ui,
+    midpoint: egui::Pos2,
+    ann: &DelayAnnotation,
+    zoom: f32,
+    id: egui::Id,
+) {
+    let font_size = DELAY_LABEL_FONT_SIZE * zoom;
+    match ann {
+        DelayAnnotation::NotActive => {}
+        DelayAnnotation::Present(label) => {
+            // Show on hover only — hover is checked by proximity to midpoint.
+            if ui
+                .ctx()
+                .pointer_hover_pos()
+                .map(|p| p.distance(midpoint) < 30.0 * zoom)
+                .unwrap_or(false)
+            {
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    id,
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.label(
+                        egui::RichText::new(label.as_str())
+                            .color(DELAY_LABEL_COLOR)
+                            .monospace(),
+                    );
+                });
+            }
+        }
+        DelayAnnotation::Missing => {
+            // Always-visible warning badge.
+            ui.painter().text(
+                midpoint,
+                egui::Align2::CENTER_CENTER,
+                "⚠ MISSING",
+                egui::FontId::proportional(font_size),
+                MISSING_COLOR,
+            );
+            // Tooltip with explanation on hover.
+            if ui
+                .ctx()
+                .pointer_hover_pos()
+                .map(|p| p.distance(midpoint) < 40.0 * zoom)
+                .unwrap_or(false)
+            {
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    id,
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.label(
+                        egui::RichText::new("⚠  No delay annotation for this path")
+                            .color(MISSING_COLOR),
+                    );
+                });
+            }
+        }
     }
 }
 
@@ -255,6 +461,14 @@ impl PrimitiveView {
         if let Some(selected_model_name) = &self.selected_model_name
             && let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name)
         {
+            // Build a delay lookup for the selected pb_type (if any).
+            let matches = find_pb_types_for_model(arch, selected_model_name);
+            let selected_pb_type = self
+                .selected_pb_type_idx
+                .and_then(|i| matches.get(i))
+                .map(|m| m.pb_type);
+            let delay_lookup = selected_pb_type.map(DelayLookup::new);
+
             // Handle zoom via Cmd+scroll and pinch gestures when the pointer is over the canvas.
             // This must happen before the ScrollArea is created so we can consume scroll
             // events that should zoom rather than scroll.
@@ -279,12 +493,18 @@ impl PrimitiveView {
             egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    self.render_model(model, ui, available_size);
+                    self.render_model(model, delay_lookup.as_ref(), ui, available_size);
                 });
         }
     }
 
-    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_size: egui::Vec2) {
+    fn render_model(
+        &mut self,
+        model: &Model,
+        delays: Option<&DelayLookup<'_>>,
+        ui: &mut egui::Ui,
+        available_size: egui::Vec2,
+    ) {
         // Reset zoom to auto-fit whenever the displayed model changes (e.g. from the combobox
         // or from an external navigation action like the summary view buttons).
         if self.last_rendered_model_name.as_deref() != Some(&model.name) {
@@ -385,9 +605,9 @@ impl PrimitiveView {
         draw_block_outline(model, block_outline, zoom, ui);
 
         if is_sequential {
-            self.render_sequential_block(block_outline, &port_groups, zoom, ui);
+            self.render_sequential_block(block_outline, &port_groups, delays, zoom, ui);
         } else {
-            self.render_combinational_block(block_outline, &port_groups, zoom, ui);
+            self.render_combinational_block(block_outline, &port_groups, delays, zoom, ui);
         }
     }
 
@@ -395,6 +615,7 @@ impl PrimitiveView {
         &self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
+        delays: Option<&DelayLookup<'_>>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
@@ -486,19 +707,37 @@ impl PrimitiveView {
                         continue;
                     }
                 };
+                let control = egui::pos2(clock_top.x, tip.y);
+                let setup_ann = match delays {
+                    None => DelayAnnotation::NotActive,
+                    Some(d) => match d.t_setup(&port.name, clock_name) {
+                        Some(v) => DelayAnnotation::Present(format!("Tsu = {}", format_delay(v))),
+                        None => DelayAnnotation::Missing,
+                    },
+                };
+                let arc_color = annotation_stroke_color(SETUP_COLOR, &setup_ann);
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
-                    [*clock_top, egui::pos2(clock_top.x, tip.y), tip],
+                    [*clock_top, control, tip],
                     false,
                     Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
                 ));
+                let midpoint = bezier_midpoint(*clock_top, control, tip);
+                draw_timing_label(
+                    ui,
+                    midpoint,
+                    &setup_ann,
+                    zoom,
+                    egui::Id::new(("seq_setup", port.name.as_str(), clock_name.as_str())),
+                );
             }
         }
 
-        // Draw output ports with arrows and optional hold constraint curves.
+        // Draw output ports with arrows and optional hold/clock-to-Q constraint curves.
         let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
         for (idx, port) in ports.output_ports.iter().enumerate() {
-            let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
+            let start =
+                block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
             let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
             ui.painter().arrow(
                 start,
@@ -527,12 +766,32 @@ impl PrimitiveView {
                         continue;
                     }
                 };
+                let control = egui::pos2(clock_top.x, start.y);
+                let ctq_ann = match delays {
+                    None => DelayAnnotation::NotActive,
+                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
+                        Some((min, max)) => DelayAnnotation::Present(format!(
+                            "Tcq = {}",
+                            format_delay_range(min, max)
+                        )),
+                        None => DelayAnnotation::Missing,
+                    },
+                };
+                let arc_color = annotation_stroke_color(HOLD_COLOR, &ctq_ann);
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
-                    [*clock_top, egui::pos2(clock_top.x, start.y), start],
+                    [*clock_top, control, start],
                     false,
                     Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
                 ));
+                let midpoint = bezier_midpoint(*clock_top, control, start);
+                draw_timing_label(
+                    ui,
+                    midpoint,
+                    &ctq_ann,
+                    zoom,
+                    egui::Id::new(("seq_ctq", port.name.as_str(), clock_name.as_str())),
+                );
             }
         }
     }
@@ -541,6 +800,7 @@ impl PrimitiveView {
         &self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
+        delays: Option<&DelayLookup<'_>>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
@@ -606,8 +866,22 @@ impl PrimitiveView {
                     ),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
+                // Output FF: the clock-to-Q delay (clock → Q output) is annotated on the
+                // hold/ctq arc inside the FF symbol.
+                let ctq_ann = match delays {
+                    None => DelayAnnotation::NotActive,
+                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
+                        Some((min, max)) => DelayAnnotation::Present(format!(
+                            "Tcq = {}",
+                            format_delay_range(min, max)
+                        )),
+                        None => DelayAnnotation::Missing,
+                    },
+                };
                 draw_flip_flop(
                     &ff_outline,
+                    &DelayAnnotation::NotActive,
+                    &ctq_ann,
                     self.show_setup_constraints,
                     self.show_hold_constraints,
                     zoom,
@@ -644,8 +918,21 @@ impl PrimitiveView {
                     egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET * zoom),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
+                // Input FF: the setup time (D → clock) is annotated on the setup arc inside
+                // the FF symbol.
+                let setup_ann = match delays {
+                    None => DelayAnnotation::NotActive,
+                    Some(d) => match d.t_setup(&port.name, clock_name) {
+                        Some(v) => {
+                            DelayAnnotation::Present(format!("Tsu = {}", format_delay(v)))
+                        }
+                        None => DelayAnnotation::Missing,
+                    },
+                };
                 draw_flip_flop(
                     &ff_outline,
+                    &setup_ann,
+                    &DelayAnnotation::NotActive,
                     self.show_setup_constraints,
                     self.show_hold_constraints,
                     zoom,
@@ -659,9 +946,36 @@ impl PrimitiveView {
                 for sink_name in &port.combinational_sink_ports {
                     match output_signal_start.get(sink_name) {
                         Some(sink) => {
+                            let comb_ann = match delays {
+                                None => DelayAnnotation::NotActive,
+                                Some(d) => match d.comb_delay(&port.name, sink_name) {
+                                    Some((min, max)) => DelayAnnotation::Present(format!(
+                                        "D = {}",
+                                        format_delay_range(min, max)
+                                    )),
+                                    None => DelayAnnotation::Missing,
+                                },
+                            };
+                            let wire_color =
+                                annotation_stroke_color(COMB_PATH_COLOR, &comb_ann);
                             ui.painter().line_segment(
                                 [signal_start, *sink],
-                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, COMB_PATH_COLOR),
+                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, wire_color),
+                            );
+                            let midpoint = egui::pos2(
+                                (signal_start.x + sink.x) / 2.0,
+                                (signal_start.y + sink.y) / 2.0,
+                            );
+                            draw_timing_label(
+                                ui,
+                                midpoint,
+                                &comb_ann,
+                                zoom,
+                                egui::Id::new((
+                                    "comb",
+                                    port.name.as_str(),
+                                    sink_name.as_str(),
+                                )),
                             );
                         }
                         None => {
@@ -752,8 +1066,14 @@ fn draw_ff_clock_path(
     }
 }
 
+/// Draws a flip-flop symbol at `ff_outline`.
+///
+/// `setup_annotation` annotates the clock-to-D setup arc (relevant for input-side FFs).
+/// `ctq_annotation` annotates the clock-to-Q propagation arc (relevant for output-side FFs).
 fn draw_flip_flop(
     ff_outline: &egui::Rect,
+    setup_annotation: &DelayAnnotation,
+    ctq_annotation: &DelayAnnotation,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
     zoom: f32,
@@ -778,25 +1098,49 @@ fn draw_flip_flop(
         egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
     ));
 
-    // Draw setup and hold constraint curves from the clock triangle to D and Q ports.
+    // Draw setup and hold/ctq constraint curves from the clock triangle to D and Q ports.
     let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let control = egui::pos2(triangle_t.x, d_port.y);
+
+    // Use the FF outline's top-left corner (as bit-pattern) to build unique IDs across
+    // multiple FF instances on the same canvas.
+    let ff_id_x = ff_outline.min.x.to_bits();
+    let ff_id_y = ff_outline.min.y.to_bits();
+
     if show_setup_constraints {
+        let arc_color = annotation_stroke_color(SETUP_COLOR, setup_annotation);
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, d_port],
             false,
             Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
         ));
+        let midpoint = bezier_midpoint(triangle_t, control, d_port);
+        draw_timing_label(
+            ui,
+            midpoint,
+            setup_annotation,
+            zoom,
+            egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
+        );
     }
     if show_hold_constraints {
+        let arc_color = annotation_stroke_color(HOLD_COLOR, ctq_annotation);
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, q_port],
             false,
             Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
         ));
+        let midpoint = bezier_midpoint(triangle_t, control, q_port);
+        draw_timing_label(
+            ui,
+            midpoint,
+            ctq_annotation,
+            zoom,
+            egui::Id::new(("ff_ctq", ff_id_x, ff_id_y)),
+        );
     }
 }
 

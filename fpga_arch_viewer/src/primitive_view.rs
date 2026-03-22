@@ -19,6 +19,9 @@ const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
 const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
 const SIGNAL_STROKE_WIDTH: f32 = 3.0;
+const PORT_STEP: f32 = 50.0;
+const FF_HEIGHT: f32 = 75.0;
+const FF_PORT_OFFSET: f32 = 20.0;
 
 pub struct PrimitiveView {
     selected_model_name: Option<String>,
@@ -155,12 +158,15 @@ impl PrimitiveView {
             }
         }
 
+        let max_ports = input_ports.len().max(output_ports.len());
+
         if is_sequential_block(model) {
             // If there are no combinatorial paths, then this acts like
             // a sequential block.
+            let block_height = (max_ports + 2) as f32 * PORT_STEP;
             let block_outline = egui::Rect::from_center_size(
                 ui.min_rect().center(),
-                egui::vec2(250.0, ui.available_height() / 2.0),
+                egui::vec2(250.0, block_height),
             );
             ui.painter().rect(
                 block_outline,
@@ -302,9 +308,13 @@ impl PrimitiveView {
                 }
             }
         } else {
+            let has_flops = input_ports.iter().any(|p| p.clock.is_some())
+                || output_ports.iter().any(|p| p.clock.is_some());
+            let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
+            let block_height = (max_ports + 2) as f32 * port_step;
             let block_outline = egui::Rect::from_center_size(
                 ui.min_rect().center(),
-                egui::vec2(500.0, ui.available_height() / 2.0),
+                egui::vec2(500.0, block_height),
             );
             ui.painter().rect(
                 block_outline,
@@ -356,8 +366,8 @@ impl PrimitiveView {
                 if let Some(associated_clock_name) = &output_port.clock {
                     // Create a FF
                     let ff_outline = egui::Rect::from_min_size(
-                        egui::pos2(signal_start_point.x - 50.0, signal_start_point.y - 20.0),
-                        egui::vec2(50.0, 75.0),
+                        egui::pos2(signal_start_point.x - 50.0, signal_start_point.y - FF_PORT_OFFSET),
+                        egui::vec2(50.0, FF_HEIGHT),
                     );
                     draw_flip_flop(
                         &ff_outline,
@@ -414,8 +424,8 @@ impl PrimitiveView {
                 if let Some(associated_clock_name) = &input_port.clock {
                     // Create a FF
                     let ff_outline = egui::Rect::from_min_size(
-                        egui::pos2(signal_start_point.x, signal_start_point.y - 20.0),
-                        egui::vec2(50.0, 75.0),
+                        egui::pos2(signal_start_point.x, signal_start_point.y - FF_PORT_OFFSET),
+                        egui::vec2(50.0, FF_HEIGHT),
                     );
                     draw_flip_flop(
                         &ff_outline,

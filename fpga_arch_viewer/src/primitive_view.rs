@@ -62,8 +62,6 @@ const ZOOM_MIN: f32 = 0.1;
 const ZOOM_MAX: f32 = 4.0;
 /// Leave this fraction of margin around the block when computing the fit zoom.
 const ZOOM_FIT_MARGIN: f32 = 0.9;
-/// Multiplier converting scroll delta pixels to a zoom exponent for Cmd+scroll.
-const SCROLL_ZOOM_SENSITIVITY: f32 = 0.005;
 
 // --- Data types ---
 
@@ -220,16 +218,14 @@ impl PrimitiveView {
             // events that should zoom rather than scroll.
             if ui.rect_contains_pointer(ui.max_rect()) {
                 let zoom_delta = ui.input_mut(|i| {
-                    // Pinch-to-zoom on trackpad.
-                    let mut delta = i.zoom_delta();
-                    // Cmd+scroll wheel.
+                    // Pinch-to-zoom on trackpad. egui also folds Cmd+scroll into
+                    // zoom_delta(), so just consume the raw scroll events when Cmd
+                    // is held to prevent the ScrollArea from panning at the same time.
                     if i.modifiers.command && i.smooth_scroll_delta.y != 0.0 {
-                        delta *= (i.smooth_scroll_delta.y * SCROLL_ZOOM_SENSITIVITY).exp();
-                        // Consume the scroll so the ScrollArea does not also pan.
                         i.smooth_scroll_delta = egui::Vec2::ZERO;
                         i.raw_scroll_delta = egui::Vec2::ZERO;
                     }
-                    delta
+                    i.zoom_delta()
                 });
                 if (zoom_delta - 1.0).abs() > f32::EPSILON {
                     self.zoom =
@@ -779,12 +775,13 @@ fn legend_entry(ui: &mut egui::Ui, label: &str, color: Color32) {
 fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: Color32) {
     ui.horizontal(|ui| {
         ui.checkbox(value, "");
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
         let dimmed = if *value {
             color
         } else {
             color.gamma_multiply(0.35)
         };
+        let (rect, swatch_response) =
+            ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::click());
         ui.painter().line_segment(
             [rect.left_center(), rect.right_center()],
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, dimmed),
@@ -795,7 +792,13 @@ fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: 
         } else {
             ui.visuals().weak_text_color()
         };
-        ui.colored_label(text_color, label);
+        let label_response = ui.add(
+            egui::Label::new(egui::RichText::new(label).color(text_color))
+                .sense(egui::Sense::click()),
+        );
+        if swatch_response.clicked() || label_response.clicked() {
+            *value = !*value;
+        }
     });
 }
 

@@ -227,6 +227,7 @@ impl SummaryView {
                     ui.horizontal(|ui| {
                         ui.heading(format!("Models ({})", arch.models.len()));
                         if ui.button("View Primitive Diagrams").clicked() {
+                            *selected_model_name = None;
                             *next_view_mode = ViewMode::Primitive;
                         }
                     });

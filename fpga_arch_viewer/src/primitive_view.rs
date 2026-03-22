@@ -260,7 +260,7 @@ impl<'a> DelayLookup<'a> {
                     && Self::port_matches(Self::strip_prefix(&tc.port), port)
                     && tc.clock == clock
             })
-            .map(|tc| extract(tc))
+            .map(extract)
             .collect()
     }
 
@@ -311,12 +311,10 @@ impl<'a> DelayLookup<'a> {
 /// or `None` if the count is satisfactory. A single found value is never warned (treated as a
 /// scalar constraint covering all pins).
 fn partial_warning(label: &str, found: usize, expected: Option<i32>) -> Option<String> {
-    if found > 1 {
-        if let Some(exp) = expected {
-            if found < exp as usize {
-                let missing = exp as usize - found;
-                return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
-            }
+    if let Some(exp) = expected {
+        if found > 1 && found < exp as usize {
+            let missing = exp as usize - found;
+            return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
         }
     }
     None
@@ -674,8 +672,8 @@ impl PrimitiveView {
 
             let display_name = if selected_model_name_str.is_empty() {
                 "Select a model".to_string()
-            } else if selected_model_name_str.len() > 24 {
-                format!("{}…", &selected_model_name_str[..24])
+            } else if selected_model_name_str.chars().count() > 24 {
+                format!("{}…", selected_model_name_str.chars().take(24).collect::<String>())
             } else {
                 selected_model_name_str.to_string()
             };

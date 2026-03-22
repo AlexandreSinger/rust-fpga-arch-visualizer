@@ -20,7 +20,7 @@ const CLOCK_FILL: Color32 = Color32::from_rgb(210, 185, 245);
 const INPUT_COLOR: Color32 = Color32::from_rgb(25, 105, 190);
 const OUTPUT_COLOR: Color32 = Color32::from_rgb(195, 80, 15);
 
-const SETUP_COLOR: Color32 = Color32::from_rgb(210, 40, 40);
+const SETUP_COLOR: Color32 = Color32::from_rgb(255, 153, 0);
 const CLOCK_TO_Q_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
 const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
@@ -500,6 +500,16 @@ fn draw_timing_marker(
 
     // Floating popup panel, anchored just to the right of the marker.
     if is_selected {
+        // Split the content: the first line is the port info header shown in the
+        // title bar; remaining lines are the delay values shown in the body.
+        let mut content_lines = content.lines();
+        let port_info = content_lines.next().unwrap_or("");
+        let full_title = if port_info.is_empty() {
+            title.to_string()
+        } else {
+            format!("{title} — {port_info}")
+        };
+
         let popup_pos = midpoint + egui::vec2(radius + 8.0 * zoom, -(20.0 * zoom));
         let mut should_close = false;
         egui::Area::new(id.with("popup"))
@@ -509,9 +519,9 @@ fn draw_timing_marker(
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(120.0);
-                    ui.set_max_width(280.0);
+                    ui.set_max_width(320.0);
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(title).strong().small());
+                        ui.label(egui::RichText::new(&full_title).strong().small());
                         ui.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
                             |ui| {
@@ -522,16 +532,7 @@ fn draw_timing_marker(
                         );
                     });
                     ui.separator();
-                    let mut lines = content.lines();
-                    // First line is the port info header — render bold in normal text color.
-                    if let Some(header_line) = lines.next() {
-                        ui.label(
-                            egui::RichText::new(header_line)
-                                .strong()
-                                .color(ui.visuals().text_color()),
-                        );
-                    }
-                    for line in lines {
+                    for line in content_lines {
                         let color = if line.contains('⚠') {
                             MISSING_COLOR
                         } else {

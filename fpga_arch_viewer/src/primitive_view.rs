@@ -26,15 +26,15 @@ const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
 /// Color used for missing delay annotations and the constraint arcs they affect.
 const MISSING_COLOR: Color32 = Color32::from_rgb(220, 30, 30);
-/// Subtle color for present delay value labels (shown in tooltips only).
+/// Color for delay value text inside popup panels.
 const DELAY_LABEL_COLOR: Color32 = Color32::from_rgb(60, 60, 60);
 
 const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
 const SIGNAL_STROKE_WIDTH: f32 = 3.0;
 const PORT_LABEL_FONT_SIZE: f32 = 24.0;
 const MODEL_NAME_FONT_SIZE: f32 = 32.0;
-/// Font size for the "⚠ MISSING" annotation labels (at zoom = 1).
-const DELAY_LABEL_FONT_SIZE: f32 = 11.0;
+/// Radius of the clickable timing marker circle (at zoom = 1).
+const MARKER_RADIUS: f32 = 5.0;
 
 // --- Layout constants ---
 
@@ -316,75 +316,80 @@ fn bezier_midpoint(p0: egui::Pos2, p1: egui::Pos2, p2: egui::Pos2) -> egui::Pos2
     )
 }
 
-/// Draws a timing annotation near `midpoint`:
-/// - `NotActive`: nothing drawn.
-/// - `Present(label)`: invisible hover zone; tooltip shows the delay value on hover.
-/// - `Missing`: always-visible bold **"⚠ MISSING"** in red; tooltip explains on hover.
+/// Draws a small circular marker at `midpoint` for a timing annotation.
 ///
-/// `id` must be unique per element per frame.
-fn draw_timing_label(
+/// - `NotActive`: nothing drawn.
+/// - `Present` / `Missing`: draws a colored circle using `arc_color`. The marker is dim when
+///   idle, bright when hovered or selected. Clicking it toggles a floating popup panel that
+///   shows the annotation content with a `title` header.
+///
+/// `id` must be unique per element per frame. `selected_arc` tracks which marker (if any)
+/// currently has its popup open.
+fn draw_timing_marker(
     ui: &mut egui::Ui,
     midpoint: egui::Pos2,
     ann: &DelayAnnotation,
+    arc_color: Color32,
+    title: &str,
     zoom: f32,
     id: egui::Id,
+    selected_arc: &mut Option<egui::Id>,
 ) {
-    let font_size = DELAY_LABEL_FONT_SIZE * zoom;
-    match ann {
-        DelayAnnotation::NotActive => {}
-        DelayAnnotation::Present(label) => {
-            // Show on hover only — hover is checked by proximity to midpoint.
-            if ui
-                .ctx()
-                .pointer_hover_pos()
-                .map(|p| p.distance(midpoint) < 30.0 * zoom)
-                .unwrap_or(false)
-            {
-                egui::Tooltip::always_open(
-                    ui.ctx().clone(),
-                    ui.layer_id(),
-                    id,
-                    egui::PopupAnchor::Pointer,
-                )
-                .show(|ui| {
-                    ui.label(
-                        egui::RichText::new(label.as_str())
-                            .color(DELAY_LABEL_COLOR)
-                            .monospace(),
-                    );
+    let (content, text_color) = match ann {
+        DelayAnnotation::NotActive => return,
+        DelayAnnotation::Present(s) => (s.as_str(), DELAY_LABEL_COLOR),
+        DelayAnnotation::Missing(s) => (s.as_str(), MISSING_COLOR),
+    };
+
+    let radius = MARKER_RADIUS * zoom;
+    // Allocate a slightly larger hit area than the visual circle for easier clicking.
+    let hit_rect =
+        egui::Rect::from_center_size(midpoint, egui::Vec2::splat((radius + 3.0) * 2.0));
+    let is_selected = *selected_arc == Some(id);
+    let response = ui.allocate_rect(hit_rect, egui::Sense::click());
+
+    // Bright when selected or hovered, dimmed otherwise.
+    let fill = if is_selected || response.hovered() {
+        arc_color
+    } else {
+        arc_color.gamma_multiply(0.45)
+    };
+    ui.painter().circle_filled(midpoint, radius, fill);
+    ui.painter()
+        .circle_stroke(midpoint, radius, egui::Stroke::new(1.0 * zoom, arc_color));
+
+    if response.clicked() {
+        *selected_arc = if is_selected { None } else { Some(id) };
+    }
+
+    // Floating popup panel, anchored just to the right of the marker.
+    if is_selected {
+        let popup_pos = midpoint + egui::vec2(radius + 8.0 * zoom, -(20.0 * zoom));
+        let mut should_close = false;
+        egui::Area::new(id.with("popup"))
+            .fixed_pos(popup_pos)
+            .order(egui::Order::Tooltip)
+            .interactable(true)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(120.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(title).strong().small());
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui.small_button("✕").clicked() {
+                                    should_close = true;
+                                }
+                            },
+                        );
+                    });
+                    ui.separator();
+                    ui.label(egui::RichText::new(content).monospace().color(text_color));
                 });
-            }
-        }
-        DelayAnnotation::Missing(detail) => {
-            // Always-visible warning badge.
-            ui.painter().text(
-                midpoint,
-                egui::Align2::CENTER_CENTER,
-                "⚠ MISSING",
-                egui::FontId::proportional(font_size),
-                MISSING_COLOR,
-            );
-            // Tooltip with full detail on hover.
-            if ui
-                .ctx()
-                .pointer_hover_pos()
-                .map(|p| p.distance(midpoint) < 40.0 * zoom)
-                .unwrap_or(false)
-            {
-                egui::Tooltip::always_open(
-                    ui.ctx().clone(),
-                    ui.layer_id(),
-                    id,
-                    egui::PopupAnchor::Pointer,
-                )
-                .show(|ui| {
-                    ui.label(
-                        egui::RichText::new(detail.as_str())
-                            .color(MISSING_COLOR)
-                            .monospace(),
-                    );
-                });
-            }
+            });
+        if should_close {
+            *selected_arc = None;
         }
     }
 }
@@ -396,6 +401,8 @@ pub struct PrimitiveView {
     show_setup_constraints: bool,
     show_clock_to_q: bool,
     show_combinational_paths: bool,
+    /// The ID of the timing marker whose popup is currently open (if any).
+    selected_timing_arc: Option<egui::Id>,
     /// Current zoom level. `None` means "auto-fit": use `fit_zoom` each frame.
     zoom: Option<f32>,
     /// Most recently computed fit-to-view zoom, updated each frame by `render_model`.
@@ -412,6 +419,7 @@ impl Default for PrimitiveView {
             show_setup_constraints: true,
             show_clock_to_q: true,
             show_combinational_paths: true,
+            selected_timing_arc: None,
             zoom: None,
             fit_zoom: 1.0,
             last_rendered_model_name: None,
@@ -705,10 +713,11 @@ impl PrimitiveView {
         } else {
             self.render_combinational_block(block_outline, &port_groups, delays, zoom, ui);
         }
+
     }
 
     fn render_sequential_block(
-        &self,
+        &mut self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
         delays: Option<&DelayLookup<'_>>,
@@ -814,12 +823,15 @@ impl PrimitiveView {
                     egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
                 ));
                 let midpoint = bezier_midpoint(*clock_top, control, tip);
-                draw_timing_label(
+                draw_timing_marker(
                     ui,
                     midpoint,
                     &setup_ann,
+                    arc_color,
+                    "Setup & Hold",
                     zoom,
                     egui::Id::new(("seq_setup", port.name.as_str(), clock_name.as_str())),
+                    &mut self.selected_timing_arc,
                 );
             }
         }
@@ -878,19 +890,22 @@ impl PrimitiveView {
                     egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
                 ));
                 let midpoint = bezier_midpoint(*clock_top, control, start);
-                draw_timing_label(
+                draw_timing_marker(
                     ui,
                     midpoint,
                     &ctq_ann,
+                    arc_color,
+                    "Clock to Q",
                     zoom,
                     egui::Id::new(("seq_ctq", port.name.as_str(), clock_name.as_str())),
+                    &mut self.selected_timing_arc,
                 );
             }
         }
     }
 
     fn render_combinational_block(
-        &self,
+        &mut self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
         delays: Option<&DelayLookup<'_>>,
@@ -983,6 +998,7 @@ impl PrimitiveView {
                     self.show_clock_to_q,
                     zoom,
                     ui,
+                    &mut self.selected_timing_arc,
                 );
                 signal_start -= egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
@@ -1040,6 +1056,7 @@ impl PrimitiveView {
                     self.show_clock_to_q,
                     zoom,
                     ui,
+                    &mut self.selected_timing_arc,
                 );
                 signal_start += egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
@@ -1068,16 +1085,19 @@ impl PrimitiveView {
                                 (signal_start.x + sink.x) / 2.0,
                                 (signal_start.y + sink.y) / 2.0,
                             );
-                            draw_timing_label(
+                            draw_timing_marker(
                                 ui,
                                 midpoint,
                                 &comb_ann,
+                                wire_color,
+                                "Combinational Delay",
                                 zoom,
                                 egui::Id::new((
                                     "comb",
                                     port.name.as_str(),
                                     sink_name.as_str(),
                                 )),
+                                &mut self.selected_timing_arc,
                             );
                         }
                         None => {
@@ -1180,6 +1200,7 @@ fn draw_flip_flop(
     show_clock_to_q: bool,
     zoom: f32,
     ui: &mut egui::Ui,
+    selected_arc: &mut Option<egui::Id>,
 ) {
     ui.painter().rect(
         *ff_outline,
@@ -1219,12 +1240,15 @@ fn draw_flip_flop(
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
         ));
         let midpoint = bezier_midpoint(triangle_t, control, d_port);
-        draw_timing_label(
+        draw_timing_marker(
             ui,
             midpoint,
             setup_annotation,
+            arc_color,
+            "Setup & Hold",
             zoom,
             egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
+            selected_arc,
         );
     }
     if show_clock_to_q {
@@ -1236,12 +1260,15 @@ fn draw_flip_flop(
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
         ));
         let midpoint = bezier_midpoint(triangle_t, control, q_port);
-        draw_timing_label(
+        draw_timing_marker(
             ui,
             midpoint,
             ctq_annotation,
+            arc_color,
+            "Clock to Q",
             zoom,
             egui::Id::new(("ff_ctq", ff_id_x, ff_id_y)),
+            selected_arc,
         );
     }
 }

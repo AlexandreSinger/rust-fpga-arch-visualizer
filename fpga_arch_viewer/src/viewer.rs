@@ -616,6 +616,7 @@ impl FpgaViewer {
                     arch,
                     &mut self.tile_view.selected_tile_name,
                     &mut self.complex_block_view.complex_block_view_state,
+                    &mut self.primitive_view.selected_model_name,
                     &mut self.next_view_mode,
                     ctx,
                 ),

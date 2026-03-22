@@ -76,7 +76,7 @@ struct PortGroups<'a> {
 }
 
 pub struct PrimitiveView {
-    selected_model_name: Option<String>,
+    pub selected_model_name: Option<String>,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
     show_combinational_paths: bool,
@@ -84,6 +84,8 @@ pub struct PrimitiveView {
     zoom: Option<f32>,
     /// Most recently computed fit-to-view zoom, updated each frame by `render_model`.
     fit_zoom: f32,
+    /// Tracks which model was rendered last frame; used to detect external model changes.
+    last_rendered_model_name: Option<String>,
 }
 
 impl Default for PrimitiveView {
@@ -95,6 +97,7 @@ impl Default for PrimitiveView {
             show_combinational_paths: true,
             zoom: None,
             fit_zoom: 1.0,
+            last_rendered_model_name: None,
         }
     }
 }
@@ -144,7 +147,6 @@ impl PrimitiveView {
 
             if selected_model_name_str != self.selected_model_name.as_deref().unwrap_or("") {
                 self.selected_model_name = Some(selected_model_name_str.to_string());
-                self.zoom = None; // Reset to auto-fit when the model changes.
             }
         } else {
             ui.label("No models available in architecture");
@@ -229,6 +231,13 @@ impl PrimitiveView {
     }
 
     fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_size: egui::Vec2) {
+        // Reset zoom to auto-fit whenever the displayed model changes (e.g. from the combobox
+        // or from an external navigation action like the summary view buttons).
+        if self.last_rendered_model_name.as_deref() != Some(&model.name) {
+            self.zoom = None;
+            self.last_rendered_model_name = Some(model.name.clone());
+        }
+
         // Classify ports: separate data ports from clocks, and input clocks from output clocks.
         let mut input_ports: Vec<&ModelPort> = Vec::new();
         let mut output_ports: Vec<&ModelPort> = Vec::new();

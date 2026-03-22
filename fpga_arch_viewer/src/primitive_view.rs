@@ -1197,8 +1197,14 @@ fn collect_pb_types_for_model<'a>(
     results: &mut Vec<PBTypeMatch<'a>>,
 ) {
     path.push(pb_type.name.clone());
-    let expected = format!(".subckt {model_name}");
-    if pb_type.blif_model.as_deref() == Some(&expected) {
+    // Built-in models (.input, .output, .latch, .names) are referenced by their name
+    // directly as the blif_model value.  Custom models are referenced as ".subckt <name>".
+    let blif_model_matches = if model_name.starts_with('.') {
+        pb_type.blif_model.as_deref() == Some(model_name)
+    } else {
+        pb_type.blif_model.as_deref() == Some(&format!(".subckt {model_name}"))
+    };
+    if blif_model_matches {
         results.push(PBTypeMatch {
             path: path.clone(),
             pb_type,

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
-use fpga_arch_parser::{FPGAArch, Model, ModelPort};
+use fpga_arch_parser::{FPGAArch, Model, ModelPort, PBType};
 
 // --- Visual style constants ---
 
@@ -73,8 +73,24 @@ struct PortGroups<'a> {
     output_clock_ports: &'a [&'a ModelPort],
 }
 
+/// A pb_type found in the complex block hierarchy that references a model,
+/// together with its ancestry path (root-to-leaf list of pb_type names).
+pub struct PBTypeMatch<'a> {
+    pub path: Vec<String>,
+    pub pb_type: &'a PBType,
+}
+
+impl<'a> PBTypeMatch<'a> {
+    /// Returns the path formatted as "a > b > c".
+    pub fn path_display(&self) -> String {
+        self.path.join(" > ")
+    }
+}
+
 pub struct PrimitiveView {
     pub selected_model_name: Option<String>,
+    /// Index into the list of pb_types that use the selected model.
+    pub selected_pb_type_idx: Option<usize>,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
     show_combinational_paths: bool,
@@ -90,6 +106,7 @@ impl Default for PrimitiveView {
     fn default() -> Self {
         Self {
             selected_model_name: None,
+            selected_pb_type_idx: None,
             show_setup_constraints: true,
             show_hold_constraints: true,
             show_combinational_paths: true,
@@ -145,10 +162,35 @@ impl PrimitiveView {
 
             if selected_model_name_str != self.selected_model_name.as_deref().unwrap_or("") {
                 self.selected_model_name = Some(selected_model_name_str.to_string());
+                self.selected_pb_type_idx = None;
             }
         } else {
             ui.label("No models available in architecture");
         }
+
+        if let Some(model_name) = &self.selected_model_name.clone() {
+            let matches = find_pb_types_for_model(arch, model_name);
+            if !matches.is_empty() {
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(10.0);
+                ui.label("Used by pb_types:");
+                ui.add_space(5.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("pb_type_list_scroll")
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for (idx, m) in matches.iter().enumerate() {
+                            let selected = self.selected_pb_type_idx == Some(idx);
+                            if ui.selectable_label(selected, m.path_display()).clicked() {
+                                self.selected_pb_type_idx =
+                                    if selected { None } else { Some(idx) };
+                            }
+                        }
+                    });
+            }
+        }
+
         ui.add_space(10.0);
 
         // Zoom controls
@@ -800,6 +842,43 @@ fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: 
             *value = !*value;
         }
     });
+}
+
+/// Recursively collects all `PBType` leaf nodes in `pb_type`'s subtree whose
+/// `blif_model` references `model_name` (i.e. equals `.subckt <model_name>`).
+fn collect_pb_types_for_model<'a>(
+    pb_type: &'a PBType,
+    model_name: &str,
+    path: &mut Vec<String>,
+    results: &mut Vec<PBTypeMatch<'a>>,
+) {
+    path.push(pb_type.name.clone());
+    let expected = format!(".subckt {model_name}");
+    if pb_type.blif_model.as_deref() == Some(&expected) {
+        results.push(PBTypeMatch {
+            path: path.clone(),
+            pb_type,
+        });
+    }
+    for child in &pb_type.pb_types {
+        collect_pb_types_for_model(child, model_name, path, results);
+    }
+    for mode in &pb_type.modes {
+        for child in &mode.pb_types {
+            collect_pb_types_for_model(child, model_name, path, results);
+        }
+    }
+    path.pop();
+}
+
+/// Returns all `PBType`s in the complex block hierarchy that reference `model_name`.
+fn find_pb_types_for_model<'a>(arch: &'a FPGAArch, model_name: &str) -> Vec<PBTypeMatch<'a>> {
+    let mut results = Vec::new();
+    let mut path = Vec::new();
+    for root in &arch.complex_block_list {
+        collect_pb_types_for_model(root, model_name, &mut path, &mut results);
+    }
+    results
 }
 
 fn is_sequential_block(model: &Model) -> bool {

@@ -672,12 +672,17 @@ impl PrimitiveView {
 
             let mut selected_model_name_str = self.selected_model_name.as_deref().unwrap_or("");
 
+            let display_name = if selected_model_name_str.is_empty() {
+                "Select a model".to_string()
+            } else if selected_model_name_str.len() > 24 {
+                format!("{}…", &selected_model_name_str[..24])
+            } else {
+                selected_model_name_str.to_string()
+            };
+
             egui::ComboBox::from_id_salt("model_selector_combobox")
-                .selected_text(if !selected_model_name_str.is_empty() {
-                    selected_model_name_str
-                } else {
-                    "Select a model"
-                })
+                .selected_text(display_name)
+                .width(ui.available_width() - 8.0)
                 .show_ui(ui, |ui| {
                     for model in &arch.models {
                         ui.selectable_value(&mut selected_model_name_str, &model.name, &model.name);

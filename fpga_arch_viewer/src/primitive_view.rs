@@ -100,10 +100,11 @@ impl<'a> PBTypeMatch<'a> {
 enum DelayAnnotation {
     /// No pb_type is selected; show nothing.
     NotActive,
-    /// Pb_type is selected and a matching delay was found. Holds the formatted label.
+    /// Pb_type is selected and all expected annotations were found. String is the tooltip content.
     Present(String),
-    /// Pb_type is selected but no matching delay annotation exists — shown prominently.
-    Missing,
+    /// One or more expected annotations are absent. String is the detail shown in the tooltip,
+    /// listing both present values and which ones are missing.
+    Missing(String),
 }
 
 /// Looks up delay and timing-constraint annotations from a selected `PBType`.
@@ -172,6 +173,19 @@ impl<'a> DelayLookup<'a> {
             .map(|tc| tc.max_value)
     }
 
+    /// Look up `T_hold` for `(port, clock)`. Returns `Some(value_s)` if found.
+    fn t_hold(&self, port: &str, clock: &str) -> Option<f32> {
+        self.pb_type
+            .timing_constraints
+            .iter()
+            .find(|tc| {
+                matches!(tc.constraint_type, TimingConstraintType::Hold)
+                    && Self::strip_prefix(&tc.port) == port
+                    && tc.clock == clock
+            })
+            .map(|tc| tc.max_value)
+    }
+
     /// Look up `T_clock_to_Q` for `(port, clock)`. Returns `Some((min_s, max_s))` if found.
     fn t_clock_to_q(&self, port: &str, clock: &str) -> Option<(f32, f32)> {
         self.pb_type
@@ -183,6 +197,36 @@ impl<'a> DelayLookup<'a> {
                     && tc.clock == clock
             })
             .map(|tc| (tc.min_value, tc.max_value))
+    }
+}
+
+/// Builds a combined setup + hold `DelayAnnotation` for the clock→D arc.
+///
+/// Both `T_setup` and `T_hold` are reported. The arc turns red and shows "⚠ MISSING" if
+/// either value is absent from the selected pb_type.
+fn build_setup_hold_annotation(
+    delays: Option<&DelayLookup<'_>>,
+    port: &str,
+    clock: &str,
+) -> DelayAnnotation {
+    let Some(d) = delays else {
+        return DelayAnnotation::NotActive;
+    };
+    let tsu = d.t_setup(port, clock);
+    let th = d.t_hold(port, clock);
+
+    let tsu_str = tsu
+        .map(|v| format!("Tsu = {}", format_delay(v)))
+        .unwrap_or_else(|| "Tsu = ⚠ MISSING".to_string());
+    let th_str = th
+        .map(|v| format!("Th  = {}", format_delay(v)))
+        .unwrap_or_else(|| "Th  = ⚠ MISSING".to_string());
+    let detail = format!("{tsu_str}\n{th_str}");
+
+    if tsu.is_some() && th.is_some() {
+        DelayAnnotation::Present(detail)
+    } else {
+        DelayAnnotation::Missing(detail)
     }
 }
 
@@ -208,7 +252,7 @@ fn format_delay_range(min: f32, max: f32) -> String {
 /// Returns the effective stroke color for a timing arc, turning it bright red when missing.
 fn annotation_stroke_color(normal: Color32, ann: &DelayAnnotation) -> Color32 {
     match ann {
-        DelayAnnotation::Missing => MISSING_COLOR,
+        DelayAnnotation::Missing(_) => MISSING_COLOR,
         _ => normal,
     }
 }
@@ -260,7 +304,7 @@ fn draw_timing_label(
                 });
             }
         }
-        DelayAnnotation::Missing => {
+        DelayAnnotation::Missing(detail) => {
             // Always-visible warning badge.
             ui.painter().text(
                 midpoint,
@@ -269,7 +313,7 @@ fn draw_timing_label(
                 egui::FontId::proportional(font_size),
                 MISSING_COLOR,
             );
-            // Tooltip with explanation on hover.
+            // Tooltip with full detail on hover.
             if ui
                 .ctx()
                 .pointer_hover_pos()
@@ -284,8 +328,9 @@ fn draw_timing_label(
                 )
                 .show(|ui| {
                     ui.label(
-                        egui::RichText::new("⚠  No delay annotation for this path")
-                            .color(MISSING_COLOR),
+                        egui::RichText::new(detail.as_str())
+                            .color(MISSING_COLOR)
+                            .monospace(),
                     );
                 });
             }
@@ -438,7 +483,7 @@ impl PrimitiveView {
         constraint_checkbox(
             ui,
             &mut self.show_setup_constraints,
-            "Setup Constraints",
+            "Setup & Hold Constraints",
             SETUP_COLOR,
         );
         ui.add_space(4.0);
@@ -708,13 +753,8 @@ impl PrimitiveView {
                     }
                 };
                 let control = egui::pos2(clock_top.x, tip.y);
-                let setup_ann = match delays {
-                    None => DelayAnnotation::NotActive,
-                    Some(d) => match d.t_setup(&port.name, clock_name) {
-                        Some(v) => DelayAnnotation::Present(format!("Tsu = {}", format_delay(v))),
-                        None => DelayAnnotation::Missing,
-                    },
-                };
+                let setup_ann =
+                    build_setup_hold_annotation(delays, &port.name, clock_name);
                 let arc_color = annotation_stroke_color(SETUP_COLOR, &setup_ann);
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, control, tip],
@@ -774,7 +814,9 @@ impl PrimitiveView {
                             "Tcq = {}",
                             format_delay_range(min, max)
                         )),
-                        None => DelayAnnotation::Missing,
+                        None => DelayAnnotation::Missing(
+                            "Tcq = ⚠ MISSING".to_string(),
+                        ),
                     },
                 };
                 let arc_color = annotation_stroke_color(CLOCK_TO_Q_COLOR, &ctq_ann);
@@ -875,7 +917,9 @@ impl PrimitiveView {
                             "Tcq = {}",
                             format_delay_range(min, max)
                         )),
-                        None => DelayAnnotation::Missing,
+                        None => DelayAnnotation::Missing(
+                            "Tcq = ⚠ MISSING".to_string(),
+                        ),
                     },
                 };
                 draw_flip_flop(
@@ -920,15 +964,8 @@ impl PrimitiveView {
                 );
                 // Input FF: the setup time (D → clock) is annotated on the setup arc inside
                 // the FF symbol.
-                let setup_ann = match delays {
-                    None => DelayAnnotation::NotActive,
-                    Some(d) => match d.t_setup(&port.name, clock_name) {
-                        Some(v) => {
-                            DelayAnnotation::Present(format!("Tsu = {}", format_delay(v)))
-                        }
-                        None => DelayAnnotation::Missing,
-                    },
-                };
+                let setup_ann =
+                    build_setup_hold_annotation(delays, &port.name, clock_name);
                 draw_flip_flop(
                     &ff_outline,
                     &setup_ann,
@@ -953,7 +990,9 @@ impl PrimitiveView {
                                         "D = {}",
                                         format_delay_range(min, max)
                                     )),
-                                    None => DelayAnnotation::Missing,
+                                    None => DelayAnnotation::Missing(
+                                        "D = ⚠ MISSING".to_string(),
+                                    ),
                                 },
                             };
                             let wire_color =

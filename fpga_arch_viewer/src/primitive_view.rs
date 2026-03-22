@@ -139,27 +139,30 @@ impl PrimitiveView {
     }
 
     fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_width: f32) {
-        // Classify ports: separate clocks from data inputs/outputs.
+        // Classify ports: separate data ports from clocks, and input clocks from output clocks.
         let mut input_ports: Vec<&ModelPort> = Vec::new();
         let mut output_ports: Vec<&ModelPort> = Vec::new();
-        let mut clock_ports: Vec<&ModelPort> = Vec::new();
+        let mut input_clock_ports: Vec<&ModelPort> = Vec::new();
+        let mut output_clock_ports: Vec<&ModelPort> = Vec::new();
         for port in &model.input_ports {
             if port.is_clock {
-                clock_ports.push(port);
+                input_clock_ports.push(port);
             } else {
                 input_ports.push(port);
             }
         }
         for port in &model.output_ports {
             if port.is_clock {
-                clock_ports.push(port);
+                output_clock_ports.push(port);
             } else {
                 output_ports.push(port);
             }
         }
 
         let max_ports = input_ports.len().max(output_ports.len());
-        let clock_extra_height = clock_ports.len() as f32 * CLOCK_STEP;
+        // Input and output clocks each occupy their own rows below the block.
+        let clock_extra_height =
+            (input_clock_ports.len() + output_clock_ports.len()) as f32 * CLOCK_STEP;
         let v_margin = 50.0;
 
         // Measure label widths to compute exact horizontal padding.
@@ -168,10 +171,10 @@ impl PrimitiveView {
         let measure = |name: &str| -> f32 {
             ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE).size().x)
         };
-        let max_left_label_width = input_ports.iter().chain(clock_ports.iter())
+        let max_left_label_width = input_ports.iter().chain(input_clock_ports.iter())
             .map(|p| measure(&p.name))
             .fold(0.0_f32, f32::max);
-        let max_right_label_width = output_ports.iter()
+        let max_right_label_width = output_ports.iter().chain(output_clock_ports.iter())
             .map(|p| measure(&p.name))
             .fold(0.0_f32, f32::max);
         let left_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_left_label_width;
@@ -186,7 +189,10 @@ impl PrimitiveView {
                 clock_extra_height, v_margin, available_width,
             );
             draw_block_outline(model, block_outline, ui);
-            self.render_sequential_block(block_outline, &clock_ports, &input_ports, &output_ports, ui);
+            self.render_sequential_block(
+                block_outline, &input_clock_ports, &output_clock_ports,
+                &input_ports, &output_ports, ui,
+            );
         } else {
             let has_flops = input_ports.iter().chain(output_ports.iter()).any(|p| p.clock.is_some());
             let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
@@ -198,22 +204,33 @@ impl PrimitiveView {
                 clock_extra_height, v_margin, available_width,
             );
             draw_block_outline(model, block_outline, ui);
-            self.render_combinational_block(block_outline, &clock_ports, &input_ports, &output_ports, ui);
+            self.render_combinational_block(
+                block_outline, &input_clock_ports, &output_clock_ports,
+                &input_ports, &output_ports, ui,
+            );
         }
     }
 
     fn render_sequential_block(
         &self,
         block_outline: egui::Rect,
-        clock_ports: &[&ModelPort],
+        input_clock_ports: &[&ModelPort],
+        output_clock_ports: &[&ModelPort],
         input_ports: &[&ModelPort],
         output_ports: &[&ModelPort],
         ui: &mut egui::Ui,
     ) {
-        // Draw clock triangles along the bottom edge of the block.
+        // Draw clock triangles along the bottom edge and their wires.
+        // Input clocks: wire from the left. Output clocks: wire to the right.
+        // Both share the same triangle positions spaced across the block bottom.
+        let all_clocks: Vec<&ModelPort> = input_clock_ports.iter()
+            .chain(output_clock_ports.iter())
+            .copied()
+            .collect();
         let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
-        let triangle_step = block_outline.width() / (clock_ports.len() + 1) as f32;
-        for (idx, port) in clock_ports.iter().enumerate() {
+        let triangle_step = block_outline.width() / (all_clocks.len() + 1) as f32;
+        for (idx, port) in all_clocks.iter().enumerate() {
+            let is_output = output_clock_ports.iter().any(|p| p.name == port.name);
             let base = block_outline.left_bottom()
                 + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
             let top = base + egui::vec2(0.0, -20.0);
@@ -224,19 +241,33 @@ impl PrimitiveView {
             ));
 
             let steiner = base + egui::vec2(0.0, CLOCK_STEP * (idx + 1) as f32);
-            let start = egui::pos2(block_outline.left() - ARROW_LENGTH, steiner.y);
-            // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
-            ui.painter().line(
-                vec![start, steiner, base],
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
-            );
-            ui.painter().text(
-                start - egui::vec2(ARROW_GAP, 0.0),
-                egui::Align2::RIGHT_CENTER,
-                &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
-                CLOCK_COLOR,
-            );
+            if is_output {
+                let end = egui::pos2(block_outline.right() + ARROW_LENGTH, steiner.y);
+                ui.painter().line(
+                    vec![base, steiner, end],
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+                );
+                ui.painter().text(
+                    end + egui::vec2(ARROW_GAP, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    &port.name,
+                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                    CLOCK_COLOR,
+                );
+            } else {
+                let start = egui::pos2(block_outline.left() - ARROW_LENGTH, steiner.y);
+                ui.painter().line(
+                    vec![start, steiner, base],
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+                );
+                ui.painter().text(
+                    start - egui::vec2(ARROW_GAP, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    &port.name,
+                    egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                    CLOCK_COLOR,
+                );
+            }
             clock_triangle_top.insert(port.name.clone(), top);
         }
 
@@ -308,22 +339,38 @@ impl PrimitiveView {
     fn render_combinational_block(
         &self,
         block_outline: egui::Rect,
-        clock_ports: &[&ModelPort],
+        input_clock_ports: &[&ModelPort],
+        output_clock_ports: &[&ModelPort],
         input_ports: &[&ModelPort],
         output_ports: &[&ModelPort],
         ui: &mut egui::Ui,
     ) {
         // Draw clock labels and record their drive points.
+        // Input clocks are on the left; output clocks are on the right.
         let mut clock_drive_point: HashMap<String, egui::Pos2> = HashMap::new();
-        for (idx, port) in clock_ports.iter().enumerate() {
+        for (idx, port) in input_clock_ports.iter().enumerate() {
             let point = egui::pos2(
                 block_outline.left() - ARROW_LENGTH,
                 block_outline.bottom() + CLOCK_STEP * (idx + 1) as f32,
             );
-            // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
             ui.painter().text(
                 point - egui::vec2(ARROW_GAP, 0.0),
                 egui::Align2::RIGHT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                CLOCK_COLOR,
+            );
+            clock_drive_point.insert(port.name.clone(), point);
+        }
+        for (idx, port) in output_clock_ports.iter().enumerate() {
+            let row = input_clock_ports.len() + idx + 1;
+            let point = egui::pos2(
+                block_outline.right() + ARROW_LENGTH,
+                block_outline.bottom() + CLOCK_STEP * row as f32,
+            );
+            ui.painter().text(
+                point + egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::LEFT_CENTER,
                 &port.name,
                 egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
                 CLOCK_COLOR,

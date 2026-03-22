@@ -126,20 +126,23 @@ impl PrimitiveView {
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
-        ui.label("Primitive View");
         if let Some(selected_model_name) = &self.selected_model_name {
-            ui.label(format!("Selected Model: {}", selected_model_name));
             if let Some(model) = arch
                 .models
                 .iter()
                 .find(|&model| model.name == *selected_model_name)
             {
-                self.render_model(model, ui);
+                let available_width = ui.available_width();
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        self.render_model(model, ui, available_width);
+                    });
             }
         }
     }
 
-    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui) {
+    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_width: f32) {
         let mut input_ports = Vec::new();
         let mut output_ports = Vec::new();
         let mut clock_ports = Vec::new();
@@ -159,15 +162,52 @@ impl PrimitiveView {
         }
 
         let max_ports = input_ports.len().max(output_ports.len());
+        // Extra vertical space needed below the block for clock rows.
+        let clock_extra_height = clock_ports.len() as f32 * 50.0;
+        // Vertical margin above the block and below the clocks.
+        let v_margin = 50.0;
+
+        // Measure label widths to compute exact horizontal padding.
+        // Each side needs: 100px (arrow outside block) + 10px (gap) + label width + 20px margin.
+        let font_id = egui::FontId::proportional(24.0);
+        let measure = |name: &str| -> f32 {
+            ui.fonts(|f| {
+                f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE)
+                    .size()
+                    .x
+            })
+        };
+        let max_left_label_width: f32 = input_ports
+            .iter()
+            .chain(clock_ports.iter())
+            .map(|p| measure(&p.name))
+            .fold(0.0, f32::max);
+        let max_right_label_width: f32 = output_ports
+            .iter()
+            .map(|p| measure(&p.name))
+            .fold(0.0, f32::max);
+        let left_padding = 130.0 + max_left_label_width;
+        let right_padding = 130.0 + max_right_label_width;
 
         if is_sequential_block(model) {
             // If there are no combinatorial paths, then this acts like
             // a sequential block.
+            let block_width = 250.0_f32;
             let block_height = (max_ports + 2) as f32 * PORT_STEP;
-            let block_outline = egui::Rect::from_center_size(
-                ui.min_rect().center(),
-                egui::vec2(250.0, block_height),
+            let content_width = left_padding + block_width + right_padding;
+            let canvas_size = egui::vec2(
+                content_width.max(available_width),
+                block_height + clock_extra_height + 2.0 * v_margin,
             );
+            let (canvas_rect, _) =
+                ui.allocate_exact_size(canvas_size, egui::Sense::empty());
+            let extra_x = (canvas_rect.width() - content_width).max(0.0);
+            let block_center = egui::pos2(
+                canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
+                canvas_rect.top() + v_margin + block_height / 2.0,
+            );
+            let block_outline =
+                egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height));
             ui.painter().rect(
                 block_outline,
                 egui::CornerRadius::same(8),
@@ -311,11 +351,22 @@ impl PrimitiveView {
             let has_flops = input_ports.iter().any(|p| p.clock.is_some())
                 || output_ports.iter().any(|p| p.clock.is_some());
             let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
+            let block_width = 500.0_f32;
             let block_height = (max_ports + 2) as f32 * port_step;
-            let block_outline = egui::Rect::from_center_size(
-                ui.min_rect().center(),
-                egui::vec2(500.0, block_height),
+            let content_width = left_padding + block_width + right_padding;
+            let canvas_size = egui::vec2(
+                content_width.max(available_width),
+                block_height + clock_extra_height + 2.0 * v_margin,
             );
+            let (canvas_rect, _) =
+                ui.allocate_exact_size(canvas_size, egui::Sense::empty());
+            let extra_x = (canvas_rect.width() - content_width).max(0.0);
+            let block_center = egui::pos2(
+                canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
+                canvas_rect.top() + v_margin + block_height / 2.0,
+            );
+            let block_outline =
+                egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height));
             ui.painter().rect(
                 block_outline,
                 egui::CornerRadius::same(8),

@@ -211,50 +211,131 @@ impl<'a> DelayLookup<'a> {
         }
     }
 
-    /// Look up `T_setup` for `(port, clock)`. Returns `Some(value_s)` if found.
-    fn t_setup(&self, port: &str, clock: &str) -> Option<f32> {
+    /// Returns true if `stored` (a stripped port ref like `"y"` or `"y[3]"`) corresponds
+    /// to the model port named `query` (e.g. `"y"`).  Handles both scalar and per-pin
+    /// references: `"y"` matches `"y"`; `"y[3]"` also matches `"y"`.
+    fn port_matches(stored: &str, query: &str) -> bool {
+        stored == query
+            || stored
+                .strip_prefix(query)
+                .map(|rest| rest.starts_with('['))
+                .unwrap_or(false)
+    }
+
+    /// Collect all `T_setup` values for `(port, clock)`, including per-pin entries.
+    fn t_setup_values(&self, port: &str, clock: &str) -> Vec<f32> {
         self.pb_type
             .timing_constraints
             .iter()
-            .find(|tc| {
+            .filter(|tc| {
                 matches!(tc.constraint_type, TimingConstraintType::Setup)
-                    && Self::strip_prefix(&tc.port) == port
+                    && Self::port_matches(Self::strip_prefix(&tc.port), port)
                     && tc.clock == clock
             })
             .map(|tc| tc.max_value)
+            .collect()
     }
 
-    /// Look up `T_hold` for `(port, clock)`. Returns `Some(value_s)` if found.
-    fn t_hold(&self, port: &str, clock: &str) -> Option<f32> {
+    /// Collect all `T_hold` values for `(port, clock)`, including per-pin entries.
+    fn t_hold_values(&self, port: &str, clock: &str) -> Vec<f32> {
         self.pb_type
             .timing_constraints
             .iter()
-            .find(|tc| {
+            .filter(|tc| {
                 matches!(tc.constraint_type, TimingConstraintType::Hold)
-                    && Self::strip_prefix(&tc.port) == port
+                    && Self::port_matches(Self::strip_prefix(&tc.port), port)
                     && tc.clock == clock
             })
             .map(|tc| tc.max_value)
+            .collect()
     }
 
-    /// Look up `T_clock_to_Q` for `(port, clock)`. Returns `Some((min_s, max_s))` if found.
-    fn t_clock_to_q(&self, port: &str, clock: &str) -> Option<(f32, f32)> {
+    /// Collect all `T_clock_to_Q` `(min, max)` pairs for `(port, clock)`,
+    /// including per-pin entries.
+    fn t_clock_to_q_values(&self, port: &str, clock: &str) -> Vec<(f32, f32)> {
         self.pb_type
             .timing_constraints
             .iter()
-            .find(|tc| {
+            .filter(|tc| {
                 matches!(tc.constraint_type, TimingConstraintType::ClockToQ)
-                    && Self::strip_prefix(&tc.port) == port
+                    && Self::port_matches(Self::strip_prefix(&tc.port), port)
                     && tc.clock == clock
             })
             .map(|tc| (tc.min_value, tc.max_value))
+            .collect()
+    }
+
+    /// Build a `DelayAnnotation` for the clock-to-Q arc on `(port, clock)`.
+    fn clock_to_q_annotation(&self, port: &str, clock: &str) -> DelayAnnotation {
+        let pairs = self.t_clock_to_q_values(port, clock);
+        let text = format_ctq_pins("Tcq", &pairs);
+        if pairs.is_empty() {
+            DelayAnnotation::Missing(text)
+        } else {
+            DelayAnnotation::Present(text)
+        }
+    }
+}
+
+/// Format a collection of scalar pin values (e.g. per-pin T_setup) under `label`.
+///
+/// - Empty → `"<label> = ⚠ MISSING"`
+/// - One value / all equal → `"<label> = 70.00 ps"` or `"… (×N pins)"`
+/// - Different values → `"<label> = 60.00 ps – 80.00 ps  (N pins)"`
+fn format_scalar_pins(label: &str, values: &[f32]) -> String {
+    if values.is_empty() {
+        return format!("{label} = ⚠ MISSING");
+    }
+    let n = values.len();
+    let min = values.iter().cloned().fold(f32::MAX, f32::min);
+    let max = values.iter().cloned().fold(f32::MIN, f32::max);
+    let all_equal = (max - min).abs() <= 1e-12 * max.abs().max(1.0);
+    if n == 1 {
+        format!("{label} = {}", format_delay(values[0]))
+    } else if all_equal {
+        format!("{label} = {}  (×{n} pins)", format_delay(values[0]))
+    } else {
+        format!(
+            "{label} = {} – {}  ({n} pins)",
+            format_delay(min),
+            format_delay(max)
+        )
+    }
+}
+
+/// Format a collection of `(min, max)` clock-to-Q pin pairs under `label`.
+///
+/// Follows the same compact / range rules as `format_scalar_pins`.
+fn format_ctq_pins(label: &str, pairs: &[(f32, f32)]) -> String {
+    if pairs.is_empty() {
+        return format!("{label} = ⚠ MISSING");
+    }
+    let n = pairs.len();
+    let overall_min = pairs.iter().map(|&(mn, _)| mn).fold(f32::MAX, f32::min);
+    let overall_max = pairs.iter().map(|&(_, mx)| mx).fold(f32::MIN, f32::max);
+    if n == 1 {
+        format!("{label} = {}", format_delay_range(pairs[0].0, pairs[0].1))
+    } else {
+        let all_equal = pairs.windows(2).all(|w| w[0] == w[1]);
+        if all_equal {
+            format!(
+                "{label} = {}  (×{n} pins)",
+                format_delay_range(pairs[0].0, pairs[0].1)
+            )
+        } else {
+            format!(
+                "{label} = {} – {}  ({n} pins)",
+                format_delay(overall_min),
+                format_delay(overall_max)
+            )
+        }
     }
 }
 
 /// Builds a combined setup + hold `DelayAnnotation` for the clock→D arc.
 ///
-/// Both `T_setup` and `T_hold` are reported. The arc turns red and shows "⚠ MISSING" if
-/// either value is absent from the selected pb_type.
+/// Both `T_setup` and `T_hold` are reported, each handling per-pin constraints.
+/// The arc turns red if either is completely absent from the selected pb_type.
 fn build_setup_hold_annotation(
     delays: Option<&DelayLookup<'_>>,
     port: &str,
@@ -263,18 +344,16 @@ fn build_setup_hold_annotation(
     let Some(d) = delays else {
         return DelayAnnotation::NotActive;
     };
-    let tsu = d.t_setup(port, clock);
-    let th = d.t_hold(port, clock);
+    let tsu_vals = d.t_setup_values(port, clock);
+    let th_vals = d.t_hold_values(port, clock);
 
-    let tsu_str = tsu
-        .map(|v| format!("Tsu = {}", format_delay(v)))
-        .unwrap_or_else(|| "Tsu = ⚠ MISSING".to_string());
-    let th_str = th
-        .map(|v| format!("Th  = {}", format_delay(v)))
-        .unwrap_or_else(|| "Th  = ⚠ MISSING".to_string());
-    let detail = format!("{tsu_str}\n{th_str}");
+    let detail = format!(
+        "{}\n{}",
+        format_scalar_pins("Tsu", &tsu_vals),
+        format_scalar_pins("Th ", &th_vals),
+    );
 
-    if tsu.is_some() && th.is_some() {
+    if !tsu_vals.is_empty() && !th_vals.is_empty() {
         DelayAnnotation::Present(detail)
     } else {
         DelayAnnotation::Missing(detail)
@@ -335,10 +414,9 @@ fn draw_timing_marker(
     id: egui::Id,
     selected_arc: &mut Option<egui::Id>,
 ) {
-    let (content, text_color) = match ann {
+    let content = match ann {
         DelayAnnotation::NotActive => return,
-        DelayAnnotation::Present(s) => (s.as_str(), DELAY_LABEL_COLOR),
-        DelayAnnotation::Missing(s) => (s.as_str(), MISSING_COLOR),
+        DelayAnnotation::Present(s) | DelayAnnotation::Missing(s) => s.as_str(),
     };
 
     let radius = MARKER_RADIUS * zoom;
@@ -373,19 +451,27 @@ fn draw_timing_marker(
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(120.0);
+                    ui.set_max_width(280.0);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(title).strong().small());
                         ui.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
                             |ui| {
-                                if ui.small_button("✕").clicked() {
+                                if ui.small_button("x").clicked() {
                                     should_close = true;
                                 }
                             },
                         );
                     });
                     ui.separator();
-                    ui.label(egui::RichText::new(content).monospace().color(text_color));
+                    for line in content.lines() {
+                        let color = if line.contains("⚠ MISSING") {
+                            MISSING_COLOR
+                        } else {
+                            DELAY_LABEL_COLOR
+                        };
+                        ui.label(egui::RichText::new(line).monospace().color(color));
+                    }
                 });
             });
         if should_close {
@@ -872,15 +958,7 @@ impl PrimitiveView {
                 let control = egui::pos2(clock_top.x, start.y);
                 let ctq_ann = match delays {
                     None => DelayAnnotation::NotActive,
-                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
-                        Some((min, max)) => DelayAnnotation::Present(format!(
-                            "Tcq = {}",
-                            format_delay_range(min, max)
-                        )),
-                        None => DelayAnnotation::Missing(
-                            "Tcq = ⚠ MISSING".to_string(),
-                        ),
-                    },
+                    Some(d) => d.clock_to_q_annotation(&port.name, clock_name),
                 };
                 let arc_color = annotation_stroke_color(CLOCK_TO_Q_COLOR, &ctq_ann);
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
@@ -980,15 +1058,7 @@ impl PrimitiveView {
                 let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
                 let ctq_ann = match delays {
                     None => DelayAnnotation::NotActive,
-                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
-                        Some((min, max)) => DelayAnnotation::Present(format!(
-                            "Tcq = {}",
-                            format_delay_range(min, max)
-                        )),
-                        None => DelayAnnotation::Missing(
-                            "Tcq = ⚠ MISSING".to_string(),
-                        ),
-                    },
+                    Some(d) => d.clock_to_q_annotation(&port.name, clock_name),
                 };
                 draw_flip_flop(
                     &ff_outline,
@@ -1038,15 +1108,7 @@ impl PrimitiveView {
                 let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
                 let ctq_ann = match delays {
                     None => DelayAnnotation::NotActive,
-                    Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
-                        Some((min, max)) => DelayAnnotation::Present(format!(
-                            "Tcq = {}",
-                            format_delay_range(min, max)
-                        )),
-                        None => DelayAnnotation::Missing(
-                            "Tcq = ⚠ MISSING".to_string(),
-                        ),
-                    },
+                    Some(d) => d.clock_to_q_annotation(&port.name, clock_name),
                 };
                 draw_flip_flop(
                     &ff_outline,

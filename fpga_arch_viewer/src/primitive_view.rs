@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use egui::{Color32, epaint::QuadraticBezierShape};
 use fpga_arch_parser::{FPGAArch, Model, ModelPort};
 
-// Visual style constants
+// --- Visual style constants ---
+
 const BLOCK_FILL: Color32 = Color32::from_rgb(228, 238, 255);
 const BLOCK_STROKE_COLOR: Color32 = Color32::from_rgb(55, 85, 150);
 const BLOCK_STROKE_WIDTH: f32 = 2.0;
@@ -26,33 +27,62 @@ const SIGNAL_STROKE_WIDTH: f32 = 3.0;
 const PORT_LABEL_FONT_SIZE: f32 = 24.0;
 const MODEL_NAME_FONT_SIZE: f32 = 32.0;
 
-// Layout constants
-const PORT_STEP: f32 = 50.0;               // Vertical spacing per port in sequential blocks
-const FF_HEIGHT: f32 = 75.0;              // Height of a flip-flop symbol
-const FF_WIDTH: f32 = 50.0;               // Width of a flip-flop symbol
-const FF_PORT_OFFSET: f32 = 20.0;         // Distance from FF top to the D/Q port connection
-const CLOCK_STEP: f32 = 50.0;             // Vertical spacing between clock signal rows
-const ARROW_LENGTH: f32 = 100.0;          // Length of a port arrow outside the block boundary
-const ARROW_GAP: f32 = 10.0;              // Gap between arrow tip and port label
-// In non-sequential blocks, arrows start/end this far inside the block boundary.
+// --- Layout constants ---
+
+/// Vertical spacing between data ports in sequential blocks.
+const PORT_STEP: f32 = 50.0;
+/// Height of a flip-flop symbol.
+const FF_HEIGHT: f32 = 75.0;
+/// Width of a flip-flop symbol.
+const FF_WIDTH: f32 = 50.0;
+/// Distance from the FF top edge to the D/Q port connection point.
+const FF_PORT_OFFSET: f32 = 20.0;
+/// Extra vertical padding added to the port step when FFs are present in a combinational block.
+const FF_PORT_STEP_PADDING: f32 = 20.0;
+/// Vertical spacing between clock signal rows.
+const CLOCK_STEP: f32 = 50.0;
+/// Length of a port arrow outside the block boundary.
+const ARROW_LENGTH: f32 = 100.0;
+/// Gap between an arrow tip/tail and the adjacent port label.
+const ARROW_GAP: f32 = 10.0;
+/// In non-sequential blocks, arrows start/end this far inside the block boundary.
 const NON_SEQ_ARROW_INNER: f32 = 50.0;
 const NON_SEQ_ARROW_LENGTH: f32 = ARROW_LENGTH + NON_SEQ_ARROW_INNER;
+/// Extra horizontal padding between a port label and the block edge.
+const LABEL_MARGIN: f32 = 20.0;
+/// Vertical margin above and below the block on the canvas.
+const V_MARGIN: f32 = 50.0;
+/// Vertical offset from the block top edge to the baseline of the name label.
+const BLOCK_NAME_V_OFFSET: f32 = 8.0;
 
-// Zoom constants
+// --- Zoom constants ---
+
 const ZOOM_STEP: f32 = 1.25;
 const ZOOM_MIN: f32 = 0.1;
 const ZOOM_MAX: f32 = 4.0;
-// Leave this fraction of margin around the block when computing the fit zoom.
+/// Leave this fraction of margin around the block when computing the fit zoom.
 const ZOOM_FIT_MARGIN: f32 = 0.9;
+/// Multiplier converting scroll delta pixels to a zoom exponent for Cmd+scroll.
+const SCROLL_ZOOM_SENSITIVITY: f32 = 0.005;
+
+// --- Data types ---
+
+/// Ports of a model grouped by role, used to pass port data between rendering functions.
+struct PortGroups<'a> {
+    input_ports: &'a [&'a ModelPort],
+    output_ports: &'a [&'a ModelPort],
+    input_clock_ports: &'a [&'a ModelPort],
+    output_clock_ports: &'a [&'a ModelPort],
+}
 
 pub struct PrimitiveView {
     selected_model_name: Option<String>,
     show_setup_constraints: bool,
     show_hold_constraints: bool,
     show_combinational_paths: bool,
-    /// Current zoom level. 0.0 is a sentinel meaning "auto-fit on next frame".
-    zoom: f32,
-    /// Most recently computed fit-to-view zoom, updated each frame by render_model.
+    /// Current zoom level. `None` means "auto-fit": use `fit_zoom` each frame.
+    zoom: Option<f32>,
+    /// Most recently computed fit-to-view zoom, updated each frame by `render_model`.
     fit_zoom: f32,
 }
 
@@ -63,13 +93,18 @@ impl Default for PrimitiveView {
             show_setup_constraints: true,
             show_hold_constraints: true,
             show_combinational_paths: true,
-            zoom: 0.0,
+            zoom: None,
             fit_zoom: 1.0,
         }
     }
 }
 
 impl PrimitiveView {
+    /// Returns the zoom level that should be applied this frame.
+    fn effective_zoom(&self) -> f32 {
+        self.zoom.unwrap_or(self.fit_zoom)
+    }
+
     pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
         egui::SidePanel::right("primitive_view_controls")
             .default_width(250.0)
@@ -109,7 +144,7 @@ impl PrimitiveView {
 
             if selected_model_name_str != self.selected_model_name.as_deref().unwrap_or("") {
                 self.selected_model_name = Some(selected_model_name_str.to_string());
-                self.zoom = 0.0; // Reset to auto-fit when the model changes.
+                self.zoom = None; // Reset to auto-fit when the model changes.
             }
         } else {
             ui.label("No models available in architecture");
@@ -117,21 +152,21 @@ impl PrimitiveView {
         ui.add_space(10.0);
 
         // Zoom controls
-        let effective_zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
         ui.separator();
         ui.add_space(10.0);
         ui.label("Zoom:");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
+            let zoom = self.effective_zoom();
             if ui.button("−").clicked() {
-                self.zoom = (effective_zoom / ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX);
+                self.zoom = Some((zoom / ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX));
             }
-            ui.label(format!("{:.0}%", effective_zoom * 100.0));
+            ui.label(format!("{:.0}%", zoom * 100.0));
             if ui.button("+").clicked() {
-                self.zoom = (effective_zoom * ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX);
+                self.zoom = Some((zoom * ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX));
             }
             if ui.button("Fit").clicked() {
-                self.zoom = 0.0;
+                self.zoom = None;
             }
         });
         ui.add_space(10.0);
@@ -171,7 +206,7 @@ impl PrimitiveView {
                         let mut delta = i.zoom_delta();
                         // Cmd+scroll wheel.
                         if i.modifiers.command && i.smooth_scroll_delta.y != 0.0 {
-                            delta *= (i.smooth_scroll_delta.y * 0.005).exp();
+                            delta *= (i.smooth_scroll_delta.y * SCROLL_ZOOM_SENSITIVITY).exp();
                             // Consume the scroll so the ScrollArea does not also pan.
                             i.smooth_scroll_delta = egui::Vec2::ZERO;
                             i.raw_scroll_delta = egui::Vec2::ZERO;
@@ -179,8 +214,7 @@ impl PrimitiveView {
                         delta
                     });
                     if (zoom_delta - 1.0).abs() > f32::EPSILON {
-                        let effective_zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
-                        self.zoom = (effective_zoom * zoom_delta).clamp(ZOOM_MIN, ZOOM_MAX);
+                        self.zoom = Some((self.effective_zoom() * zoom_delta).clamp(ZOOM_MIN, ZOOM_MAX));
                     }
                 }
 
@@ -215,13 +249,19 @@ impl PrimitiveView {
             }
         }
 
+        let port_groups = PortGroups {
+            input_ports: &input_ports,
+            output_ports: &output_ports,
+            input_clock_ports: &input_clock_ports,
+            output_clock_ports: &output_clock_ports,
+        };
+
         let max_ports = input_ports.len().max(output_ports.len());
         let clock_extra_height =
             (input_clock_ports.len() + output_clock_ports.len()) as f32 * CLOCK_STEP;
-        let v_margin = 50.0;
 
         // Measure label widths to compute exact horizontal padding (at zoom = 1).
-        // Each side needs: ARROW_LENGTH (outside block) + ARROW_GAP + 20px margin + label width.
+        // Each side needs: ARROW_LENGTH (outside block) + ARROW_GAP + LABEL_MARGIN + label width.
         let font_id = egui::FontId::proportional(PORT_LABEL_FONT_SIZE);
         let measure = |name: &str| -> f32 {
             ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE).size().x)
@@ -232,67 +272,59 @@ impl PrimitiveView {
         let max_right_label_width = output_ports.iter().chain(output_clock_ports.iter())
             .map(|p| measure(&p.name))
             .fold(0.0_f32, f32::max);
-        let left_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_left_label_width;
-        let right_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_right_label_width;
+        let left_padding = ARROW_LENGTH + ARROW_GAP + LABEL_MARGIN + max_left_label_width;
+        let right_padding = ARROW_LENGTH + ARROW_GAP + LABEL_MARGIN + max_right_label_width;
 
-        let block_width = if is_sequential_block(model) { 250.0_f32 } else { 500.0_f32 };
-        let block_height = if is_sequential_block(model) {
+        let is_sequential = is_sequential_block(model);
+        let block_width = if is_sequential { 250.0_f32 } else { 500.0_f32 };
+        let block_height = if is_sequential {
             (max_ports + 2) as f32 * PORT_STEP
         } else {
             let has_flops = input_ports.iter().chain(output_ports.iter()).any(|p| p.clock.is_some());
-            let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
+            let port_step = if has_flops { FF_HEIGHT + FF_PORT_STEP_PADDING } else { PORT_STEP };
             (max_ports + 2) as f32 * port_step
         };
 
         // Compute the natural (zoom = 1) canvas dimensions and update the fit zoom.
         let natural_width = left_padding + block_width + right_padding;
-        let natural_height = block_height + clock_extra_height + 2.0 * v_margin;
+        let natural_height = block_height + clock_extra_height + 2.0 * V_MARGIN;
         self.fit_zoom = (ZOOM_FIT_MARGIN * (available_size.x / natural_width)
             .min(available_size.y / natural_height))
         .clamp(ZOOM_MIN, ZOOM_MAX);
 
-        let zoom = if self.zoom <= 0.0 { self.fit_zoom } else { self.zoom };
+        let zoom = self.effective_zoom();
 
         let block_outline = allocate_block_canvas(
             ui, block_width, block_height,
             left_padding, right_padding,
-            clock_extra_height, v_margin, available_size.x, zoom,
+            clock_extra_height, available_size.x, zoom,
         );
         draw_block_outline(model, block_outline, zoom, ui);
 
-        if is_sequential_block(model) {
-            self.render_sequential_block(
-                block_outline, &input_clock_ports, &output_clock_ports,
-                &input_ports, &output_ports, zoom, ui,
-            );
+        if is_sequential {
+            self.render_sequential_block(block_outline, &port_groups, zoom, ui);
         } else {
-            self.render_combinational_block(
-                block_outline, &input_clock_ports, &output_clock_ports,
-                &input_ports, &output_ports, zoom, ui,
-            );
+            self.render_combinational_block(block_outline, &port_groups, zoom, ui);
         }
     }
 
     fn render_sequential_block(
         &self,
         block_outline: egui::Rect,
-        input_clock_ports: &[&ModelPort],
-        output_clock_ports: &[&ModelPort],
-        input_ports: &[&ModelPort],
-        output_ports: &[&ModelPort],
+        ports: &PortGroups<'_>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
         // Draw clock triangles along the bottom edge and their wires.
         // Input clocks: wire from the left. Output clocks: wire to the right.
-        let all_clocks: Vec<&ModelPort> = input_clock_ports.iter()
-            .chain(output_clock_ports.iter())
+        let all_clocks: Vec<&ModelPort> = ports.input_clock_ports.iter()
+            .chain(ports.output_clock_ports.iter())
             .copied()
             .collect();
         let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
         let triangle_step = block_outline.width() / (all_clocks.len() + 1) as f32;
         for (idx, port) in all_clocks.iter().enumerate() {
-            let is_output = output_clock_ports.iter().any(|p| p.name == port.name);
+            let is_output = ports.output_clock_ports.iter().any(|p| p.name == port.name);
             let base = block_outline.left_bottom()
                 + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
             let top = base + egui::vec2(0.0, -20.0 * zoom);
@@ -334,8 +366,8 @@ impl PrimitiveView {
         }
 
         // Draw input ports with arrows and optional setup constraint curves.
-        let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
-        for (idx, port) in input_ports.iter().enumerate() {
+        let input_step = block_outline.height() / (ports.input_ports.len() + 2) as f32;
+        for (idx, port) in ports.input_ports.iter().enumerate() {
             let tip = block_outline.left_top() + egui::vec2(0.0, input_step * (idx + 1) as f32);
             let start = tip - egui::vec2(ARROW_LENGTH * zoom, 0.0);
             ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR));
@@ -366,8 +398,8 @@ impl PrimitiveView {
         }
 
         // Draw output ports with arrows and optional hold constraint curves.
-        let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
-        for (idx, port) in output_ports.iter().enumerate() {
+        let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
+        for (idx, port) in ports.output_ports.iter().enumerate() {
             let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
             let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
             ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR));
@@ -401,17 +433,14 @@ impl PrimitiveView {
     fn render_combinational_block(
         &self,
         block_outline: egui::Rect,
-        input_clock_ports: &[&ModelPort],
-        output_clock_ports: &[&ModelPort],
-        input_ports: &[&ModelPort],
-        output_ports: &[&ModelPort],
+        ports: &PortGroups<'_>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
         // Draw clock labels and record their drive points.
         // Input clocks are on the left; output clocks are on the right.
         let mut clock_drive_point: HashMap<String, egui::Pos2> = HashMap::new();
-        for (idx, port) in input_clock_ports.iter().enumerate() {
+        for (idx, port) in ports.input_clock_ports.iter().enumerate() {
             let point = egui::pos2(
                 block_outline.left() - ARROW_LENGTH * zoom,
                 block_outline.bottom() + CLOCK_STEP * zoom * (idx + 1) as f32,
@@ -425,8 +454,8 @@ impl PrimitiveView {
             );
             clock_drive_point.insert(port.name.clone(), point);
         }
-        for (idx, port) in output_clock_ports.iter().enumerate() {
-            let row = input_clock_ports.len() + idx + 1;
+        for (idx, port) in ports.output_clock_ports.iter().enumerate() {
+            let row = ports.input_clock_ports.len() + idx + 1;
             let point = egui::pos2(
                 block_outline.right() + ARROW_LENGTH * zoom,
                 block_outline.bottom() + CLOCK_STEP * zoom * row as f32,
@@ -443,8 +472,8 @@ impl PrimitiveView {
 
         // Draw output ports. Record signal start points for combinational path drawing.
         let mut output_signal_start: HashMap<String, egui::Pos2> = HashMap::new();
-        let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
-        for (idx, port) in output_ports.iter().enumerate() {
+        let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
+        for (idx, port) in ports.output_ports.iter().enumerate() {
             let arrow_start = block_outline.right_top()
                 + egui::vec2(-NON_SEQ_ARROW_INNER * zoom, output_step * (idx + 1) as f32);
             let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
@@ -471,8 +500,8 @@ impl PrimitiveView {
         }
 
         // Draw input ports. Connect to output signal start points for combinational paths.
-        let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
-        for (idx, port) in input_ports.iter().enumerate() {
+        let input_step = block_outline.height() / (ports.input_ports.len() + 2) as f32;
+        for (idx, port) in ports.input_ports.iter().enumerate() {
             let arrow_tip = block_outline.left_top()
                 + egui::vec2(NON_SEQ_ARROW_INNER * zoom, input_step * (idx + 1) as f32);
             let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
@@ -526,20 +555,19 @@ fn allocate_block_canvas(
     left_padding: f32,
     right_padding: f32,
     clock_extra_height: f32,
-    v_margin: f32,
     available_width: f32,
     zoom: f32,
 ) -> egui::Rect {
     let content_width = (left_padding + block_width + right_padding) * zoom;
     let canvas_size = egui::vec2(
         content_width.max(available_width),
-        (block_height + clock_extra_height + 2.0 * v_margin) * zoom,
+        (block_height + clock_extra_height + 2.0 * V_MARGIN) * zoom,
     );
     let (canvas_rect, _) = ui.allocate_exact_size(canvas_size, egui::Sense::empty());
     let extra_x = (canvas_rect.width() - content_width).max(0.0);
     let block_center = egui::pos2(
         canvas_rect.left() + extra_x / 2.0 + left_padding * zoom + block_width * zoom / 2.0,
-        canvas_rect.top() + v_margin * zoom + block_height * zoom / 2.0,
+        canvas_rect.top() + V_MARGIN * zoom + block_height * zoom / 2.0,
     );
     egui::Rect::from_center_size(block_center, egui::vec2(block_width * zoom, block_height * zoom))
 }
@@ -554,7 +582,7 @@ fn draw_block_outline(model: &Model, block_outline: egui::Rect, zoom: f32, ui: &
         egui::epaint::StrokeKind::Middle,
     );
     ui.painter().text(
-        block_outline.center_top() + egui::vec2(0.0, 8.0 * zoom),
+        block_outline.center_top() + egui::vec2(0.0, BLOCK_NAME_V_OFFSET * zoom),
         egui::Align2::CENTER_TOP,
         &model.name,
         egui::FontId::proportional(MODEL_NAME_FONT_SIZE * zoom),

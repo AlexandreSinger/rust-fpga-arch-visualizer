@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
-use fpga_arch_parser::{FPGAArch, Model, ModelPort};
+use fpga_arch_parser::{
+    DelayInfo, DelayType, FPGAArch, Model, ModelPort, PBType, Port, TimingConstraintInfo,
+    TimingConstraintType,
+};
 
 // --- Visual style constants ---
 
@@ -18,14 +21,25 @@ const CLOCK_FILL: Color32 = Color32::from_rgb(210, 185, 245);
 const INPUT_COLOR: Color32 = Color32::from_rgb(25, 105, 190);
 const OUTPUT_COLOR: Color32 = Color32::from_rgb(195, 80, 15);
 
-const SETUP_COLOR: Color32 = Color32::from_rgb(210, 40, 40);
-const HOLD_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
+const SETUP_COLOR: Color32 = Color32::from_rgb(255, 153, 0);
+const CLOCK_TO_Q_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
 const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
+
+/// Color used for missing delay annotations and the constraint arcs they affect.
+const MISSING_COLOR: Color32 = Color32::from_rgb(220, 30, 30);
+/// Color for delay value text inside popup panels.
+const DELAY_LABEL_COLOR: Color32 = Color32::from_rgb(60, 60, 60);
 
 const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
 const SIGNAL_STROKE_WIDTH: f32 = 3.0;
 const PORT_LABEL_FONT_SIZE: f32 = 24.0;
 const MODEL_NAME_FONT_SIZE: f32 = 32.0;
+/// Radius of the clickable timing marker circle (at zoom = 1).
+const MARKER_RADIUS: f32 = 5.0;
+/// Relative-absolute tolerance for considering two delays exactly equal (used in range display).
+const DELAY_EXACT_EPS: f32 = 1e-15;
+/// Relative-absolute tolerance for considering per-pin delays "all equal" in pin summaries.
+const DELAY_APPROX_EPS: f32 = 1e-12;
 
 // --- Layout constants ---
 
@@ -73,11 +87,544 @@ struct PortGroups<'a> {
     output_clock_ports: &'a [&'a ModelPort],
 }
 
+/// A pb_type found in the complex block hierarchy that references a model,
+/// together with its ancestry path (root-to-leaf list of pb_type names).
+pub struct PBTypeMatch<'a> {
+    pub path: Vec<String>,
+    pub pb_type: &'a PBType,
+}
+
+impl<'a> PBTypeMatch<'a> {
+    /// Returns the path formatted as "a > b > c".
+    pub fn path_display(&self) -> String {
+        self.path.join(" > ")
+    }
+}
+
+// --- Delay annotation helpers ---
+
+/// State of a single timing annotation for one arc or wire.
+enum DelayAnnotation {
+    /// No pb_type is selected; show nothing.
+    NotActive,
+    /// Pb_type is selected and all expected annotations were found. String is the tooltip content.
+    Present(String),
+    /// One or more expected annotations are absent. String is the detail shown in the tooltip,
+    /// listing both present values and which ones are missing.
+    Missing(String),
+}
+
+/// Looks up delay and timing-constraint annotations from a selected `PBType`.
+struct DelayLookup<'a> {
+    pb_type: &'a PBType,
+}
+
+impl<'a> DelayLookup<'a> {
+    fn new(pb_type: &'a PBType) -> Self {
+        Self { pb_type }
+    }
+
+    /// Strip the "pb_type_name." prefix from port references like `"adder.a"` → `"a"`.
+    fn strip_prefix(port_ref: &str) -> &str {
+        port_ref.split_once('.').map(|(_, p)| p).unwrap_or(port_ref)
+    }
+
+    /// Look up the pin count for a named port in the pb_type's port list.
+    fn port_num_pins(&self, name: &str) -> Option<i32> {
+        self.pb_type.ports.iter().find_map(|p| {
+            let (port_name, num_pins) = match p {
+                Port::Input(ip) => (ip.name.as_str(), ip.num_pins),
+                Port::Output(op) => (op.name.as_str(), op.num_pins),
+                Port::Clock(cp) => (cp.name.as_str(), cp.num_pins),
+            };
+            if port_name == name {
+                Some(num_pins)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Look up all combinational delays from `in_port` to `out_port` and return a
+    /// `DelayAnnotation` with a port-pair header line prepended.  Returns `Present` if
+    /// at least one matching delay was found, `Missing` otherwise.  Matrices with more
+    /// than 16 entries are summarised to keep the popup manageable.
+    fn comb_delay_annotation(&self, in_port: &str, out_port: &str) -> DelayAnnotation {
+        let in_pins = self.port_num_pins(in_port);
+        let out_pins = self.port_num_pins(out_port);
+        let header = format!(
+            "{}  ->  {}",
+            port_header(in_port, in_pins),
+            port_header(out_port, out_pins),
+        );
+
+        let mut parts: Vec<String> = Vec::new();
+
+        for delay in &self.pb_type.delays {
+            match delay {
+                DelayInfo::Constant {
+                    min,
+                    max,
+                    in_port: ip,
+                    out_port: op,
+                } => {
+                    if Self::strip_prefix(ip) == in_port && Self::strip_prefix(op) == out_port {
+                        parts.push(format!("D = {}", format_delay_range(*min, *max)));
+                    }
+                }
+                DelayInfo::Matrix {
+                    matrix,
+                    in_port: ip,
+                    out_port: op,
+                    delay_type,
+                } => {
+                    if Self::strip_prefix(ip) != in_port || Self::strip_prefix(op) != out_port {
+                        continue;
+                    }
+                    let flat: Vec<f32> = matrix.iter().flatten().copied().collect();
+                    if flat.is_empty() {
+                        continue;
+                    }
+                    // Count only non-empty rows: the parser produces blank rows for
+                    // leading/trailing newlines in the XML text content.
+                    let n_in = matrix.iter().filter(|r| !r.is_empty()).count();
+                    let n_out = matrix
+                        .iter()
+                        .find(|r| !r.is_empty())
+                        .map(Vec::len)
+                        .unwrap_or(0);
+                    let type_str = match delay_type {
+                        DelayType::Max => "max",
+                        DelayType::Min => "min",
+                    };
+
+                    // Summarise if all entries are equal or the matrix is large.
+                    let all_equal = flat.windows(2).all(|w| w[0] == w[1]);
+                    if all_equal {
+                        parts.push(format!(
+                            "D ({type_str}, {n_in}×{n_out}, all equal) = {}",
+                            format_delay(flat[0])
+                        ));
+                    } else if flat.len() > 16 {
+                        let min = flat.iter().cloned().fold(f32::MAX, f32::min);
+                        let max = flat.iter().cloned().fold(f32::MIN, f32::max);
+                        parts.push(format!(
+                            "D ({type_str}, {n_in}×{n_out} matrix)\n  min = {}  max = {}",
+                            format_delay(min),
+                            format_delay(max)
+                        ));
+                    } else {
+                        let mut lines = vec![format!("D ({type_str}, {n_in}×{n_out} matrix):")];
+                        for (i, row) in matrix.iter().filter(|r| !r.is_empty()).enumerate() {
+                            for (j, val) in row.iter().enumerate() {
+                                lines.push(format!("  [{i}→{j}]  {}", format_delay(*val)));
+                            }
+                        }
+                        parts.push(lines.join("\n"));
+                    }
+                }
+            }
+        }
+
+        if parts.is_empty() {
+            DelayAnnotation::Missing(format!("{header}\nD = ⚠ MISSING"))
+        } else {
+            DelayAnnotation::Present(format!("{header}\n{}", parts.join("\n")))
+        }
+    }
+
+    /// Returns true if `stored` (a stripped port ref like `"y"` or `"y[3]"`) corresponds
+    /// to the model port named `query` (e.g. `"y"`).  Handles both scalar and per-pin
+    /// references: `"y"` matches `"y"`; `"y[3]"` also matches `"y"`.
+    fn port_matches(stored: &str, query: &str) -> bool {
+        stored == query
+            || stored
+                .strip_prefix(query)
+                .map(|rest| rest.starts_with('['))
+                .unwrap_or(false)
+    }
+
+    /// Collect timing constraint values, filtering by port, clock, and constraint type.
+    fn filter_constraints<T>(
+        &self,
+        port: &str,
+        clock: &str,
+        is_type: impl Fn(&TimingConstraintType) -> bool,
+        extract: impl Fn(&TimingConstraintInfo) -> T,
+    ) -> Vec<T> {
+        self.pb_type
+            .timing_constraints
+            .iter()
+            .filter(|tc| {
+                is_type(&tc.constraint_type)
+                    && Self::port_matches(Self::strip_prefix(&tc.port), port)
+                    && tc.clock == clock
+            })
+            .map(extract)
+            .collect()
+    }
+
+    /// Collect all `T_setup` values for `(port, clock)`, including per-pin entries.
+    fn t_setup_values(&self, port: &str, clock: &str) -> Vec<f32> {
+        self.filter_constraints(
+            port,
+            clock,
+            |t| matches!(t, TimingConstraintType::Setup),
+            |tc| tc.max_value,
+        )
+    }
+
+    /// Collect all `T_hold` values for `(port, clock)`, including per-pin entries.
+    fn t_hold_values(&self, port: &str, clock: &str) -> Vec<f32> {
+        self.filter_constraints(
+            port,
+            clock,
+            |t| matches!(t, TimingConstraintType::Hold),
+            |tc| tc.max_value,
+        )
+    }
+
+    /// Collect all `T_clock_to_Q` `(min, max)` pairs for `(port, clock)`,
+    /// including per-pin entries.
+    fn t_clock_to_q_values(&self, port: &str, clock: &str) -> Vec<(f32, f32)> {
+        self.filter_constraints(
+            port,
+            clock,
+            |t| matches!(t, TimingConstraintType::ClockToQ),
+            |tc| (tc.min_value, tc.max_value),
+        )
+    }
+
+    /// Build a `DelayAnnotation` for the clock-to-Q arc on `(port, clock)`.
+    fn clock_to_q_annotation(&self, port: &str, clock: &str) -> DelayAnnotation {
+        let num_pins = self.port_num_pins(port);
+        let header = port_header(port, num_pins);
+        let pairs = self.t_clock_to_q_values(port, clock);
+        let value_line = format_ctq_pins("Tcq", &pairs, num_pins);
+        let text = format!("{header}\n{value_line}");
+        if pairs.is_empty() {
+            DelayAnnotation::Missing(text)
+        } else {
+            DelayAnnotation::Present(text)
+        }
+    }
+}
+
+/// Returns a warning string if multiple per-pin constraints were found but fewer than expected,
+/// or `None` if the count is satisfactory. A single found value is never warned (treated as a
+/// scalar constraint covering all pins).
+fn partial_warning(label: &str, found: usize, expected: Option<i32>) -> Option<String> {
+    if let Some(exp) = expected
+        && found > 1
+        && found < exp as usize
+    {
+        let missing = exp as usize - found;
+        return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
+    }
+    None
+}
+
+/// Format a collection of scalar pin values (e.g. per-pin T_setup) under `label`.
+///
+/// - Empty   → `"<label> = ⚠ MISSING"`
+/// - 1 value → `"<label> = 70.00 ps"`
+/// - N equal → `"<label> = 70.00 ps  (×N pins)"`
+/// - N diff  → `"<label> = 60.00 – 80.00 ps  (N pins)"`
+///
+/// Appends a partial-annotation warning line when `found > 1` and `found < expected`.
+fn format_scalar_pins(label: &str, values: &[f32], expected: Option<i32>) -> String {
+    if values.is_empty() {
+        return format!("{label} = ⚠ MISSING");
+    }
+    let n = values.len();
+    let min = values.iter().cloned().fold(f32::MAX, f32::min);
+    let max = values.iter().cloned().fold(f32::MIN, f32::max);
+    let all_equal = (max - min).abs() <= DELAY_APPROX_EPS * max.abs().max(1.0);
+    let value_str = if n == 1 {
+        format!("{label} = {}", format_delay(values[0]))
+    } else if all_equal {
+        format!("{label} = {}  (×{n} pins)", format_delay(values[0]))
+    } else {
+        format!(
+            "{label} = {} – {}  ({n} pins)",
+            format_delay(min),
+            format_delay(max)
+        )
+    };
+    match partial_warning(label, n, expected) {
+        Some(w) => format!("{value_str}\n{w}"),
+        None => value_str,
+    }
+}
+
+/// Format a collection of `(min, max)` clock-to-Q pin pairs under `label`.
+///
+/// Follows the same compact / range / partial-warning rules as `format_scalar_pins`.
+fn format_ctq_pins(label: &str, pairs: &[(f32, f32)], expected: Option<i32>) -> String {
+    if pairs.is_empty() {
+        return format!("{label} = ⚠ MISSING");
+    }
+    let n = pairs.len();
+    let overall_min = pairs.iter().map(|&(mn, _)| mn).fold(f32::MAX, f32::min);
+    let overall_max = pairs.iter().map(|&(_, mx)| mx).fold(f32::MIN, f32::max);
+    let value_str = if n == 1 {
+        format!("{label} = {}", format_delay_range(pairs[0].0, pairs[0].1))
+    } else {
+        let all_equal = pairs.windows(2).all(|w| w[0] == w[1]);
+        if all_equal {
+            format!(
+                "{label} = {}  (×{n} pins)",
+                format_delay_range(pairs[0].0, pairs[0].1)
+            )
+        } else {
+            format!(
+                "{label} = {} – {}  ({n} pins)",
+                format_delay(overall_min),
+                format_delay(overall_max)
+            )
+        }
+    };
+    match partial_warning(label, n, expected) {
+        Some(w) => format!("{value_str}\n{w}"),
+        None => value_str,
+    }
+}
+
+/// Builds a clock-to-Q `DelayAnnotation` for `(port, clock)`.
+///
+/// Returns `NotActive` when no pb_type is selected.
+fn build_ctq_annotation(
+    delays: Option<&DelayLookup<'_>>,
+    port: &str,
+    clock: &str,
+) -> DelayAnnotation {
+    delays.map_or(DelayAnnotation::NotActive, |d| {
+        d.clock_to_q_annotation(port, clock)
+    })
+}
+
+/// Builds a combined setup + hold `DelayAnnotation` for the clock→D arc.
+///
+/// Both `T_setup` and `T_hold` are reported, each handling per-pin constraints.
+/// The arc turns red if either is completely absent from the selected pb_type.
+fn build_setup_hold_annotation(
+    delays: Option<&DelayLookup<'_>>,
+    port: &str,
+    clock: &str,
+) -> DelayAnnotation {
+    let Some(d) = delays else {
+        return DelayAnnotation::NotActive;
+    };
+    let num_pins = d.port_num_pins(port);
+    let header = port_header(port, num_pins);
+    let tsu_vals = d.t_setup_values(port, clock);
+    let th_vals = d.t_hold_values(port, clock);
+
+    let detail = format!(
+        "{header}\n{}\n{}",
+        format_scalar_pins("Tsu", &tsu_vals, num_pins),
+        format_scalar_pins("Th ", &th_vals, num_pins),
+    );
+
+    if !tsu_vals.is_empty() && !th_vals.is_empty() {
+        DelayAnnotation::Present(detail)
+    } else {
+        DelayAnnotation::Missing(detail)
+    }
+}
+
+/// Format a one-line port description: `"y  (40 pins)"` or just `"y"`.
+fn port_header(name: &str, num_pins: Option<i32>) -> String {
+    match num_pins {
+        Some(n) => format!("{name}  ({n} pins)"),
+        None => name.to_string(),
+    }
+}
+
+/// Format a delay value in seconds as a human-readable string (ps or ns).
+fn format_delay(v: f32) -> String {
+    let ps = v * 1e12;
+    if ps.abs() >= 1000.0 {
+        format!("{:.3} ns", ps / 1000.0)
+    } else {
+        format!("{:.2} ps", ps)
+    }
+}
+
+/// Format a (min, max) delay range. Shows a single value when min ≈ max.
+fn format_delay_range(min: f32, max: f32) -> String {
+    if (max - min).abs() <= DELAY_EXACT_EPS * max.abs().max(1.0) {
+        format_delay(max)
+    } else {
+        format!("{} – {}", format_delay(min), format_delay(max))
+    }
+}
+
+/// Returns the effective stroke color for a timing arc, turning it bright red when missing.
+fn annotation_stroke_color(normal: Color32, ann: &DelayAnnotation) -> Color32 {
+    match ann {
+        DelayAnnotation::Missing(_) => MISSING_COLOR,
+        _ => normal,
+    }
+}
+
+/// Midpoint of a quadratic Bézier at t = 0.5.
+fn bezier_midpoint(p0: egui::Pos2, p1: egui::Pos2, p2: egui::Pos2) -> egui::Pos2 {
+    egui::pos2(
+        0.25 * p0.x + 0.5 * p1.x + 0.25 * p2.x,
+        0.25 * p0.y + 0.5 * p1.y + 0.25 * p2.y,
+    )
+}
+
+/// Draws a quadratic Bézier timing arc and its clickable annotation marker.
+fn draw_quadratic_timing_arc(
+    ui: &mut egui::Ui,
+    p0: egui::Pos2,
+    control: egui::Pos2,
+    p2: egui::Pos2,
+    ann: &DelayAnnotation,
+    base_color: Color32,
+    title: &str,
+    zoom: f32,
+    id: egui::Id,
+    selected_arc: &mut Option<egui::Id>,
+) {
+    let arc_color = annotation_stroke_color(base_color, ann);
+    ui.painter().add(QuadraticBezierShape::from_points_stroke(
+        [p0, control, p2],
+        false,
+        Color32::TRANSPARENT,
+        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, arc_color),
+    ));
+    let midpoint = bezier_midpoint(p0, control, p2);
+    draw_timing_marker(ui, midpoint, ann, base_color, title, zoom, id, selected_arc);
+}
+
+/// Draws a straight-line timing arc and its clickable annotation marker.
+fn draw_linear_timing_arc(
+    ui: &mut egui::Ui,
+    p0: egui::Pos2,
+    p1: egui::Pos2,
+    ann: &DelayAnnotation,
+    base_color: Color32,
+    title: &str,
+    zoom: f32,
+    id: egui::Id,
+    selected_arc: &mut Option<egui::Id>,
+) {
+    let wire_color = annotation_stroke_color(base_color, ann);
+    ui.painter().line_segment(
+        [p0, p1],
+        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, wire_color),
+    );
+    let midpoint = egui::pos2((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0);
+    draw_timing_marker(ui, midpoint, ann, base_color, title, zoom, id, selected_arc);
+}
+
+/// Draws a small circular marker at `midpoint` for a timing annotation.
+///
+/// - `NotActive`: nothing drawn.
+/// - `Present` / `Missing`: draws a colored circle using `arc_color`. The marker is dim when
+///   idle, bright when hovered or selected. Clicking it toggles a floating popup panel that
+///   shows the annotation content with a `title` header.
+///
+/// `id` must be unique per element per frame. `selected_arc` tracks which marker (if any)
+/// currently has its popup open.
+fn draw_timing_marker(
+    ui: &mut egui::Ui,
+    midpoint: egui::Pos2,
+    ann: &DelayAnnotation,
+    base_color: Color32,
+    title: &str,
+    zoom: f32,
+    id: egui::Id,
+    selected_arc: &mut Option<egui::Id>,
+) {
+    let content = match ann {
+        DelayAnnotation::NotActive => return,
+        DelayAnnotation::Present(s) | DelayAnnotation::Missing(s) => s.as_str(),
+    };
+
+    let effective_color = annotation_stroke_color(base_color, ann);
+    let radius = MARKER_RADIUS * zoom;
+    // Allocate a slightly larger hit area than the visual circle for easier clicking.
+    let hit_rect = egui::Rect::from_center_size(midpoint, egui::Vec2::splat((radius + 3.0) * 2.0));
+    let is_selected = *selected_arc == Some(id);
+    let response = ui.allocate_rect(hit_rect, egui::Sense::click());
+
+    // Bright when selected or hovered, dimmed otherwise.
+    let fill = if is_selected || response.hovered() {
+        effective_color
+    } else {
+        effective_color.gamma_multiply(0.45)
+    };
+    ui.painter().circle_filled(midpoint, radius, fill);
+    ui.painter().circle_stroke(
+        midpoint,
+        radius,
+        egui::Stroke::new(1.0 * zoom, effective_color),
+    );
+
+    if response.clicked() {
+        *selected_arc = if is_selected { None } else { Some(id) };
+    }
+
+    // Floating popup panel, anchored just to the right of the marker.
+    if is_selected {
+        // Split the content: the first line is the port info header shown in the
+        // title bar; remaining lines are the delay values shown in the body.
+        let mut content_lines = content.lines();
+        let port_info = content_lines.next().unwrap_or("");
+        let full_title = if port_info.is_empty() {
+            title.to_string()
+        } else {
+            format!("{title} — {port_info}")
+        };
+
+        let popup_pos = midpoint + egui::vec2(radius + 8.0 * zoom, -(20.0 * zoom));
+        let mut should_close = false;
+        egui::Area::new(id.with("popup"))
+            .fixed_pos(popup_pos)
+            .order(egui::Order::Tooltip)
+            .interactable(true)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(120.0);
+                    ui.set_max_width(320.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&full_title).strong().small());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("x").clicked() {
+                                should_close = true;
+                            }
+                        });
+                    });
+                    ui.separator();
+                    for line in content_lines {
+                        let color = if line.contains('⚠') {
+                            MISSING_COLOR
+                        } else {
+                            DELAY_LABEL_COLOR
+                        };
+                        ui.label(egui::RichText::new(line).monospace().color(color));
+                    }
+                });
+            });
+        if should_close {
+            *selected_arc = None;
+        }
+    }
+}
+
 pub struct PrimitiveView {
     pub selected_model_name: Option<String>,
+    /// Index into the list of pb_types that use the selected model.
+    pub selected_pb_type_idx: Option<usize>,
     show_setup_constraints: bool,
-    show_hold_constraints: bool,
+    show_clock_to_q: bool,
     show_combinational_paths: bool,
+    /// The ID of the timing marker whose popup is currently open (if any).
+    selected_timing_arc: Option<egui::Id>,
     /// Current zoom level. `None` means "auto-fit": use `fit_zoom` each frame.
     zoom: Option<f32>,
     /// Most recently computed fit-to-view zoom, updated each frame by `render_model`.
@@ -90,9 +637,11 @@ impl Default for PrimitiveView {
     fn default() -> Self {
         Self {
             selected_model_name: None,
+            selected_pb_type_idx: None,
             show_setup_constraints: true,
-            show_hold_constraints: true,
+            show_clock_to_q: true,
             show_combinational_paths: true,
+            selected_timing_arc: None,
             zoom: None,
             fit_zoom: 1.0,
             last_rendered_model_name: None,
@@ -107,18 +656,29 @@ impl PrimitiveView {
     }
 
     pub fn render(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
+        let pb_type_matches = self
+            .selected_model_name
+            .as_ref()
+            .map(|name| find_pb_types_for_model(arch, name))
+            .unwrap_or_default();
+
         egui::SidePanel::right("primitive_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
-                self.render_side_panel(arch, ui);
+                self.render_side_panel(arch, &pb_type_matches, ui);
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, ui);
+            self.render_central_panel(arch, &pb_type_matches, ui);
         });
     }
 
-    fn render_side_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
+    fn render_side_panel(
+        &mut self,
+        arch: &FPGAArch,
+        pb_type_matches: &[PBTypeMatch<'_>],
+        ui: &mut egui::Ui,
+    ) {
         ui.heading("Primitive View");
 
         ui.add_space(10.0);
@@ -131,12 +691,20 @@ impl PrimitiveView {
 
             let mut selected_model_name_str = self.selected_model_name.as_deref().unwrap_or("");
 
+            let display_name = if selected_model_name_str.is_empty() {
+                "Select a model".to_string()
+            } else if selected_model_name_str.chars().count() > 24 {
+                format!(
+                    "{}…",
+                    selected_model_name_str.chars().take(24).collect::<String>()
+                )
+            } else {
+                selected_model_name_str.to_string()
+            };
+
             egui::ComboBox::from_id_salt("model_selector_combobox")
-                .selected_text(if !selected_model_name_str.is_empty() {
-                    selected_model_name_str
-                } else {
-                    "Select a model"
-                })
+                .selected_text(display_name)
+                .width(ui.available_width() - 8.0)
                 .show_ui(ui, |ui| {
                     for model in &arch.models {
                         ui.selectable_value(&mut selected_model_name_str, &model.name, &model.name);
@@ -145,10 +713,31 @@ impl PrimitiveView {
 
             if selected_model_name_str != self.selected_model_name.as_deref().unwrap_or("") {
                 self.selected_model_name = Some(selected_model_name_str.to_string());
+                self.selected_pb_type_idx = None;
             }
         } else {
             ui.label("No models available in architecture");
         }
+
+        if !pb_type_matches.is_empty() {
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(10.0);
+            ui.label("Used by pb_types:");
+            ui.add_space(5.0);
+            egui::ScrollArea::vertical()
+                .id_salt("pb_type_list_scroll")
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for (idx, m) in pb_type_matches.iter().enumerate() {
+                        let selected = self.selected_pb_type_idx == Some(idx);
+                        if ui.selectable_label(selected, m.path_display()).clicked() {
+                            self.selected_pb_type_idx = if selected { None } else { Some(idx) };
+                        }
+                    }
+                });
+        }
+
         ui.add_space(10.0);
 
         // Zoom controls
@@ -190,15 +779,15 @@ impl PrimitiveView {
         constraint_checkbox(
             ui,
             &mut self.show_setup_constraints,
-            "Setup Constraints",
+            "Setup & Hold Constraints",
             SETUP_COLOR,
         );
         ui.add_space(4.0);
         constraint_checkbox(
             ui,
-            &mut self.show_hold_constraints,
-            "Hold Constraints",
-            HOLD_COLOR,
+            &mut self.show_clock_to_q,
+            "Clock to Q",
+            CLOCK_TO_Q_COLOR,
         );
         ui.add_space(4.0);
         constraint_checkbox(
@@ -209,10 +798,22 @@ impl PrimitiveView {
         );
     }
 
-    fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
+    fn render_central_panel(
+        &mut self,
+        arch: &FPGAArch,
+        pb_type_matches: &[PBTypeMatch<'_>],
+        ui: &mut egui::Ui,
+    ) {
         if let Some(selected_model_name) = &self.selected_model_name
             && let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name)
         {
+            // Build a delay lookup for the selected pb_type (if any).
+            let selected_pb_type = self
+                .selected_pb_type_idx
+                .and_then(|i| pb_type_matches.get(i))
+                .map(|m| m.pb_type);
+            let delay_lookup = selected_pb_type.map(DelayLookup::new);
+
             // Handle zoom via Cmd+scroll and pinch gestures when the pointer is over the canvas.
             // This must happen before the ScrollArea is created so we can consume scroll
             // events that should zoom rather than scroll.
@@ -237,16 +838,24 @@ impl PrimitiveView {
             egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    self.render_model(model, ui, available_size);
+                    self.render_model(model, delay_lookup.as_ref(), ui, available_size);
                 });
         }
     }
 
-    fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_size: egui::Vec2) {
+    fn render_model(
+        &mut self,
+        model: &Model,
+        delays: Option<&DelayLookup<'_>>,
+        ui: &mut egui::Ui,
+        available_size: egui::Vec2,
+    ) {
         // Reset zoom to auto-fit whenever the displayed model changes (e.g. from the combobox
         // or from an external navigation action like the summary view buttons).
         if self.last_rendered_model_name.as_deref() != Some(&model.name) {
             self.zoom = None;
+            self.selected_pb_type_idx = None;
+            self.selected_timing_arc = None;
             self.last_rendered_model_name = Some(model.name.clone());
         }
 
@@ -343,16 +952,17 @@ impl PrimitiveView {
         draw_block_outline(model, block_outline, zoom, ui);
 
         if is_sequential {
-            self.render_sequential_block(block_outline, &port_groups, zoom, ui);
+            self.render_sequential_block(block_outline, &port_groups, delays, zoom, ui);
         } else {
-            self.render_combinational_block(block_outline, &port_groups, zoom, ui);
+            self.render_combinational_block(block_outline, &port_groups, delays, zoom, ui);
         }
     }
 
     fn render_sequential_block(
-        &self,
+        &mut self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
+        delays: Option<&DelayLookup<'_>>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
@@ -417,18 +1027,7 @@ impl PrimitiveView {
         for (idx, port) in ports.input_ports.iter().enumerate() {
             let tip = block_outline.left_top() + egui::vec2(0.0, input_step * (idx + 1) as f32);
             let start = tip - egui::vec2(ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(
-                start,
-                tip - start,
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR),
-            );
-            ui.painter().text(
-                start - egui::vec2(ARROW_GAP * zoom, 0.0),
-                egui::Align2::RIGHT_CENTER,
-                &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
-                INPUT_COLOR,
-            );
+            draw_port_arrow(ui, start, tip, &port.name, INPUT_COLOR, zoom, true);
             if self.show_setup_constraints
                 && let Some(clock_name) = &port.clock
             {
@@ -444,33 +1043,30 @@ impl PrimitiveView {
                         continue;
                     }
                 };
-                ui.painter().add(QuadraticBezierShape::from_points_stroke(
-                    [*clock_top, egui::pos2(clock_top.x, tip.y), tip],
-                    false,
-                    Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
-                ));
+                let control = egui::pos2(clock_top.x, tip.y);
+                let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
+                draw_quadratic_timing_arc(
+                    ui,
+                    *clock_top,
+                    control,
+                    tip,
+                    &setup_ann,
+                    SETUP_COLOR,
+                    "Setup & Hold",
+                    zoom,
+                    egui::Id::new(("seq_setup", port.name.as_str(), clock_name.as_str())),
+                    &mut self.selected_timing_arc,
+                );
             }
         }
 
-        // Draw output ports with arrows and optional hold constraint curves.
+        // Draw output ports with arrows and optional clock-to-Q arcs.
         let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
         for (idx, port) in ports.output_ports.iter().enumerate() {
             let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
             let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(
-                start,
-                tip - start,
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR),
-            );
-            ui.painter().text(
-                tip + egui::vec2(ARROW_GAP * zoom, 0.0),
-                egui::Align2::LEFT_CENTER,
-                &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
-                OUTPUT_COLOR,
-            );
-            if self.show_hold_constraints
+            draw_port_arrow(ui, start, tip, &port.name, OUTPUT_COLOR, zoom, false);
+            if self.show_clock_to_q
                 && let Some(clock_name) = &port.clock
             {
                 let clock_top = match clock_triangle_top.get(clock_name) {
@@ -485,20 +1081,29 @@ impl PrimitiveView {
                         continue;
                     }
                 };
-                ui.painter().add(QuadraticBezierShape::from_points_stroke(
-                    [*clock_top, egui::pos2(clock_top.x, start.y), start],
-                    false,
-                    Color32::TRANSPARENT,
-                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
-                ));
+                let control = egui::pos2(clock_top.x, start.y);
+                let ctq_ann = build_ctq_annotation(delays, &port.name, clock_name);
+                draw_quadratic_timing_arc(
+                    ui,
+                    *clock_top,
+                    control,
+                    start,
+                    &ctq_ann,
+                    CLOCK_TO_Q_COLOR,
+                    "Clock to Q",
+                    zoom,
+                    egui::Id::new(("seq_ctq", port.name.as_str(), clock_name.as_str())),
+                    &mut self.selected_timing_arc,
+                );
             }
         }
     }
 
     fn render_combinational_block(
-        &self,
+        &mut self,
         block_outline: egui::Rect,
         ports: &PortGroups<'_>,
+        delays: Option<&DelayLookup<'_>>,
         zoom: f32,
         ui: &mut egui::Ui,
     ) {
@@ -542,17 +1147,14 @@ impl PrimitiveView {
             let arrow_start = block_outline.right_top()
                 + egui::vec2(-NON_SEQ_ARROW_INNER * zoom, output_step * (idx + 1) as f32);
             let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(
+            draw_port_arrow(
+                ui,
                 arrow_start,
-                arrow_tip - arrow_start,
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, OUTPUT_COLOR),
-            );
-            ui.painter().text(
-                arrow_tip + egui::vec2(ARROW_GAP * zoom, 0.0),
-                egui::Align2::LEFT_CENTER,
+                arrow_tip,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 OUTPUT_COLOR,
+                zoom,
+                false,
             );
 
             let mut signal_start = arrow_start;
@@ -564,12 +1166,20 @@ impl PrimitiveView {
                     ),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
+                // Output FF: annotate both setup/hold (internal D→clock) and clock-to-Q.
+                // Some blocks (e.g. RAMs) specify T_setup on output ports for internal
+                // output registers, in addition to T_clock_to_Q for the external output.
+                let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
+                let ctq_ann = build_ctq_annotation(delays, &port.name, clock_name);
                 draw_flip_flop(
                     &ff_outline,
+                    &setup_ann,
+                    &ctq_ann,
                     self.show_setup_constraints,
-                    self.show_hold_constraints,
+                    self.show_clock_to_q,
                     zoom,
                     ui,
+                    &mut self.selected_timing_arc,
                 );
                 signal_start -= egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
@@ -583,17 +1193,14 @@ impl PrimitiveView {
             let arrow_tip = block_outline.left_top()
                 + egui::vec2(NON_SEQ_ARROW_INNER * zoom, input_step * (idx + 1) as f32);
             let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            ui.painter().arrow(
+            draw_port_arrow(
+                ui,
                 arrow_start,
-                arrow_tip - arrow_start,
-                egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, INPUT_COLOR),
-            );
-            ui.painter().text(
-                arrow_start - egui::vec2(ARROW_GAP * zoom, 0.0),
-                egui::Align2::RIGHT_CENTER,
+                arrow_tip,
                 &port.name,
-                egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 INPUT_COLOR,
+                zoom,
+                true,
             );
 
             let mut signal_start = arrow_tip;
@@ -602,12 +1209,21 @@ impl PrimitiveView {
                     egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET * zoom),
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
+                // Input FF: annotate both setup/hold (D→clock) and clock-to-Q.
+                // Some blocks (e.g. RAMs) specify T_clock_to_Q on input ports for
+                // internal input registers, in addition to T_setup for the external
+                // input constraint.
+                let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
+                let ctq_ann = build_ctq_annotation(delays, &port.name, clock_name);
                 draw_flip_flop(
                     &ff_outline,
+                    &setup_ann,
+                    &ctq_ann,
                     self.show_setup_constraints,
-                    self.show_hold_constraints,
+                    self.show_clock_to_q,
                     zoom,
                     ui,
+                    &mut self.selected_timing_arc,
                 );
                 signal_start += egui::vec2(FF_WIDTH * zoom, 0.0);
                 draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, zoom, ui);
@@ -617,9 +1233,20 @@ impl PrimitiveView {
                 for sink_name in &port.combinational_sink_ports {
                     match output_signal_start.get(sink_name) {
                         Some(sink) => {
-                            ui.painter().line_segment(
-                                [signal_start, *sink],
-                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, COMB_PATH_COLOR),
+                            let comb_ann = match delays {
+                                None => DelayAnnotation::NotActive,
+                                Some(d) => d.comb_delay_annotation(&port.name, sink_name),
+                            };
+                            draw_linear_timing_arc(
+                                ui,
+                                signal_start,
+                                *sink,
+                                &comb_ann,
+                                COMB_PATH_COLOR,
+                                "Combinational Delay",
+                                zoom,
+                                egui::Id::new(("comb", port.name.as_str(), sink_name.as_str())),
+                                &mut self.selected_timing_arc,
                             );
                         }
                         None => {
@@ -663,6 +1290,45 @@ fn allocate_block_canvas(
         block_center,
         egui::vec2(block_width * zoom, block_height * zoom),
     )
+}
+
+/// Draws a port signal arrow and its label.
+///
+/// If `label_at_start` is true the label is placed to the left of `start`
+/// (used for input ports where the signal enters from the left).
+/// Otherwise it is placed to the right of `tip` (output ports).
+fn draw_port_arrow(
+    ui: &mut egui::Ui,
+    start: egui::Pos2,
+    tip: egui::Pos2,
+    label: &str,
+    color: Color32,
+    zoom: f32,
+    label_at_start: bool,
+) {
+    ui.painter().arrow(
+        start,
+        tip - start,
+        egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, color),
+    );
+    let (label_pos, align) = if label_at_start {
+        (
+            start - egui::vec2(ARROW_GAP * zoom, 0.0),
+            egui::Align2::RIGHT_CENTER,
+        )
+    } else {
+        (
+            tip + egui::vec2(ARROW_GAP * zoom, 0.0),
+            egui::Align2::LEFT_CENTER,
+        )
+    };
+    ui.painter().text(
+        label_pos,
+        align,
+        label,
+        egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
+        color,
+    );
 }
 
 /// Draws the block rectangle and its name label.
@@ -710,12 +1376,19 @@ fn draw_ff_clock_path(
     }
 }
 
+/// Draws a flip-flop symbol at `ff_outline`.
+///
+/// `setup_annotation` annotates the clock-to-D setup arc (relevant for input-side FFs).
+/// `ctq_annotation` annotates the clock-to-Q propagation arc (relevant for output-side FFs).
 fn draw_flip_flop(
     ff_outline: &egui::Rect,
+    setup_annotation: &DelayAnnotation,
+    ctq_annotation: &DelayAnnotation,
     show_setup_constraints: bool,
-    show_hold_constraints: bool,
+    show_clock_to_q: bool,
     zoom: f32,
     ui: &mut egui::Ui,
+    selected_arc: &mut Option<egui::Id>,
 ) {
     ui.painter().rect(
         *ff_outline,
@@ -736,25 +1409,43 @@ fn draw_flip_flop(
         egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
     ));
 
-    // Draw setup and hold constraint curves from the clock triangle to D and Q ports.
+    // Draw setup (clock→D) and clock-to-Q (clock→Q) arcs inside the FF symbol.
     let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let control = egui::pos2(triangle_t.x, d_port.y);
+
+    // Use the FF outline's top-left corner (as bit-pattern) to build unique IDs across
+    // multiple FF instances on the same canvas.
+    let ff_id_x = ff_outline.min.x.to_bits();
+    let ff_id_y = ff_outline.min.y.to_bits();
+
     if show_setup_constraints {
-        ui.painter().add(QuadraticBezierShape::from_points_stroke(
-            [triangle_t, control, d_port],
-            false,
-            Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, SETUP_COLOR),
-        ));
+        draw_quadratic_timing_arc(
+            ui,
+            triangle_t,
+            control,
+            d_port,
+            setup_annotation,
+            SETUP_COLOR,
+            "Setup & Hold",
+            zoom,
+            egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
+            selected_arc,
+        );
     }
-    if show_hold_constraints {
-        ui.painter().add(QuadraticBezierShape::from_points_stroke(
-            [triangle_t, control, q_port],
-            false,
-            Color32::TRANSPARENT,
-            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH * zoom, HOLD_COLOR),
-        ));
+    if show_clock_to_q {
+        draw_quadratic_timing_arc(
+            ui,
+            triangle_t,
+            control,
+            q_port,
+            ctq_annotation,
+            CLOCK_TO_Q_COLOR,
+            "Clock to Q",
+            zoom,
+            egui::Id::new(("ff_ctq", ff_id_x, ff_id_y)),
+            selected_arc,
+        );
     }
 }
 
@@ -774,7 +1465,7 @@ fn legend_entry(ui: &mut egui::Ui, label: &str, color: Color32) {
 
 fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: Color32) {
     ui.horizontal(|ui| {
-        ui.checkbox(value, "");
+        let checkbox = ui.checkbox(value, "");
         let dimmed = if *value {
             color
         } else {
@@ -796,10 +1487,61 @@ fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: 
             egui::Label::new(egui::RichText::new(label).color(text_color))
                 .sense(egui::Sense::click()),
         );
+        let _ = checkbox.labelled_by(label_response.id);
         if swatch_response.clicked() || label_response.clicked() {
             *value = !*value;
         }
     });
+}
+
+/// Returns true if `pb_type`'s `blif_model` field references `model_name`.
+///
+/// Built-in models (`.input`, `.output`, `.latch`, `.names`) are stored verbatim;
+/// custom models are prefixed with `.subckt `.
+fn pb_type_matches_model(pb_type: &PBType, model_name: &str) -> bool {
+    if model_name.starts_with('.') {
+        pb_type.blif_model.as_deref() == Some(model_name)
+    } else {
+        pb_type.blif_model.as_deref() == Some(&format!(".subckt {model_name}"))
+    }
+}
+
+/// Recursively collects all `PBType` leaf nodes in `pb_type`'s subtree whose
+/// `blif_model` references `model_name` (i.e. equals `.subckt <model_name>`).
+fn collect_pb_types_for_model<'a>(
+    pb_type: &'a PBType,
+    model_name: &str,
+    path: &mut Vec<String>,
+    results: &mut Vec<PBTypeMatch<'a>>,
+) {
+    path.push(pb_type.name.clone());
+    if pb_type_matches_model(pb_type, model_name) {
+        results.push(PBTypeMatch {
+            path: path.clone(),
+            pb_type,
+        });
+    }
+    for child in &pb_type.pb_types {
+        collect_pb_types_for_model(child, model_name, path, results);
+    }
+    for mode in &pb_type.modes {
+        path.push(mode.name.clone());
+        for child in &mode.pb_types {
+            collect_pb_types_for_model(child, model_name, path, results);
+        }
+        path.pop();
+    }
+    path.pop();
+}
+
+/// Returns all `PBType`s in the complex block hierarchy that reference `model_name`.
+fn find_pb_types_for_model<'a>(arch: &'a FPGAArch, model_name: &str) -> Vec<PBTypeMatch<'a>> {
+    let mut results = Vec::new();
+    let mut path = Vec::new();
+    for root in &arch.complex_block_list {
+        collect_pb_types_for_model(root, model_name, &mut path, &mut results);
+    }
+    results
 }
 
 fn is_sequential_block(model: &Model) -> bool {

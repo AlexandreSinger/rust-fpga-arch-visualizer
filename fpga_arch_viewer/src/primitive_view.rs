@@ -84,13 +84,41 @@ impl PrimitiveView {
         }
         ui.add_space(10.0);
 
-        ui.checkbox(&mut self.show_setup_constraints, "Show Setup Constraints");
+        ui.separator();
         ui.add_space(10.0);
-        ui.checkbox(&mut self.show_hold_constraints, "Show Hold Constraints");
+        ui.label("Legend:");
+        ui.add_space(6.0);
+
+        ui.label("Signals:");
+        ui.add_space(4.0);
+        legend_entry(ui, "Input", INPUT_COLOR);
+        ui.add_space(4.0);
+        legend_entry(ui, "Output", OUTPUT_COLOR);
+        ui.add_space(4.0);
+        legend_entry(ui, "Clock", CLOCK_COLOR);
         ui.add_space(10.0);
-        ui.checkbox(
+
+        ui.label("Timing Constraints:");
+        ui.add_space(4.0);
+        constraint_checkbox(
+            ui,
+            &mut self.show_setup_constraints,
+            "Setup Constraints",
+            SETUP_COLOR,
+        );
+        ui.add_space(4.0);
+        constraint_checkbox(
+            ui,
+            &mut self.show_hold_constraints,
+            "Hold Constraints",
+            HOLD_COLOR,
+        );
+        ui.add_space(4.0);
+        constraint_checkbox(
+            ui,
             &mut self.show_combinational_paths,
-            "Show Combinational Timing Paths",
+            "Combinational Paths",
+            COMB_PATH_COLOR,
         );
     }
 
@@ -495,6 +523,46 @@ fn draw_flip_flop(
         );
         ui.painter().add(bezier_shape);
     }
+}
+
+fn legend_entry(ui: &mut egui::Ui, label: &str, color: Color32) {
+    ui.horizontal(|ui| {
+        // Indent to align with constraint checkboxes (checkbox width ~20px + spacing)
+        ui.add_space(24.0);
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
+        ui.painter().line_segment(
+            [rect.left_center(), rect.right_center()],
+            egui::Stroke::new(SIGNAL_STROKE_WIDTH, color),
+        );
+        ui.add_space(4.0);
+        ui.label(label);
+    });
+}
+
+fn constraint_checkbox(
+    ui: &mut egui::Ui,
+    value: &mut bool,
+    label: &str,
+    color: Color32,
+) {
+    ui.horizontal(|ui| {
+        ui.checkbox(value, "");
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
+        let dimmed = if *value { color } else { color.gamma_multiply(0.35) };
+        ui.painter().line_segment(
+            [rect.left_center(), rect.right_center()],
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, dimmed),
+        );
+        ui.add_space(4.0);
+        let text_color = if *value {
+            ui.visuals().text_color()
+        } else {
+            ui.visuals().weak_text_color()
+        };
+        ui.colored_label(text_color, label);
+    });
 }
 
 fn is_sequential_block(model: &Model) -> bool {

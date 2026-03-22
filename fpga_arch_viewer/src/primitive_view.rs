@@ -215,6 +215,13 @@ impl PrimitiveView {
                 egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
                 egui::epaint::StrokeKind::Middle,
             );
+            ui.painter().text(
+                block_outline.center_top() + egui::vec2(0.0, 8.0),
+                egui::Align2::CENTER_TOP,
+                &model.name,
+                egui::FontId::proportional(32.0),
+                BLOCK_STROKE_COLOR,
+            );
 
             // Draw the clock triangles
             let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
@@ -373,6 +380,13 @@ impl PrimitiveView {
                 BLOCK_FILL,
                 egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
                 egui::epaint::StrokeKind::Middle,
+            );
+            ui.painter().text(
+                block_outline.center_top() + egui::vec2(0.0, 8.0),
+                egui::Align2::CENTER_TOP,
+                &model.name,
+                egui::FontId::proportional(32.0),
+                BLOCK_STROKE_COLOR,
             );
 
             // Draw the clock names

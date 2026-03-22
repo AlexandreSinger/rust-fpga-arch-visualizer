@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
-use fpga_arch_parser::{FPGAArch, Model};
+use fpga_arch_parser::{FPGAArch, Model, ModelPort};
 
 // Visual style constants
 const BLOCK_FILL: Color32 = Color32::from_rgb(228, 238, 255);
 const BLOCK_STROKE_COLOR: Color32 = Color32::from_rgb(55, 85, 150);
 const BLOCK_STROKE_WIDTH: f32 = 2.0;
+
+const FF_FILL: Color32 = Color32::from_rgb(255, 248, 215);
+const FF_STROKE_COLOR: Color32 = Color32::from_rgb(110, 85, 20);
+const FF_STROKE_WIDTH: f32 = 1.5;
 
 const CLOCK_COLOR: Color32 = Color32::from_rgb(120, 50, 175);
 const CLOCK_FILL: Color32 = Color32::from_rgb(210, 185, 245);
@@ -19,9 +23,20 @@ const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
 const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
 const SIGNAL_STROKE_WIDTH: f32 = 3.0;
-const PORT_STEP: f32 = 50.0;
-const FF_HEIGHT: f32 = 75.0;
-const FF_PORT_OFFSET: f32 = 20.0;
+const PORT_LABEL_FONT_SIZE: f32 = 24.0;
+const MODEL_NAME_FONT_SIZE: f32 = 32.0;
+
+// Layout constants
+const PORT_STEP: f32 = 50.0;               // Vertical spacing per port in sequential blocks
+const FF_HEIGHT: f32 = 75.0;              // Height of a flip-flop symbol
+const FF_WIDTH: f32 = 50.0;               // Width of a flip-flop symbol
+const FF_PORT_OFFSET: f32 = 20.0;         // Distance from FF top to the D/Q port connection
+const CLOCK_STEP: f32 = 50.0;             // Vertical spacing between clock signal rows
+const ARROW_LENGTH: f32 = 100.0;          // Length of a port arrow outside the block boundary
+const ARROW_GAP: f32 = 10.0;              // Gap between arrow tip and port label
+// In non-sequential blocks, arrows start/end this far inside the block boundary.
+const NON_SEQ_ARROW_INNER: f32 = 50.0;
+const NON_SEQ_ARROW_LENGTH: f32 = ARROW_LENGTH + NON_SEQ_ARROW_INNER;
 
 pub struct PrimitiveView {
     selected_model_name: Option<String>,
@@ -103,35 +118,16 @@ impl PrimitiveView {
 
         ui.label("Timing Constraints:");
         ui.add_space(4.0);
-        constraint_checkbox(
-            ui,
-            &mut self.show_setup_constraints,
-            "Setup Constraints",
-            SETUP_COLOR,
-        );
+        constraint_checkbox(ui, &mut self.show_setup_constraints, "Setup Constraints", SETUP_COLOR);
         ui.add_space(4.0);
-        constraint_checkbox(
-            ui,
-            &mut self.show_hold_constraints,
-            "Hold Constraints",
-            HOLD_COLOR,
-        );
+        constraint_checkbox(ui, &mut self.show_hold_constraints, "Hold Constraints", HOLD_COLOR);
         ui.add_space(4.0);
-        constraint_checkbox(
-            ui,
-            &mut self.show_combinational_paths,
-            "Combinational Paths",
-            COMB_PATH_COLOR,
-        );
+        constraint_checkbox(ui, &mut self.show_combinational_paths, "Combinational Paths", COMB_PATH_COLOR);
     }
 
     fn render_central_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
         if let Some(selected_model_name) = &self.selected_model_name {
-            if let Some(model) = arch
-                .models
-                .iter()
-                .find(|&model| model.name == *selected_model_name)
-            {
+            if let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name) {
                 let available_width = ui.available_width();
                 egui::ScrollArea::both()
                     .auto_shrink([false, false])
@@ -143,409 +139,338 @@ impl PrimitiveView {
     }
 
     fn render_model(&mut self, model: &Model, ui: &mut egui::Ui, available_width: f32) {
-        let mut input_ports = Vec::new();
-        let mut output_ports = Vec::new();
-        let mut clock_ports = Vec::new();
-        for input_port in &model.input_ports {
-            if input_port.is_clock {
-                clock_ports.push(input_port);
+        // Classify ports: separate clocks from data inputs/outputs.
+        let mut input_ports: Vec<&ModelPort> = Vec::new();
+        let mut output_ports: Vec<&ModelPort> = Vec::new();
+        let mut clock_ports: Vec<&ModelPort> = Vec::new();
+        for port in &model.input_ports {
+            if port.is_clock {
+                clock_ports.push(port);
             } else {
-                input_ports.push(input_port);
+                input_ports.push(port);
             }
         }
-        for output_port in &model.output_ports {
-            if output_port.is_clock {
-                clock_ports.push(output_port);
+        for port in &model.output_ports {
+            if port.is_clock {
+                clock_ports.push(port);
             } else {
-                output_ports.push(output_port);
+                output_ports.push(port);
             }
         }
 
         let max_ports = input_ports.len().max(output_ports.len());
-        // Extra vertical space needed below the block for clock rows.
-        let clock_extra_height = clock_ports.len() as f32 * 50.0;
-        // Vertical margin above the block and below the clocks.
+        let clock_extra_height = clock_ports.len() as f32 * CLOCK_STEP;
         let v_margin = 50.0;
 
         // Measure label widths to compute exact horizontal padding.
-        // Each side needs: 100px (arrow outside block) + 10px (gap) + label width + 20px margin.
-        let font_id = egui::FontId::proportional(24.0);
+        // Each side needs: ARROW_LENGTH (outside block) + ARROW_GAP + 20px margin + label width.
+        let font_id = egui::FontId::proportional(PORT_LABEL_FONT_SIZE);
         let measure = |name: &str| -> f32 {
-            ui.fonts(|f| {
-                f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE)
-                    .size()
-                    .x
-            })
+            ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), Color32::WHITE).size().x)
         };
-        let max_left_label_width: f32 = input_ports
-            .iter()
-            .chain(clock_ports.iter())
+        let max_left_label_width = input_ports.iter().chain(clock_ports.iter())
             .map(|p| measure(&p.name))
-            .fold(0.0, f32::max);
-        let max_right_label_width: f32 = output_ports
-            .iter()
+            .fold(0.0_f32, f32::max);
+        let max_right_label_width = output_ports.iter()
             .map(|p| measure(&p.name))
-            .fold(0.0, f32::max);
-        let left_padding = 130.0 + max_left_label_width;
-        let right_padding = 130.0 + max_right_label_width;
+            .fold(0.0_f32, f32::max);
+        let left_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_left_label_width;
+        let right_padding = ARROW_LENGTH + ARROW_GAP + 20.0 + max_right_label_width;
 
         if is_sequential_block(model) {
-            // If there are no combinatorial paths, then this acts like
-            // a sequential block.
             let block_width = 250.0_f32;
             let block_height = (max_ports + 2) as f32 * PORT_STEP;
-            let content_width = left_padding + block_width + right_padding;
-            let canvas_size = egui::vec2(
-                content_width.max(available_width),
-                block_height + clock_extra_height + 2.0 * v_margin,
+            let block_outline = allocate_block_canvas(
+                ui, block_width, block_height,
+                left_padding, right_padding,
+                clock_extra_height, v_margin, available_width,
             );
-            let (canvas_rect, _) =
-                ui.allocate_exact_size(canvas_size, egui::Sense::empty());
-            let extra_x = (canvas_rect.width() - content_width).max(0.0);
-            let block_center = egui::pos2(
-                canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
-                canvas_rect.top() + v_margin + block_height / 2.0,
-            );
-            let block_outline =
-                egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height));
-            ui.painter().rect(
-                block_outline,
-                egui::CornerRadius::same(8),
-                BLOCK_FILL,
-                egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
-                egui::epaint::StrokeKind::Middle,
-            );
-            ui.painter().text(
-                block_outline.center_top() + egui::vec2(0.0, 8.0),
-                egui::Align2::CENTER_TOP,
-                &model.name,
-                egui::FontId::proportional(32.0),
-                BLOCK_STROKE_COLOR,
-            );
-
-            // Draw the clock triangles
-            let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
-            let triangle_step_size = block_outline.width() / (clock_ports.len() + 1) as f32;
-            for (clk_idx, clock_port) in clock_ports.iter().enumerate() {
-                let triangle_base_center = block_outline.left_bottom()
-                    + egui::vec2(triangle_step_size * (clk_idx + 1) as f32, 0.0);
-                let triangle_top = triangle_base_center + egui::vec2(0.0, -20.0);
-                let triangle_left = triangle_base_center + egui::vec2(-10.0, 0.0);
-                let triangle_right = triangle_base_center + egui::vec2(10.0, 0.0);
-                ui.painter().add(egui::Shape::convex_polygon(
-                    vec![triangle_left, triangle_top, triangle_right],
-                    CLOCK_FILL,
-                    egui::Stroke::new(1.5, CLOCK_COLOR),
-                ));
-
-                let arrow_steiner_point =
-                    triangle_base_center + egui::vec2(0.0, 50.0 * (clk_idx + 1) as f32);
-                let arrow_start_point =
-                    egui::pos2(block_outline.left() - 100.0, arrow_steiner_point.y);
-                // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
-                ui.painter().line(
-                    vec![arrow_start_point, arrow_steiner_point, triangle_base_center],
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
-                );
-                ui.painter().text(
-                    arrow_start_point - egui::vec2(10.0, 0.0),
-                    egui::Align2::RIGHT_CENTER,
-                    &clock_port.name,
-                    egui::FontId::proportional(24.0),
-                    CLOCK_COLOR,
-                );
-                clock_triangle_top.insert(clock_port.name.clone(), triangle_top);
-            }
-
-            // Draw the inputs
-            let input_step_size = block_outline.height() / (input_ports.len() + 2) as f32;
-            for (input_idx, input_port) in input_ports.iter().enumerate() {
-                let arrow_end_point = block_outline.left_top()
-                    + egui::vec2(0.0, input_step_size * (input_idx + 1) as f32);
-                let arrow_start_point = arrow_end_point - egui::vec2(100.0, 0.0);
-                ui.painter().arrow(
-                    arrow_start_point,
-                    arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR),
-                );
-                ui.painter().text(
-                    arrow_start_point - egui::vec2(10.0, 0.0),
-                    egui::Align2::RIGHT_CENTER,
-                    &input_port.name,
-                    egui::FontId::proportional(24.0),
-                    INPUT_COLOR,
-                );
-                // Draw the setup constraints.
-                if self.show_setup_constraints
-                    && let Some(setup_clock_name) = &input_port.clock
-                {
-                    let setup_source_point = match clock_triangle_top.get(setup_clock_name) {
-                        Some(p) => p,
-                        None => {
-                            ui.painter().debug_text(
-                                arrow_end_point,
-                                egui::Align2::LEFT_CENTER,
-                                egui::Color32::RED,
-                                format!("Cannot find clock: {}", setup_clock_name),
-                            );
-                            continue;
-                        }
-                    };
-                    let setup_sink_point = arrow_end_point;
-                    let bezier_shape = QuadraticBezierShape::from_points_stroke(
-                        [
-                            *setup_source_point,
-                            egui::pos2(setup_source_point.x, setup_sink_point.y),
-                            setup_sink_point,
-                        ],
-                        false,
-                        Color32::TRANSPARENT,
-                        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
-                    );
-                    ui.painter().add(bezier_shape);
-                }
-            }
-
-            // Draw the outputs
-            let output_step_size = block_outline.height() / (output_ports.len() + 2) as f32;
-            for (output_idx, output_port) in output_ports.iter().enumerate() {
-                let arrow_start_point = block_outline.right_top()
-                    + egui::vec2(0.0, output_step_size * (output_idx + 1) as f32);
-                let arrow_end_point = arrow_start_point + egui::vec2(100.0, 0.0);
-                ui.painter().arrow(
-                    arrow_start_point,
-                    arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR),
-                );
-                ui.painter().text(
-                    arrow_end_point + egui::vec2(10.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    &output_port.name,
-                    egui::FontId::proportional(24.0),
-                    OUTPUT_COLOR,
-                );
-                // Draw the hold constraints.
-                if self.show_hold_constraints
-                    && let Some(hold_clock_name) = &output_port.clock
-                {
-                    let hold_source_point = match clock_triangle_top.get(hold_clock_name) {
-                        Some(p) => p,
-                        None => {
-                            ui.painter().debug_text(
-                                arrow_start_point,
-                                egui::Align2::RIGHT_CENTER,
-                                egui::Color32::RED,
-                                format!("Cannot find clock: {}", hold_clock_name),
-                            );
-                            continue;
-                        }
-                    };
-                    let hold_sink_point = arrow_start_point;
-                    let bezier_shape = QuadraticBezierShape::from_points_stroke(
-                        [
-                            *hold_source_point,
-                            egui::pos2(hold_source_point.x, hold_sink_point.y),
-                            hold_sink_point,
-                        ],
-                        false,
-                        Color32::TRANSPARENT,
-                        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
-                    );
-                    ui.painter().add(bezier_shape);
-                }
-            }
+            draw_block_outline(model, block_outline, ui);
+            self.render_sequential_block(block_outline, &clock_ports, &input_ports, &output_ports, ui);
         } else {
-            let has_flops = input_ports.iter().any(|p| p.clock.is_some())
-                || output_ports.iter().any(|p| p.clock.is_some());
+            let has_flops = input_ports.iter().chain(output_ports.iter()).any(|p| p.clock.is_some());
             let port_step = if has_flops { FF_HEIGHT + 20.0 } else { PORT_STEP };
             let block_width = 500.0_f32;
             let block_height = (max_ports + 2) as f32 * port_step;
-            let content_width = left_padding + block_width + right_padding;
-            let canvas_size = egui::vec2(
-                content_width.max(available_width),
-                block_height + clock_extra_height + 2.0 * v_margin,
+            let block_outline = allocate_block_canvas(
+                ui, block_width, block_height,
+                left_padding, right_padding,
+                clock_extra_height, v_margin, available_width,
             );
-            let (canvas_rect, _) =
-                ui.allocate_exact_size(canvas_size, egui::Sense::empty());
-            let extra_x = (canvas_rect.width() - content_width).max(0.0);
-            let block_center = egui::pos2(
-                canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
-                canvas_rect.top() + v_margin + block_height / 2.0,
-            );
-            let block_outline =
-                egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height));
-            ui.painter().rect(
-                block_outline,
-                egui::CornerRadius::same(8),
-                BLOCK_FILL,
-                egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
-                egui::epaint::StrokeKind::Middle,
+            draw_block_outline(model, block_outline, ui);
+            self.render_combinational_block(block_outline, &clock_ports, &input_ports, &output_ports, ui);
+        }
+    }
+
+    fn render_sequential_block(
+        &self,
+        block_outline: egui::Rect,
+        clock_ports: &[&ModelPort],
+        input_ports: &[&ModelPort],
+        output_ports: &[&ModelPort],
+        ui: &mut egui::Ui,
+    ) {
+        // Draw clock triangles along the bottom edge of the block.
+        let mut clock_triangle_top: HashMap<String, egui::Pos2> = HashMap::new();
+        let triangle_step = block_outline.width() / (clock_ports.len() + 1) as f32;
+        for (idx, port) in clock_ports.iter().enumerate() {
+            let base = block_outline.left_bottom()
+                + egui::vec2(triangle_step * (idx + 1) as f32, 0.0);
+            let top = base + egui::vec2(0.0, -20.0);
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![base + egui::vec2(-10.0, 0.0), top, base + egui::vec2(10.0, 0.0)],
+                CLOCK_FILL,
+                egui::Stroke::new(FF_STROKE_WIDTH, CLOCK_COLOR),
+            ));
+
+            let steiner = base + egui::vec2(0.0, CLOCK_STEP * (idx + 1) as f32);
+            let start = egui::pos2(block_outline.left() - ARROW_LENGTH, steiner.y);
+            // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
+            ui.painter().line(
+                vec![start, steiner, base],
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
             );
             ui.painter().text(
-                block_outline.center_top() + egui::vec2(0.0, 8.0),
-                egui::Align2::CENTER_TOP,
-                &model.name,
-                egui::FontId::proportional(32.0),
-                BLOCK_STROKE_COLOR,
+                start - egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::RIGHT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                CLOCK_COLOR,
+            );
+            clock_triangle_top.insert(port.name.clone(), top);
+        }
+
+        // Draw input ports with arrows and optional setup constraint curves.
+        let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
+        for (idx, port) in input_ports.iter().enumerate() {
+            let tip = block_outline.left_top() + egui::vec2(0.0, input_step * (idx + 1) as f32);
+            let start = tip - egui::vec2(ARROW_LENGTH, 0.0);
+            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR));
+            ui.painter().text(
+                start - egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::RIGHT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                INPUT_COLOR,
+            );
+            if self.show_setup_constraints
+                && let Some(clock_name) = &port.clock
+            {
+                let clock_top = match clock_triangle_top.get(clock_name) {
+                    Some(p) => p,
+                    None => {
+                        ui.painter().debug_text(tip, egui::Align2::LEFT_CENTER, Color32::RED,
+                            format!("Cannot find clock: {clock_name}"));
+                        continue;
+                    }
+                };
+                ui.painter().add(QuadraticBezierShape::from_points_stroke(
+                    [*clock_top, egui::pos2(clock_top.x, tip.y), tip],
+                    false, Color32::TRANSPARENT,
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
+                ));
+            }
+        }
+
+        // Draw output ports with arrows and optional hold constraint curves.
+        let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
+        for (idx, port) in output_ports.iter().enumerate() {
+            let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
+            let tip = start + egui::vec2(ARROW_LENGTH, 0.0);
+            ui.painter().arrow(start, tip - start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR));
+            ui.painter().text(
+                tip + egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::LEFT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                OUTPUT_COLOR,
+            );
+            if self.show_hold_constraints
+                && let Some(clock_name) = &port.clock
+            {
+                let clock_top = match clock_triangle_top.get(clock_name) {
+                    Some(p) => p,
+                    None => {
+                        ui.painter().debug_text(start, egui::Align2::RIGHT_CENTER, Color32::RED,
+                            format!("Cannot find clock: {clock_name}"));
+                        continue;
+                    }
+                };
+                ui.painter().add(QuadraticBezierShape::from_points_stroke(
+                    [*clock_top, egui::pos2(clock_top.x, start.y), start],
+                    false, Color32::TRANSPARENT,
+                    egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
+                ));
+            }
+        }
+    }
+
+    fn render_combinational_block(
+        &self,
+        block_outline: egui::Rect,
+        clock_ports: &[&ModelPort],
+        input_ports: &[&ModelPort],
+        output_ports: &[&ModelPort],
+        ui: &mut egui::Ui,
+    ) {
+        // Draw clock labels and record their drive points.
+        let mut clock_drive_point: HashMap<String, egui::Pos2> = HashMap::new();
+        for (idx, port) in clock_ports.iter().enumerate() {
+            let point = egui::pos2(
+                block_outline.left() - ARROW_LENGTH,
+                block_outline.bottom() + CLOCK_STEP * (idx + 1) as f32,
+            );
+            // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
+            ui.painter().text(
+                point - egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::RIGHT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                CLOCK_COLOR,
+            );
+            clock_drive_point.insert(port.name.clone(), point);
+        }
+
+        // Draw output ports. Record signal start points for combinational path drawing.
+        let mut output_signal_start: HashMap<String, egui::Pos2> = HashMap::new();
+        let output_step = block_outline.height() / (output_ports.len() + 2) as f32;
+        for (idx, port) in output_ports.iter().enumerate() {
+            let arrow_start = block_outline.right_top()
+                + egui::vec2(-NON_SEQ_ARROW_INNER, output_step * (idx + 1) as f32);
+            let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH, 0.0);
+            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR));
+            ui.painter().text(
+                arrow_tip + egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::LEFT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                OUTPUT_COLOR,
             );
 
-            // Draw the clock names
-            let mut clock_start_point: HashMap<String, egui::Pos2> = HashMap::new();
-            for (clk_idx, clock_port) in clock_ports.iter().enumerate() {
-                let signal_start_point = egui::pos2(
-                    block_outline.left() - 100.0,
-                    block_outline.bottom() + 50.0 * (clk_idx + 1) as f32,
+            let mut signal_start = arrow_start;
+            if let Some(clock_name) = &port.clock {
+                let ff_outline = egui::Rect::from_min_size(
+                    egui::pos2(signal_start.x - FF_WIDTH, signal_start.y - FF_PORT_OFFSET),
+                    egui::vec2(FF_WIDTH, FF_HEIGHT),
                 );
-                // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
-                ui.painter().text(
-                    signal_start_point - egui::vec2(10.0, 0.0),
-                    egui::Align2::RIGHT_CENTER,
-                    &clock_port.name,
-                    egui::FontId::proportional(24.0),
-                    CLOCK_COLOR,
+                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, ui);
+                signal_start -= egui::vec2(FF_WIDTH, 0.0);
+                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, ui);
+            }
+            output_signal_start.insert(port.name.clone(), signal_start);
+        }
+
+        // Draw input ports. Connect to output signal start points for combinational paths.
+        let input_step = block_outline.height() / (input_ports.len() + 2) as f32;
+        for (idx, port) in input_ports.iter().enumerate() {
+            let arrow_tip = block_outline.left_top()
+                + egui::vec2(NON_SEQ_ARROW_INNER, input_step * (idx + 1) as f32);
+            let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH, 0.0);
+            ui.painter().arrow(arrow_start, arrow_tip - arrow_start, egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR));
+            ui.painter().text(
+                arrow_start - egui::vec2(ARROW_GAP, 0.0),
+                egui::Align2::RIGHT_CENTER,
+                &port.name,
+                egui::FontId::proportional(PORT_LABEL_FONT_SIZE),
+                INPUT_COLOR,
+            );
+
+            let mut signal_start = arrow_tip;
+            if let Some(clock_name) = &port.clock {
+                let ff_outline = egui::Rect::from_min_size(
+                    egui::pos2(signal_start.x, signal_start.y - FF_PORT_OFFSET),
+                    egui::vec2(FF_WIDTH, FF_HEIGHT),
                 );
-                clock_start_point.insert(clock_port.name.clone(), signal_start_point);
+                draw_flip_flop(&ff_outline, self.show_setup_constraints, self.show_hold_constraints, ui);
+                signal_start += egui::vec2(FF_WIDTH, 0.0);
+                draw_ff_clock_path(&ff_outline, clock_name, &clock_drive_point, ui);
             }
 
-            // Draw the outputs
-            let mut output_start_point: HashMap<String, egui::Pos2> = HashMap::new();
-            let output_step_size = block_outline.height() / (output_ports.len() + 2) as f32;
-            for (output_idx, output_port) in output_ports.iter().enumerate() {
-                let arrow_start_point = block_outline.right_top()
-                    + egui::vec2(-50.0, output_step_size * (output_idx + 1) as f32);
-                let arrow_end_point = arrow_start_point + egui::vec2(150.0, 0.0);
-                ui.painter().arrow(
-                    arrow_start_point,
-                    arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR),
-                );
-                ui.painter().text(
-                    arrow_end_point + egui::vec2(10.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    &output_port.name,
-                    egui::FontId::proportional(24.0),
-                    OUTPUT_COLOR,
-                );
-
-                let mut signal_start_point = arrow_start_point;
-                if let Some(associated_clock_name) = &output_port.clock {
-                    // Create a FF
-                    let ff_outline = egui::Rect::from_min_size(
-                        egui::pos2(signal_start_point.x - 50.0, signal_start_point.y - FF_PORT_OFFSET),
-                        egui::vec2(50.0, FF_HEIGHT),
-                    );
-                    draw_flip_flop(
-                        &ff_outline,
-                        self.show_setup_constraints,
-                        self.show_hold_constraints,
-                        ui,
-                    );
-                    signal_start_point -= egui::vec2(ff_outline.width(), 0.0);
-
-                    // Draw clock path.
-                    if let Some(clock_drive_point) = clock_start_point.get(associated_clock_name) {
-                        let steiner_point = egui::pos2(ff_outline.center().x, clock_drive_point.y);
-                        ui.painter().line(
-                            vec![
-                                *clock_drive_point,
-                                steiner_point,
-                                ff_outline.center_bottom(),
-                            ],
-                            egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
-                        );
-                    } else {
-                        ui.painter().debug_text(
-                            ff_outline.center_bottom(),
-                            egui::Align2::CENTER_CENTER,
-                            egui::Color32::RED,
-                            format!("Unable to find clock: {}", associated_clock_name),
-                        );
-                    }
-                }
-
-                output_start_point.insert(output_port.name.clone(), signal_start_point);
-            }
-
-            // Draw the inputs
-            let input_step_size = block_outline.height() / (input_ports.len() + 2) as f32;
-            for (input_idx, input_port) in input_ports.iter().enumerate() {
-                let arrow_end_point = block_outline.left_top()
-                    + egui::vec2(50.0, input_step_size * (input_idx + 1) as f32);
-                let arrow_start_point = arrow_end_point - egui::vec2(150.0, 0.0);
-                ui.painter().arrow(
-                    arrow_start_point,
-                    arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR),
-                );
-                ui.painter().text(
-                    arrow_start_point - egui::vec2(10.0, 0.0),
-                    egui::Align2::RIGHT_CENTER,
-                    &input_port.name,
-                    egui::FontId::proportional(24.0),
-                    INPUT_COLOR,
-                );
-
-                let mut signal_start_point = arrow_end_point;
-                if let Some(associated_clock_name) = &input_port.clock {
-                    // Create a FF
-                    let ff_outline = egui::Rect::from_min_size(
-                        egui::pos2(signal_start_point.x, signal_start_point.y - FF_PORT_OFFSET),
-                        egui::vec2(50.0, FF_HEIGHT),
-                    );
-                    draw_flip_flop(
-                        &ff_outline,
-                        self.show_setup_constraints,
-                        self.show_hold_constraints,
-                        ui,
-                    );
-                    signal_start_point += egui::vec2(ff_outline.width(), 0.0);
-
-                    // Draw clock path.
-                    if let Some(clock_drive_point) = clock_start_point.get(associated_clock_name) {
-                        let steiner_point = egui::pos2(ff_outline.center().x, clock_drive_point.y);
-                        ui.painter().line(
-                            vec![
-                                *clock_drive_point,
-                                steiner_point,
-                                ff_outline.center_bottom(),
-                            ],
-                            egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
-                        );
-                    } else {
-                        ui.painter().debug_text(
-                            ff_outline.center_bottom(),
-                            egui::Align2::CENTER_CENTER,
-                            egui::Color32::RED,
-                            format!("Unable to find clock: {}", associated_clock_name),
-                        );
-                    }
-                }
-
-                // Draw the combinational timing paths.
-                if self.show_combinational_paths {
-                    for combinational_sink_port_name in &input_port.combinational_sink_ports {
-                        let sink_port_point = match output_start_point
-                            .get(combinational_sink_port_name)
-                        {
-                            Some(p) => p,
-                            None => {
-                                ui.painter().debug_text(
-                                    arrow_end_point,
-                                    egui::Align2::RIGHT_CENTER,
-                                    egui::Color32::RED,
-                                    format!("Cannot find port: {}", combinational_sink_port_name),
-                                );
-                                continue;
-                            }
-                        };
-
-                        ui.painter().line_segment(
-                            [signal_start_point, *sink_port_point],
-                            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, COMB_PATH_COLOR),
-                        );
+            if self.show_combinational_paths {
+                for sink_name in &port.combinational_sink_ports {
+                    match output_signal_start.get(sink_name) {
+                        Some(sink) => {
+                            ui.painter().line_segment(
+                                [signal_start, *sink],
+                                egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, COMB_PATH_COLOR),
+                            );
+                        }
+                        None => {
+                            ui.painter().debug_text(
+                                arrow_tip, egui::Align2::RIGHT_CENTER, Color32::RED,
+                                format!("Cannot find port: {sink_name}"),
+                            );
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/// Allocates a canvas of the required size and returns the block outline rect centered within it.
+fn allocate_block_canvas(
+    ui: &mut egui::Ui,
+    block_width: f32,
+    block_height: f32,
+    left_padding: f32,
+    right_padding: f32,
+    clock_extra_height: f32,
+    v_margin: f32,
+    available_width: f32,
+) -> egui::Rect {
+    let content_width = left_padding + block_width + right_padding;
+    let canvas_size = egui::vec2(
+        content_width.max(available_width),
+        block_height + clock_extra_height + 2.0 * v_margin,
+    );
+    let (canvas_rect, _) = ui.allocate_exact_size(canvas_size, egui::Sense::empty());
+    let extra_x = (canvas_rect.width() - content_width).max(0.0);
+    let block_center = egui::pos2(
+        canvas_rect.left() + extra_x / 2.0 + left_padding + block_width / 2.0,
+        canvas_rect.top() + v_margin + block_height / 2.0,
+    );
+    egui::Rect::from_center_size(block_center, egui::vec2(block_width, block_height))
+}
+
+/// Draws the block rectangle and its name label.
+fn draw_block_outline(model: &Model, block_outline: egui::Rect, ui: &mut egui::Ui) {
+    ui.painter().rect(
+        block_outline,
+        egui::CornerRadius::same(8),
+        BLOCK_FILL,
+        egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
+        egui::epaint::StrokeKind::Middle,
+    );
+    ui.painter().text(
+        block_outline.center_top() + egui::vec2(0.0, 8.0),
+        egui::Align2::CENTER_TOP,
+        &model.name,
+        egui::FontId::proportional(MODEL_NAME_FONT_SIZE),
+        BLOCK_STROKE_COLOR,
+    );
+}
+
+/// Draws the wired clock path from a clock drive point to the clock input of a flip-flop.
+fn draw_ff_clock_path(
+    ff_outline: &egui::Rect,
+    clock_name: &str,
+    clock_drive_points: &HashMap<String, egui::Pos2>,
+    ui: &mut egui::Ui,
+) {
+    match clock_drive_points.get(clock_name) {
+        Some(drive_point) => {
+            let steiner = egui::pos2(ff_outline.center().x, drive_point.y);
+            ui.painter().line(
+                vec![*drive_point, steiner, ff_outline.center_bottom()],
+                egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
+            );
+        }
+        None => {
+            ui.painter().debug_text(
+                ff_outline.center_bottom(), egui::Align2::CENTER_CENTER, Color32::RED,
+                format!("Unable to find clock: {clock_name}"),
+            );
         }
     }
 }
@@ -556,47 +481,42 @@ fn draw_flip_flop(
     show_hold_constraints: bool,
     ui: &mut egui::Ui,
 ) {
-    // Draw the outline of the flop.
     ui.painter().rect(
         *ff_outline,
         egui::CornerRadius::same(4),
-        Color32::from_rgb(255, 248, 215),
-        egui::Stroke::new(1.5, Color32::from_rgb(110, 85, 20)),
+        FF_FILL,
+        egui::Stroke::new(FF_STROKE_WIDTH, FF_STROKE_COLOR),
         egui::epaint::StrokeKind::Middle,
     );
 
-    // Draw the clock triangle.
+    // Draw the clock triangle at the bottom center of the FF.
     let triangle_base_length = ff_outline.width() * 2.0 / 5.0;
-    let triangle_bl = ff_outline.center_bottom() - egui::vec2(triangle_base_length / 2.0, 0.0);
     let triangle_t = ff_outline.center_bottom() - egui::vec2(0.0, triangle_base_length);
+    let triangle_bl = ff_outline.center_bottom() - egui::vec2(triangle_base_length / 2.0, 0.0);
     let triangle_br = ff_outline.center_bottom() + egui::vec2(triangle_base_length / 2.0, 0.0);
     ui.painter().add(egui::Shape::convex_polygon(
         vec![triangle_bl, triangle_t, triangle_br],
         CLOCK_FILL,
-        egui::Stroke::new(1.5, CLOCK_COLOR),
+        egui::Stroke::new(FF_STROKE_WIDTH, CLOCK_COLOR),
     ));
 
-    // Draw the timing constraints.
-    let d_port_point = ff_outline.left_top() + egui::vec2(0.0, 20.0);
-    let q_port_point = ff_outline.right_top() + egui::vec2(0.0, 20.0);
-    let control_point = egui::pos2(triangle_t.x, d_port_point.y);
+    // Draw setup and hold constraint curves from the clock triangle to D and Q ports.
+    let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET);
+    let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET);
+    let control = egui::pos2(triangle_t.x, d_port.y);
     if show_setup_constraints {
-        let bezier_shape = QuadraticBezierShape::from_points_stroke(
-            [triangle_t, control_point, d_port_point],
-            false,
-            Color32::TRANSPARENT,
+        ui.painter().add(QuadraticBezierShape::from_points_stroke(
+            [triangle_t, control, d_port],
+            false, Color32::TRANSPARENT,
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
-        );
-        ui.painter().add(bezier_shape);
+        ));
     }
     if show_hold_constraints {
-        let bezier_shape = QuadraticBezierShape::from_points_stroke(
-            [triangle_t, control_point, q_port_point],
-            false,
-            Color32::TRANSPARENT,
+        ui.painter().add(QuadraticBezierShape::from_points_stroke(
+            [triangle_t, control, q_port],
+            false, Color32::TRANSPARENT,
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
-        );
-        ui.painter().add(bezier_shape);
+        ));
     }
 }
 
@@ -604,8 +524,7 @@ fn legend_entry(ui: &mut egui::Ui, label: &str, color: Color32) {
     ui.horizontal(|ui| {
         // Indent to align with constraint checkboxes (checkbox width ~20px + spacing)
         ui.add_space(24.0);
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
         ui.painter().line_segment(
             [rect.left_center(), rect.right_center()],
             egui::Stroke::new(SIGNAL_STROKE_WIDTH, color),
@@ -615,41 +534,23 @@ fn legend_entry(ui: &mut egui::Ui, label: &str, color: Color32) {
     });
 }
 
-fn constraint_checkbox(
-    ui: &mut egui::Ui,
-    value: &mut bool,
-    label: &str,
-    color: Color32,
-) {
+fn constraint_checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str, color: Color32) {
     ui.horizontal(|ui| {
         ui.checkbox(value, "");
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 14.0), egui::Sense::empty());
         let dimmed = if *value { color } else { color.gamma_multiply(0.35) };
         ui.painter().line_segment(
             [rect.left_center(), rect.right_center()],
             egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, dimmed),
         );
         ui.add_space(4.0);
-        let text_color = if *value {
-            ui.visuals().text_color()
-        } else {
-            ui.visuals().weak_text_color()
-        };
+        let text_color = if *value { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
         ui.colored_label(text_color, label);
     });
 }
 
 fn is_sequential_block(model: &Model) -> bool {
-    // A sequential block is a block with no internal timing paths between their
-    // input and output ports.
-    for port_group in [&model.input_ports, &model.output_ports] {
-        for port in port_group {
-            if !port.combinational_sink_ports.is_empty() {
-                return false;
-            }
-        }
-    }
-
-    true
+    // A sequential block has no combinational timing paths between input and output ports.
+    model.input_ports.iter().chain(model.output_ports.iter())
+        .all(|p| p.combinational_sink_ports.is_empty())
 }

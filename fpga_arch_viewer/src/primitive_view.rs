@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
-use fpga_arch_parser::{DelayInfo, FPGAArch, Model, ModelPort, PBType, TimingConstraintType};
+use fpga_arch_parser::{
+    DelayInfo, DelayType, FPGAArch, Model, ModelPort, PBType, TimingConstraintType,
+};
 
 // --- Visual style constants ---
 
@@ -125,9 +127,16 @@ impl<'a> DelayLookup<'a> {
             .unwrap_or(port_ref)
     }
 
-    /// Look up a combinational delay from `in_port` to `out_port`.
-    /// Returns `Some((min_s, max_s))` if found, `None` otherwise.
-    fn comb_delay(&self, in_port: &str, out_port: &str) -> Option<(f32, f32)> {
+    /// Look up all combinational delays from `in_port` to `out_port` and format them as a
+    /// human-readable string for use in a tooltip.
+    ///
+    /// Returns `Some(text)` if at least one matching entry was found, `None` otherwise.
+    /// For matrices, every per-pin value is listed; if all values are equal a compact
+    /// summary is shown instead.  Matrices with more than 16 entries are summarised to
+    /// keep the tooltip manageable.
+    fn comb_delay_text(&self, in_port: &str, out_port: &str) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+
         for delay in &self.pb_type.delays {
             match delay {
                 DelayInfo::Constant {
@@ -137,27 +146,69 @@ impl<'a> DelayLookup<'a> {
                     out_port: op,
                 } => {
                     if Self::strip_prefix(ip) == in_port && Self::strip_prefix(op) == out_port {
-                        return Some((*min, *max));
+                        parts.push(format!("D = {}", format_delay_range(*min, *max)));
                     }
                 }
                 DelayInfo::Matrix {
                     matrix,
                     in_port: ip,
                     out_port: op,
-                    ..
+                    delay_type,
                 } => {
-                    if Self::strip_prefix(ip) == in_port && Self::strip_prefix(op) == out_port {
-                        let flat: Vec<f32> = matrix.iter().flatten().copied().collect();
-                        if !flat.is_empty() {
-                            let min = flat.iter().cloned().fold(f32::MAX, f32::min);
-                            let max = flat.iter().cloned().fold(f32::MIN, f32::max);
-                            return Some((min, max));
+                    if Self::strip_prefix(ip) != in_port || Self::strip_prefix(op) != out_port {
+                        continue;
+                    }
+                    let flat: Vec<f32> = matrix.iter().flatten().copied().collect();
+                    if flat.is_empty() {
+                        continue;
+                    }
+                    // Count only non-empty rows: the parser produces blank rows for
+                    // leading/trailing newlines in the XML text content.
+                    let n_in = matrix.iter().filter(|r| !r.is_empty()).count();
+                    let n_out = matrix
+                        .iter()
+                        .find(|r| !r.is_empty())
+                        .map(Vec::len)
+                        .unwrap_or(0);
+                    let type_str = match delay_type {
+                        DelayType::Max => "max",
+                        DelayType::Min => "min",
+                    };
+
+                    // Summarise if all entries are equal or the matrix is large.
+                    let all_equal = flat.windows(2).all(|w| w[0] == w[1]);
+                    if all_equal {
+                        parts.push(format!(
+                            "D ({type_str}, {n_in}×{n_out}, all equal) = {}",
+                            format_delay(flat[0])
+                        ));
+                    } else if flat.len() > 16 {
+                        let min = flat.iter().cloned().fold(f32::MAX, f32::min);
+                        let max = flat.iter().cloned().fold(f32::MIN, f32::max);
+                        parts.push(format!(
+                            "D ({type_str}, {n_in}×{n_out} matrix)\n  min = {}  max = {}",
+                            format_delay(min),
+                            format_delay(max)
+                        ));
+                    } else {
+                        let mut lines =
+                            vec![format!("D ({type_str}, {n_in}×{n_out} matrix):")];
+                        for (i, row) in matrix.iter().filter(|r| !r.is_empty()).enumerate() {
+                            for (j, val) in row.iter().enumerate() {
+                                lines.push(format!("  [{i}→{j}]  {}", format_delay(*val)));
+                            }
                         }
+                        parts.push(lines.join("\n"));
                     }
                 }
             }
         }
-        None
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n"))
+        }
     }
 
     /// Look up `T_setup` for `(port, clock)`. Returns `Some(value_s)` if found.
@@ -985,11 +1036,8 @@ impl PrimitiveView {
                         Some(sink) => {
                             let comb_ann = match delays {
                                 None => DelayAnnotation::NotActive,
-                                Some(d) => match d.comb_delay(&port.name, sink_name) {
-                                    Some((min, max)) => DelayAnnotation::Present(format!(
-                                        "D = {}",
-                                        format_delay_range(min, max)
-                                    )),
+                                Some(d) => match d.comb_delay_text(&port.name, sink_name) {
+                                    Some(text) => DelayAnnotation::Present(text),
                                     None => DelayAnnotation::Missing(
                                         "D = ⚠ MISSING".to_string(),
                                     ),

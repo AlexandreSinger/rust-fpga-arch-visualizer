@@ -19,7 +19,7 @@ const INPUT_COLOR: Color32 = Color32::from_rgb(25, 105, 190);
 const OUTPUT_COLOR: Color32 = Color32::from_rgb(195, 80, 15);
 
 const SETUP_COLOR: Color32 = Color32::from_rgb(210, 40, 40);
-const HOLD_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
+const CLOCK_TO_Q_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
 const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
 
 /// Color used for missing delay annotations and the constraint arcs they affect.
@@ -298,7 +298,7 @@ pub struct PrimitiveView {
     /// Index into the list of pb_types that use the selected model.
     pub selected_pb_type_idx: Option<usize>,
     show_setup_constraints: bool,
-    show_hold_constraints: bool,
+    show_clock_to_q: bool,
     show_combinational_paths: bool,
     /// Current zoom level. `None` means "auto-fit": use `fit_zoom` each frame.
     zoom: Option<f32>,
@@ -314,7 +314,7 @@ impl Default for PrimitiveView {
             selected_model_name: None,
             selected_pb_type_idx: None,
             show_setup_constraints: true,
-            show_hold_constraints: true,
+            show_clock_to_q: true,
             show_combinational_paths: true,
             zoom: None,
             fit_zoom: 1.0,
@@ -444,9 +444,9 @@ impl PrimitiveView {
         ui.add_space(4.0);
         constraint_checkbox(
             ui,
-            &mut self.show_hold_constraints,
-            "Hold Constraints",
-            HOLD_COLOR,
+            &mut self.show_clock_to_q,
+            "Clock to Q",
+            CLOCK_TO_Q_COLOR,
         );
         ui.add_space(4.0);
         constraint_checkbox(
@@ -733,7 +733,7 @@ impl PrimitiveView {
             }
         }
 
-        // Draw output ports with arrows and optional hold/clock-to-Q constraint curves.
+        // Draw output ports with arrows and optional clock-to-Q arcs.
         let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
         for (idx, port) in ports.output_ports.iter().enumerate() {
             let start =
@@ -751,7 +751,7 @@ impl PrimitiveView {
                 egui::FontId::proportional(PORT_LABEL_FONT_SIZE * zoom),
                 OUTPUT_COLOR,
             );
-            if self.show_hold_constraints
+            if self.show_clock_to_q
                 && let Some(clock_name) = &port.clock
             {
                 let clock_top = match clock_triangle_top.get(clock_name) {
@@ -777,7 +777,7 @@ impl PrimitiveView {
                         None => DelayAnnotation::Missing,
                     },
                 };
-                let arc_color = annotation_stroke_color(HOLD_COLOR, &ctq_ann);
+                let arc_color = annotation_stroke_color(CLOCK_TO_Q_COLOR, &ctq_ann);
                 ui.painter().add(QuadraticBezierShape::from_points_stroke(
                     [*clock_top, control, start],
                     false,
@@ -867,7 +867,7 @@ impl PrimitiveView {
                     egui::vec2(FF_WIDTH * zoom, FF_HEIGHT * zoom),
                 );
                 // Output FF: the clock-to-Q delay (clock → Q output) is annotated on the
-                // hold/ctq arc inside the FF symbol.
+                // clock-to-Q arc inside the FF symbol.
                 let ctq_ann = match delays {
                     None => DelayAnnotation::NotActive,
                     Some(d) => match d.t_clock_to_q(&port.name, clock_name) {
@@ -883,7 +883,7 @@ impl PrimitiveView {
                     &DelayAnnotation::NotActive,
                     &ctq_ann,
                     self.show_setup_constraints,
-                    self.show_hold_constraints,
+                    self.show_clock_to_q,
                     zoom,
                     ui,
                 );
@@ -934,7 +934,7 @@ impl PrimitiveView {
                     &setup_ann,
                     &DelayAnnotation::NotActive,
                     self.show_setup_constraints,
-                    self.show_hold_constraints,
+                    self.show_clock_to_q,
                     zoom,
                     ui,
                 );
@@ -1075,7 +1075,7 @@ fn draw_flip_flop(
     setup_annotation: &DelayAnnotation,
     ctq_annotation: &DelayAnnotation,
     show_setup_constraints: bool,
-    show_hold_constraints: bool,
+    show_clock_to_q: bool,
     zoom: f32,
     ui: &mut egui::Ui,
 ) {
@@ -1098,7 +1098,7 @@ fn draw_flip_flop(
         egui::Stroke::new(FF_STROKE_WIDTH * zoom, CLOCK_COLOR),
     ));
 
-    // Draw setup and hold/ctq constraint curves from the clock triangle to D and Q ports.
+    // Draw setup (clock→D) and clock-to-Q (clock→Q) arcs inside the FF symbol.
     let d_port = ff_outline.left_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let q_port = ff_outline.right_top() + egui::vec2(0.0, FF_PORT_OFFSET * zoom);
     let control = egui::pos2(triangle_t.x, d_port.y);
@@ -1125,8 +1125,8 @@ fn draw_flip_flop(
             egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
         );
     }
-    if show_hold_constraints {
-        let arc_color = annotation_stroke_color(HOLD_COLOR, ctq_annotation);
+    if show_clock_to_q {
+        let arc_color = annotation_stroke_color(CLOCK_TO_Q_COLOR, ctq_annotation);
         ui.painter().add(QuadraticBezierShape::from_points_stroke(
             [triangle_t, control, q_port],
             false,

@@ -854,6 +854,8 @@ impl PrimitiveView {
         // or from an external navigation action like the summary view buttons).
         if self.last_rendered_model_name.as_deref() != Some(&model.name) {
             self.zoom = None;
+            self.selected_pb_type_idx = None;
+            self.selected_timing_arc = None;
             self.last_rendered_model_name = Some(model.name.clone());
         }
 
@@ -1523,9 +1525,11 @@ fn collect_pb_types_for_model<'a>(
         collect_pb_types_for_model(child, model_name, path, results);
     }
     for mode in &pb_type.modes {
+        path.push(mode.name.clone());
         for child in &mode.pb_types {
             collect_pb_types_for_model(child, model_name, path, results);
         }
+        path.pop();
     }
     path.pop();
 }

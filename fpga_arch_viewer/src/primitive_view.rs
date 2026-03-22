@@ -3,6 +3,23 @@ use std::collections::HashMap;
 use egui::{Color32, epaint::QuadraticBezierShape};
 use fpga_arch_parser::{FPGAArch, Model};
 
+// Visual style constants
+const BLOCK_FILL: Color32 = Color32::from_rgb(228, 238, 255);
+const BLOCK_STROKE_COLOR: Color32 = Color32::from_rgb(55, 85, 150);
+const BLOCK_STROKE_WIDTH: f32 = 2.0;
+
+const CLOCK_COLOR: Color32 = Color32::from_rgb(120, 50, 175);
+const CLOCK_FILL: Color32 = Color32::from_rgb(210, 185, 245);
+const INPUT_COLOR: Color32 = Color32::from_rgb(25, 105, 190);
+const OUTPUT_COLOR: Color32 = Color32::from_rgb(195, 80, 15);
+
+const SETUP_COLOR: Color32 = Color32::from_rgb(210, 40, 40);
+const HOLD_COLOR: Color32 = Color32::from_rgb(35, 80, 210);
+const COMB_PATH_COLOR: Color32 = Color32::from_rgb(25, 155, 60);
+
+const CONSTRAINT_STROKE_WIDTH: f32 = 1.5;
+const SIGNAL_STROKE_WIDTH: f32 = 3.0;
+
 pub struct PrimitiveView {
     selected_model_name: Option<String>,
     show_setup_constraints: bool,
@@ -119,9 +136,9 @@ impl PrimitiveView {
             );
             ui.painter().rect(
                 block_outline,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                egui::Stroke::new(1.0, egui::Color32::BLACK),
+                egui::CornerRadius::same(8),
+                BLOCK_FILL,
+                egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
                 egui::epaint::StrokeKind::Middle,
             );
 
@@ -134,10 +151,11 @@ impl PrimitiveView {
                 let triangle_top = triangle_base_center + egui::vec2(0.0, -20.0);
                 let triangle_left = triangle_base_center + egui::vec2(-10.0, 0.0);
                 let triangle_right = triangle_base_center + egui::vec2(10.0, 0.0);
-                ui.painter().line(
-                    vec![triangle_left, triangle_top, triangle_right, triangle_left],
-                    egui::Stroke::new(1.0, egui::Color32::BLACK),
-                );
+                ui.painter().add(egui::Shape::convex_polygon(
+                    vec![triangle_left, triangle_top, triangle_right],
+                    CLOCK_FILL,
+                    egui::Stroke::new(1.5, CLOCK_COLOR),
+                ));
 
                 let arrow_steiner_point =
                     triangle_base_center + egui::vec2(0.0, 50.0 * (clk_idx + 1) as f32);
@@ -146,14 +164,14 @@ impl PrimitiveView {
                 // TODO: Clocks may be inputs or outputs. They should be drawn accordingly.
                 ui.painter().line(
                     vec![arrow_start_point, arrow_steiner_point, triangle_base_center],
-                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
                 );
                 ui.painter().text(
                     arrow_start_point - egui::vec2(10.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     &clock_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    CLOCK_COLOR,
                 );
                 clock_triangle_top.insert(clock_port.name.clone(), triangle_top);
             }
@@ -167,14 +185,14 @@ impl PrimitiveView {
                 ui.painter().arrow(
                     arrow_start_point,
                     arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR),
                 );
                 ui.painter().text(
                     arrow_start_point - egui::vec2(10.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     &input_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    INPUT_COLOR,
                 );
                 // Draw the setup constraints.
                 if self.show_setup_constraints
@@ -201,7 +219,7 @@ impl PrimitiveView {
                         ],
                         false,
                         Color32::TRANSPARENT,
-                        egui::Stroke::new(0.5, egui::Color32::RED),
+                        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
                     );
                     ui.painter().add(bezier_shape);
                 }
@@ -216,14 +234,14 @@ impl PrimitiveView {
                 ui.painter().arrow(
                     arrow_start_point,
                     arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR),
                 );
                 ui.painter().text(
                     arrow_end_point + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     &output_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    OUTPUT_COLOR,
                 );
                 // Draw the hold constraints.
                 if self.show_hold_constraints
@@ -250,7 +268,7 @@ impl PrimitiveView {
                         ],
                         false,
                         Color32::TRANSPARENT,
-                        egui::Stroke::new(0.5, egui::Color32::BLUE),
+                        egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
                     );
                     ui.painter().add(bezier_shape);
                 }
@@ -262,9 +280,9 @@ impl PrimitiveView {
             );
             ui.painter().rect(
                 block_outline,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                egui::Stroke::new(1.0, egui::Color32::BLACK),
+                egui::CornerRadius::same(8),
+                BLOCK_FILL,
+                egui::Stroke::new(BLOCK_STROKE_WIDTH, BLOCK_STROKE_COLOR),
                 egui::epaint::StrokeKind::Middle,
             );
 
@@ -281,7 +299,7 @@ impl PrimitiveView {
                     egui::Align2::RIGHT_CENTER,
                     &clock_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    CLOCK_COLOR,
                 );
                 clock_start_point.insert(clock_port.name.clone(), signal_start_point);
             }
@@ -296,14 +314,14 @@ impl PrimitiveView {
                 ui.painter().arrow(
                     arrow_start_point,
                     arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, OUTPUT_COLOR),
                 );
                 ui.painter().text(
                     arrow_end_point + egui::vec2(10.0, 0.0),
                     egui::Align2::LEFT_CENTER,
                     &output_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    OUTPUT_COLOR,
                 );
 
                 let mut signal_start_point = arrow_start_point;
@@ -330,7 +348,7 @@ impl PrimitiveView {
                                 steiner_point,
                                 ff_outline.center_bottom(),
                             ],
-                            egui::Stroke::new(5.0, egui::Color32::BLACK),
+                            egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
                         );
                     } else {
                         ui.painter().debug_text(
@@ -354,14 +372,14 @@ impl PrimitiveView {
                 ui.painter().arrow(
                     arrow_start_point,
                     arrow_end_point - arrow_start_point,
-                    egui::Stroke::new(5.0, egui::Color32::BLACK),
+                    egui::Stroke::new(SIGNAL_STROKE_WIDTH, INPUT_COLOR),
                 );
                 ui.painter().text(
                     arrow_start_point - egui::vec2(10.0, 0.0),
                     egui::Align2::RIGHT_CENTER,
                     &input_port.name,
                     egui::FontId::proportional(24.0),
-                    egui::Color32::BLACK,
+                    INPUT_COLOR,
                 );
 
                 let mut signal_start_point = arrow_end_point;
@@ -388,7 +406,7 @@ impl PrimitiveView {
                                 steiner_point,
                                 ff_outline.center_bottom(),
                             ],
-                            egui::Stroke::new(5.0, egui::Color32::BLACK),
+                            egui::Stroke::new(SIGNAL_STROKE_WIDTH, CLOCK_COLOR),
                         );
                     } else {
                         ui.painter().debug_text(
@@ -420,7 +438,7 @@ impl PrimitiveView {
 
                         ui.painter().line_segment(
                             [signal_start_point, *sink_port_point],
-                            egui::Stroke::new(0.5, egui::Color32::GREEN),
+                            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, COMB_PATH_COLOR),
                         );
                     }
                 }
@@ -438,9 +456,9 @@ fn draw_flip_flop(
     // Draw the outline of the flop.
     ui.painter().rect(
         *ff_outline,
-        egui::CornerRadius::ZERO,
-        egui::Color32::WHITE,
-        egui::Stroke::new(1.0, egui::Color32::BLACK),
+        egui::CornerRadius::same(4),
+        Color32::from_rgb(255, 248, 215),
+        egui::Stroke::new(1.5, Color32::from_rgb(110, 85, 20)),
         egui::epaint::StrokeKind::Middle,
     );
 
@@ -449,10 +467,11 @@ fn draw_flip_flop(
     let triangle_bl = ff_outline.center_bottom() - egui::vec2(triangle_base_length / 2.0, 0.0);
     let triangle_t = ff_outline.center_bottom() - egui::vec2(0.0, triangle_base_length);
     let triangle_br = ff_outline.center_bottom() + egui::vec2(triangle_base_length / 2.0, 0.0);
-    ui.painter().line(
-        vec![triangle_bl, triangle_t, triangle_br, triangle_bl],
-        egui::Stroke::new(1.0, egui::Color32::BLACK),
-    );
+    ui.painter().add(egui::Shape::convex_polygon(
+        vec![triangle_bl, triangle_t, triangle_br],
+        CLOCK_FILL,
+        egui::Stroke::new(1.5, CLOCK_COLOR),
+    ));
 
     // Draw the timing constraints.
     let d_port_point = ff_outline.left_top() + egui::vec2(0.0, 20.0);
@@ -463,7 +482,7 @@ fn draw_flip_flop(
             [triangle_t, control_point, d_port_point],
             false,
             Color32::TRANSPARENT,
-            egui::Stroke::new(0.5, egui::Color32::RED),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, SETUP_COLOR),
         );
         ui.painter().add(bezier_shape);
     }
@@ -472,7 +491,7 @@ fn draw_flip_flop(
             [triangle_t, control_point, q_port_point],
             false,
             Color32::TRANSPARENT,
-            egui::Stroke::new(0.5, egui::Color32::BLUE),
+            egui::Stroke::new(CONSTRAINT_STROKE_WIDTH, HOLD_COLOR),
         );
         ui.painter().add(bezier_shape);
     }

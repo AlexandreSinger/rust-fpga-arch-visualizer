@@ -126,10 +126,7 @@ impl<'a> DelayLookup<'a> {
 
     /// Strip the "pb_type_name." prefix from port references like `"adder.a"` → `"a"`.
     fn strip_prefix(port_ref: &str) -> &str {
-        port_ref
-            .split_once('.')
-            .map(|(_, p)| p)
-            .unwrap_or(port_ref)
+        port_ref.split_once('.').map(|(_, p)| p).unwrap_or(port_ref)
     }
 
     /// Look up the pin count for a named port in the pb_type's port list.
@@ -140,7 +137,11 @@ impl<'a> DelayLookup<'a> {
                 Port::Output(op) => (op.name.as_str(), op.num_pins),
                 Port::Clock(cp) => (cp.name.as_str(), cp.num_pins),
             };
-            if port_name == name { Some(num_pins) } else { None }
+            if port_name == name {
+                Some(num_pins)
+            } else {
+                None
+            }
         })
     }
 
@@ -213,8 +214,7 @@ impl<'a> DelayLookup<'a> {
                             format_delay(max)
                         ));
                     } else {
-                        let mut lines =
-                            vec![format!("D ({type_str}, {n_in}×{n_out} matrix):")];
+                        let mut lines = vec![format!("D ({type_str}, {n_in}×{n_out} matrix):")];
                         for (i, row) in matrix.iter().filter(|r| !r.is_empty()).enumerate() {
                             for (j, val) in row.iter().enumerate() {
                                 lines.push(format!("  [{i}→{j}]  {}", format_delay(*val)));
@@ -267,7 +267,8 @@ impl<'a> DelayLookup<'a> {
     /// Collect all `T_setup` values for `(port, clock)`, including per-pin entries.
     fn t_setup_values(&self, port: &str, clock: &str) -> Vec<f32> {
         self.filter_constraints(
-            port, clock,
+            port,
+            clock,
             |t| matches!(t, TimingConstraintType::Setup),
             |tc| tc.max_value,
         )
@@ -276,7 +277,8 @@ impl<'a> DelayLookup<'a> {
     /// Collect all `T_hold` values for `(port, clock)`, including per-pin entries.
     fn t_hold_values(&self, port: &str, clock: &str) -> Vec<f32> {
         self.filter_constraints(
-            port, clock,
+            port,
+            clock,
             |t| matches!(t, TimingConstraintType::Hold),
             |tc| tc.max_value,
         )
@@ -286,7 +288,8 @@ impl<'a> DelayLookup<'a> {
     /// including per-pin entries.
     fn t_clock_to_q_values(&self, port: &str, clock: &str) -> Vec<(f32, f32)> {
         self.filter_constraints(
-            port, clock,
+            port,
+            clock,
             |t| matches!(t, TimingConstraintType::ClockToQ),
             |tc| (tc.min_value, tc.max_value),
         )
@@ -311,11 +314,12 @@ impl<'a> DelayLookup<'a> {
 /// or `None` if the count is satisfactory. A single found value is never warned (treated as a
 /// scalar constraint covering all pins).
 fn partial_warning(label: &str, found: usize, expected: Option<i32>) -> Option<String> {
-    if let Some(exp) = expected {
-        if found > 1 && found < exp as usize {
-            let missing = exp as usize - found;
-            return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
-        }
+    if let Some(exp) = expected
+        && found > 1
+        && found < exp as usize
+    {
+        let missing = exp as usize - found;
+        return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
     }
     None
 }
@@ -341,7 +345,11 @@ fn format_scalar_pins(label: &str, values: &[f32], expected: Option<i32>) -> Str
     } else if all_equal {
         format!("{label} = {}  (×{n} pins)", format_delay(values[0]))
     } else {
-        format!("{label} = {} – {}  ({n} pins)", format_delay(min), format_delay(max))
+        format!(
+            "{label} = {} – {}  ({n} pins)",
+            format_delay(min),
+            format_delay(max)
+        )
     };
     match partial_warning(label, n, expected) {
         Some(w) => format!("{value_str}\n{w}"),
@@ -364,9 +372,16 @@ fn format_ctq_pins(label: &str, pairs: &[(f32, f32)], expected: Option<i32>) -> 
     } else {
         let all_equal = pairs.windows(2).all(|w| w[0] == w[1]);
         if all_equal {
-            format!("{label} = {}  (×{n} pins)", format_delay_range(pairs[0].0, pairs[0].1))
+            format!(
+                "{label} = {}  (×{n} pins)",
+                format_delay_range(pairs[0].0, pairs[0].1)
+            )
         } else {
-            format!("{label} = {} – {}  ({n} pins)", format_delay(overall_min), format_delay(overall_max))
+            format!(
+                "{label} = {} – {}  ({n} pins)",
+                format_delay(overall_min),
+                format_delay(overall_max)
+            )
         }
     };
     match partial_warning(label, n, expected) {
@@ -383,7 +398,9 @@ fn build_ctq_annotation(
     port: &str,
     clock: &str,
 ) -> DelayAnnotation {
-    delays.map_or(DelayAnnotation::NotActive, |d| d.clock_to_q_annotation(port, clock))
+    delays.map_or(DelayAnnotation::NotActive, |d| {
+        d.clock_to_q_annotation(port, clock)
+    })
 }
 
 /// Builds a combined setup + hold `DelayAnnotation` for the clock→D arc.
@@ -531,8 +548,7 @@ fn draw_timing_marker(
     let effective_color = annotation_stroke_color(base_color, ann);
     let radius = MARKER_RADIUS * zoom;
     // Allocate a slightly larger hit area than the visual circle for easier clicking.
-    let hit_rect =
-        egui::Rect::from_center_size(midpoint, egui::Vec2::splat((radius + 3.0) * 2.0));
+    let hit_rect = egui::Rect::from_center_size(midpoint, egui::Vec2::splat((radius + 3.0) * 2.0));
     let is_selected = *selected_arc == Some(id);
     let response = ui.allocate_rect(hit_rect, egui::Sense::click());
 
@@ -543,8 +559,11 @@ fn draw_timing_marker(
         effective_color.gamma_multiply(0.45)
     };
     ui.painter().circle_filled(midpoint, radius, fill);
-    ui.painter()
-        .circle_stroke(midpoint, radius, egui::Stroke::new(1.0 * zoom, effective_color));
+    ui.painter().circle_stroke(
+        midpoint,
+        radius,
+        egui::Stroke::new(1.0 * zoom, effective_color),
+    );
 
     if response.clicked() {
         *selected_arc = if is_selected { None } else { Some(id) };
@@ -574,14 +593,11 @@ fn draw_timing_marker(
                     ui.set_max_width(320.0);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(&full_title).strong().small());
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if ui.small_button("x").clicked() {
-                                    should_close = true;
-                                }
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("x").clicked() {
+                                should_close = true;
+                            }
+                        });
                     });
                     ui.separator();
                     for line in content_lines {
@@ -657,7 +673,12 @@ impl PrimitiveView {
         });
     }
 
-    fn render_side_panel(&mut self, arch: &FPGAArch, pb_type_matches: &[PBTypeMatch<'_>], ui: &mut egui::Ui) {
+    fn render_side_panel(
+        &mut self,
+        arch: &FPGAArch,
+        pb_type_matches: &[PBTypeMatch<'_>],
+        ui: &mut egui::Ui,
+    ) {
         ui.heading("Primitive View");
 
         ui.add_space(10.0);
@@ -673,7 +694,10 @@ impl PrimitiveView {
             let display_name = if selected_model_name_str.is_empty() {
                 "Select a model".to_string()
             } else if selected_model_name_str.chars().count() > 24 {
-                format!("{}…", selected_model_name_str.chars().take(24).collect::<String>())
+                format!(
+                    "{}…",
+                    selected_model_name_str.chars().take(24).collect::<String>()
+                )
             } else {
                 selected_model_name_str.to_string()
             };
@@ -708,8 +732,7 @@ impl PrimitiveView {
                     for (idx, m) in pb_type_matches.iter().enumerate() {
                         let selected = self.selected_pb_type_idx == Some(idx);
                         if ui.selectable_label(selected, m.path_display()).clicked() {
-                            self.selected_pb_type_idx =
-                                if selected { None } else { Some(idx) };
+                            self.selected_pb_type_idx = if selected { None } else { Some(idx) };
                         }
                     }
                 });
@@ -775,7 +798,12 @@ impl PrimitiveView {
         );
     }
 
-    fn render_central_panel(&mut self, arch: &FPGAArch, pb_type_matches: &[PBTypeMatch<'_>], ui: &mut egui::Ui) {
+    fn render_central_panel(
+        &mut self,
+        arch: &FPGAArch,
+        pb_type_matches: &[PBTypeMatch<'_>],
+        ui: &mut egui::Ui,
+    ) {
         if let Some(selected_model_name) = &self.selected_model_name
             && let Some(model) = arch.models.iter().find(|m| m.name == *selected_model_name)
         {
@@ -926,7 +954,6 @@ impl PrimitiveView {
         } else {
             self.render_combinational_block(block_outline, &port_groups, delays, zoom, ui);
         }
-
     }
 
     fn render_sequential_block(
@@ -1017,9 +1044,15 @@ impl PrimitiveView {
                 let control = egui::pos2(clock_top.x, tip.y);
                 let setup_ann = build_setup_hold_annotation(delays, &port.name, clock_name);
                 draw_quadratic_timing_arc(
-                    ui, *clock_top, control, tip,
-                    &setup_ann, SETUP_COLOR, "Setup & Hold",
-                    zoom, egui::Id::new(("seq_setup", port.name.as_str(), clock_name.as_str())),
+                    ui,
+                    *clock_top,
+                    control,
+                    tip,
+                    &setup_ann,
+                    SETUP_COLOR,
+                    "Setup & Hold",
+                    zoom,
+                    egui::Id::new(("seq_setup", port.name.as_str(), clock_name.as_str())),
                     &mut self.selected_timing_arc,
                 );
             }
@@ -1028,8 +1061,7 @@ impl PrimitiveView {
         // Draw output ports with arrows and optional clock-to-Q arcs.
         let output_step = block_outline.height() / (ports.output_ports.len() + 2) as f32;
         for (idx, port) in ports.output_ports.iter().enumerate() {
-            let start =
-                block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
+            let start = block_outline.right_top() + egui::vec2(0.0, output_step * (idx + 1) as f32);
             let tip = start + egui::vec2(ARROW_LENGTH * zoom, 0.0);
             draw_port_arrow(ui, start, tip, &port.name, OUTPUT_COLOR, zoom, false);
             if self.show_clock_to_q
@@ -1050,9 +1082,15 @@ impl PrimitiveView {
                 let control = egui::pos2(clock_top.x, start.y);
                 let ctq_ann = build_ctq_annotation(delays, &port.name, clock_name);
                 draw_quadratic_timing_arc(
-                    ui, *clock_top, control, start,
-                    &ctq_ann, CLOCK_TO_Q_COLOR, "Clock to Q",
-                    zoom, egui::Id::new(("seq_ctq", port.name.as_str(), clock_name.as_str())),
+                    ui,
+                    *clock_top,
+                    control,
+                    start,
+                    &ctq_ann,
+                    CLOCK_TO_Q_COLOR,
+                    "Clock to Q",
+                    zoom,
+                    egui::Id::new(("seq_ctq", port.name.as_str(), clock_name.as_str())),
                     &mut self.selected_timing_arc,
                 );
             }
@@ -1107,7 +1145,15 @@ impl PrimitiveView {
             let arrow_start = block_outline.right_top()
                 + egui::vec2(-NON_SEQ_ARROW_INNER * zoom, output_step * (idx + 1) as f32);
             let arrow_tip = arrow_start + egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            draw_port_arrow(ui, arrow_start, arrow_tip, &port.name, OUTPUT_COLOR, zoom, false);
+            draw_port_arrow(
+                ui,
+                arrow_start,
+                arrow_tip,
+                &port.name,
+                OUTPUT_COLOR,
+                zoom,
+                false,
+            );
 
             let mut signal_start = arrow_start;
             if let Some(clock_name) = &port.clock {
@@ -1145,7 +1191,15 @@ impl PrimitiveView {
             let arrow_tip = block_outline.left_top()
                 + egui::vec2(NON_SEQ_ARROW_INNER * zoom, input_step * (idx + 1) as f32);
             let arrow_start = arrow_tip - egui::vec2(NON_SEQ_ARROW_LENGTH * zoom, 0.0);
-            draw_port_arrow(ui, arrow_start, arrow_tip, &port.name, INPUT_COLOR, zoom, true);
+            draw_port_arrow(
+                ui,
+                arrow_start,
+                arrow_tip,
+                &port.name,
+                INPUT_COLOR,
+                zoom,
+                true,
+            );
 
             let mut signal_start = arrow_tip;
             if let Some(clock_name) = &port.clock {
@@ -1182,9 +1236,14 @@ impl PrimitiveView {
                                 Some(d) => d.comb_delay_annotation(&port.name, sink_name),
                             };
                             draw_linear_timing_arc(
-                                ui, signal_start, *sink,
-                                &comb_ann, COMB_PATH_COLOR, "Combinational Delay",
-                                zoom, egui::Id::new(("comb", port.name.as_str(), sink_name.as_str())),
+                                ui,
+                                signal_start,
+                                *sink,
+                                &comb_ann,
+                                COMB_PATH_COLOR,
+                                "Combinational Delay",
+                                zoom,
+                                egui::Id::new(("comb", port.name.as_str(), sink_name.as_str())),
                                 &mut self.selected_timing_arc,
                             );
                         }
@@ -1251,9 +1310,15 @@ fn draw_port_arrow(
         egui::Stroke::new(SIGNAL_STROKE_WIDTH * zoom, color),
     );
     let (label_pos, align) = if label_at_start {
-        (start - egui::vec2(ARROW_GAP * zoom, 0.0), egui::Align2::RIGHT_CENTER)
+        (
+            start - egui::vec2(ARROW_GAP * zoom, 0.0),
+            egui::Align2::RIGHT_CENTER,
+        )
     } else {
-        (tip + egui::vec2(ARROW_GAP * zoom, 0.0), egui::Align2::LEFT_CENTER)
+        (
+            tip + egui::vec2(ARROW_GAP * zoom, 0.0),
+            egui::Align2::LEFT_CENTER,
+        )
     };
     ui.painter().text(
         label_pos,
@@ -1354,17 +1419,29 @@ fn draw_flip_flop(
 
     if show_setup_constraints {
         draw_quadratic_timing_arc(
-            ui, triangle_t, control, d_port,
-            setup_annotation, SETUP_COLOR, "Setup & Hold",
-            zoom, egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
+            ui,
+            triangle_t,
+            control,
+            d_port,
+            setup_annotation,
+            SETUP_COLOR,
+            "Setup & Hold",
+            zoom,
+            egui::Id::new(("ff_setup", ff_id_x, ff_id_y)),
             selected_arc,
         );
     }
     if show_clock_to_q {
         draw_quadratic_timing_arc(
-            ui, triangle_t, control, q_port,
-            ctq_annotation, CLOCK_TO_Q_COLOR, "Clock to Q",
-            zoom, egui::Id::new(("ff_ctq", ff_id_x, ff_id_y)),
+            ui,
+            triangle_t,
+            control,
+            q_port,
+            ctq_annotation,
+            CLOCK_TO_Q_COLOR,
+            "Clock to Q",
+            zoom,
+            egui::Id::new(("ff_ctq", ff_id_x, ff_id_y)),
             selected_arc,
         );
     }

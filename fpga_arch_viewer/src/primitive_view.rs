@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use egui::{Color32, epaint::QuadraticBezierShape};
 use fpga_arch_parser::{
-    DelayInfo, DelayType, FPGAArch, Model, ModelPort, PBType, TimingConstraintType,
+    DelayInfo, DelayType, FPGAArch, Model, ModelPort, PBType, Port, TimingConstraintType,
 };
 
 // --- Visual style constants ---
@@ -127,14 +127,42 @@ impl<'a> DelayLookup<'a> {
             .unwrap_or(port_ref)
     }
 
-    /// Look up all combinational delays from `in_port` to `out_port` and format them as a
-    /// human-readable string for use in a tooltip.
+    /// Look up the pin count for a named port in the pb_type's port list.
+    fn port_num_pins(&self, name: &str) -> Option<i32> {
+        self.pb_type.ports.iter().find_map(|p| {
+            let (port_name, num_pins) = match p {
+                Port::Input(ip) => (ip.name.as_str(), ip.num_pins),
+                Port::Output(op) => (op.name.as_str(), op.num_pins),
+                Port::Clock(cp) => (cp.name.as_str(), cp.num_pins),
+            };
+            if port_name == name { Some(num_pins) } else { None }
+        })
+    }
+
+    /// Format a one-line port description: `"y  (40 pins)"` or just `"y"`.
+    fn port_header(name: &str, num_pins: Option<i32>) -> String {
+        match num_pins {
+            Some(n) => format!("{name}  ({n} pins)"),
+            None => name.to_string(),
+        }
+    }
+
+    /// Look up all combinational delays from `in_port` to `out_port` and return a
+    /// `DelayAnnotation` with a port-pair header line prepended.
     ///
     /// Returns `Some(text)` if at least one matching entry was found, `None` otherwise.
     /// For matrices, every per-pin value is listed; if all values are equal a compact
     /// summary is shown instead.  Matrices with more than 16 entries are summarised to
     /// keep the tooltip manageable.
-    fn comb_delay_text(&self, in_port: &str, out_port: &str) -> Option<String> {
+    fn comb_delay_annotation(&self, in_port: &str, out_port: &str) -> DelayAnnotation {
+        let in_pins = self.port_num_pins(in_port);
+        let out_pins = self.port_num_pins(out_port);
+        let header = format!(
+            "{}  ->  {}",
+            Self::port_header(in_port, in_pins),
+            Self::port_header(out_port, out_pins),
+        );
+
         let mut parts: Vec<String> = Vec::new();
 
         for delay in &self.pb_type.delays {
@@ -205,9 +233,9 @@ impl<'a> DelayLookup<'a> {
         }
 
         if parts.is_empty() {
-            None
+            DelayAnnotation::Missing(format!("{header}\nD = ⚠ MISSING"))
         } else {
-            Some(parts.join("\n"))
+            DelayAnnotation::Present(format!("{header}\n{}", parts.join("\n")))
         }
     }
 
@@ -267,8 +295,11 @@ impl<'a> DelayLookup<'a> {
 
     /// Build a `DelayAnnotation` for the clock-to-Q arc on `(port, clock)`.
     fn clock_to_q_annotation(&self, port: &str, clock: &str) -> DelayAnnotation {
+        let num_pins = self.port_num_pins(port);
+        let header = Self::port_header(port, num_pins);
         let pairs = self.t_clock_to_q_values(port, clock);
-        let text = format_ctq_pins("Tcq", &pairs);
+        let value_line = format_ctq_pins("Tcq", &pairs, num_pins);
+        let text = format!("{header}\n{value_line}");
         if pairs.is_empty() {
             DelayAnnotation::Missing(text)
         } else {
@@ -279,10 +310,15 @@ impl<'a> DelayLookup<'a> {
 
 /// Format a collection of scalar pin values (e.g. per-pin T_setup) under `label`.
 ///
-/// - Empty → `"<label> = ⚠ MISSING"`
-/// - One value / all equal → `"<label> = 70.00 ps"` or `"… (×N pins)"`
-/// - Different values → `"<label> = 60.00 ps – 80.00 ps  (N pins)"`
-fn format_scalar_pins(label: &str, values: &[f32]) -> String {
+/// `expected` is the total pin count from the pb_type port definition.  When more
+/// than one value is found but fewer than expected, a partial-annotation warning line
+/// is appended.  A single found value is never warned (scalar constraint covers all pins).
+///
+/// - Empty   → `"<label> = ⚠ MISSING"`
+/// - 1 value → `"<label> = 70.00 ps"`
+/// - N equal → `"<label> = 70.00 ps  (×N pins)"`
+/// - N diff  → `"<label> = 60.00 – 80.00 ps  (N pins)"`
+fn format_scalar_pins(label: &str, values: &[f32], expected: Option<i32>) -> String {
     if values.is_empty() {
         return format!("{label} = ⚠ MISSING");
     }
@@ -290,7 +326,7 @@ fn format_scalar_pins(label: &str, values: &[f32]) -> String {
     let min = values.iter().cloned().fold(f32::MAX, f32::min);
     let max = values.iter().cloned().fold(f32::MIN, f32::max);
     let all_equal = (max - min).abs() <= 1e-12 * max.abs().max(1.0);
-    if n == 1 {
+    let value_str = if n == 1 {
         format!("{label} = {}", format_delay(values[0]))
     } else if all_equal {
         format!("{label} = {}  (×{n} pins)", format_delay(values[0]))
@@ -300,20 +336,31 @@ fn format_scalar_pins(label: &str, values: &[f32]) -> String {
             format_delay(min),
             format_delay(max)
         )
+    };
+    // Partial-annotation warning: only when multiple indexed constraints exist but
+    // some pins are uncovered.  A single value is assumed to be a scalar constraint.
+    if n > 1 {
+        if let Some(exp) = expected {
+            if n < exp as usize {
+                let missing = exp as usize - n;
+                return format!("{value_str}\n⚠ {missing} of {exp} pins have no {label}");
+            }
+        }
     }
+    value_str
 }
 
 /// Format a collection of `(min, max)` clock-to-Q pin pairs under `label`.
 ///
-/// Follows the same compact / range rules as `format_scalar_pins`.
-fn format_ctq_pins(label: &str, pairs: &[(f32, f32)]) -> String {
+/// Follows the same compact / range / partial-warning rules as `format_scalar_pins`.
+fn format_ctq_pins(label: &str, pairs: &[(f32, f32)], expected: Option<i32>) -> String {
     if pairs.is_empty() {
         return format!("{label} = ⚠ MISSING");
     }
     let n = pairs.len();
     let overall_min = pairs.iter().map(|&(mn, _)| mn).fold(f32::MAX, f32::min);
     let overall_max = pairs.iter().map(|&(_, mx)| mx).fold(f32::MIN, f32::max);
-    if n == 1 {
+    let value_str = if n == 1 {
         format!("{label} = {}", format_delay_range(pairs[0].0, pairs[0].1))
     } else {
         let all_equal = pairs.windows(2).all(|w| w[0] == w[1]);
@@ -329,7 +376,16 @@ fn format_ctq_pins(label: &str, pairs: &[(f32, f32)]) -> String {
                 format_delay(overall_max)
             )
         }
+    };
+    if n > 1 {
+        if let Some(exp) = expected {
+            if n < exp as usize {
+                let missing = exp as usize - n;
+                return format!("{value_str}\n⚠ {missing} of {exp} pins have no {label}");
+            }
+        }
     }
+    value_str
 }
 
 /// Builds a combined setup + hold `DelayAnnotation` for the clock→D arc.
@@ -344,13 +400,15 @@ fn build_setup_hold_annotation(
     let Some(d) = delays else {
         return DelayAnnotation::NotActive;
     };
+    let num_pins = d.port_num_pins(port);
+    let header = DelayLookup::port_header(port, num_pins);
     let tsu_vals = d.t_setup_values(port, clock);
     let th_vals = d.t_hold_values(port, clock);
 
     let detail = format!(
-        "{}\n{}",
-        format_scalar_pins("Tsu", &tsu_vals),
-        format_scalar_pins("Th ", &th_vals),
+        "{header}\n{}\n{}",
+        format_scalar_pins("Tsu", &tsu_vals, num_pins),
+        format_scalar_pins("Th ", &th_vals, num_pins),
     );
 
     if !tsu_vals.is_empty() && !th_vals.is_empty() {
@@ -464,8 +522,17 @@ fn draw_timing_marker(
                         );
                     });
                     ui.separator();
-                    for line in content.lines() {
-                        let color = if line.contains("⚠ MISSING") {
+                    let mut lines = content.lines();
+                    // First line is the port info header — render bold in normal text color.
+                    if let Some(header_line) = lines.next() {
+                        ui.label(
+                            egui::RichText::new(header_line)
+                                .strong()
+                                .color(ui.visuals().text_color()),
+                        );
+                    }
+                    for line in lines {
+                        let color = if line.contains('⚠') {
                             MISSING_COLOR
                         } else {
                             DELAY_LABEL_COLOR
@@ -1130,12 +1197,7 @@ impl PrimitiveView {
                         Some(sink) => {
                             let comb_ann = match delays {
                                 None => DelayAnnotation::NotActive,
-                                Some(d) => match d.comb_delay_text(&port.name, sink_name) {
-                                    Some(text) => DelayAnnotation::Present(text),
-                                    None => DelayAnnotation::Missing(
-                                        "D = ⚠ MISSING".to_string(),
-                                    ),
-                                },
+                                Some(d) => d.comb_delay_annotation(&port.name, sink_name),
                             };
                             let wire_color =
                                 annotation_stroke_color(COMB_PATH_COLOR, &comb_ann);

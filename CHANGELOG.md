@@ -1,3 +1,8 @@
+## [v0.3.5] - 2026-03-22
+
+### Added
+- New Primitive View has been added which shows the timing characteristics of models and their associated primitives.
+
 ## [v0.3.4] - 2026-03-11
 
 ### Added

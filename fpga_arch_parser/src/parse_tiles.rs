@@ -1186,9 +1186,9 @@ fn parse_sub_tile<R: BufRead>(
     let pin_locations = match pin_locations {
         Some(t) => t,
         None => {
-            return Err(FPGAArchParseError::MissingRequiredTag(
-                "<pinlocations>".to_string(),
-            ));
+            // From the documentation, when no pin-locations is provided, the spread
+            // is assumed.
+            SubTilePinLocations::Spread
         }
     };
 

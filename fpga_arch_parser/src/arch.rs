@@ -624,6 +624,25 @@ pub struct PBType {
     pub metadata: Option<Vec<Metadata>>,
 }
 
+pub struct NoCRouterInfo {
+    pub id: i32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub connections: Vec<i32>,
+}
+
+pub struct NoCTopologyInfo {
+    pub routers: Vec<NoCRouterInfo>,
+}
+
+pub struct NoCInfo {
+    pub link_bandwidth: f32,
+    pub link_latency: f32,
+    pub router_latency: f32,
+    pub noc_router_tile_name: String,
+    pub topology: NoCTopologyInfo,
+}
+
 pub struct FPGAArch {
     pub models: Vec<Model>,
     pub tiles: Vec<Tile>,
@@ -634,4 +653,5 @@ pub struct FPGAArch {
     pub custom_switch_blocks: Vec<CustomSwitchBlock>,
     pub direct_list: Vec<GlobalDirect>,
     pub complex_block_list: Vec<PBType>,
+    pub noc: Option<NoCInfo>,
 }

@@ -22,6 +22,8 @@ pub struct GridState {
     pub grid_changed: bool,
     pub zoom_changed: bool,
     pub last_available_size: egui::Vec2,
+
+    pub show_noc: bool,
 }
 
 impl Default for GridState {
@@ -37,6 +39,7 @@ impl Default for GridState {
             grid_changed: false,
             zoom_changed: false,
             last_available_size: egui::Vec2::ZERO,
+            show_noc: false,
         }
     }
 }
@@ -205,13 +208,10 @@ impl GridView {
                 );
                 self.grid_state.last_available_size = current_available_size;
             }
-            if let Some(clicked_tile) = self.grid_renderer.render_grid(
-                ui,
-                grid,
-                arch,
-                self.grid_state.zoom_factor,
-                self.grid_state.selected_die_id,
-            ) {
+            if let Some(clicked_tile) =
+                self.grid_renderer
+                    .render_grid(ui, grid, arch, &self.grid_state)
+            {
                 *selected_tile_name = Some(clicked_tile);
                 *next_view_mode = ViewMode::Tile;
             }
@@ -419,6 +419,14 @@ fn render_grid_controls_panel(
                 "Grid Size: {}x{}",
                 state.grid_width, state.grid_height
             ));
+
+            if arch.noc.is_some() {
+                ui.add_space(15.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                ui.checkbox(&mut state.show_noc, "Show NoC");
+            }
 
             ui.add_space(15.0);
             ui.separator();

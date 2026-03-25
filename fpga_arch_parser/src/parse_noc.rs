@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::BufRead;
 
 use xml::common::Position;
@@ -239,6 +240,24 @@ fn parse_topology<R: BufRead>(
                 ));
             }
             _ => {}
+        }
+    }
+
+    // Verify that each router's ID is unique.
+    let mut known_ids: HashSet<i32> = HashSet::new();
+    for router in &routers {
+        if known_ids.contains(&router.id) {
+            return Err(FPGAArchParseError::InvalidTag(format!("Found a NoC router with a duplicate ID: {}", router.id), parser.position()));
+        }
+        known_ids.insert(router.id);
+    }
+
+    // Verify that each router connects to a valid router.
+    for router in &routers {
+        for connection in &router.connections {
+            if !known_ids.contains(&connection) {
+                return Err(FPGAArchParseError::InvalidTag(format!("Found a NoC router {} with an invalid connection ID: {}", router.id, connection), parser.position()));
+            }
         }
     }
 

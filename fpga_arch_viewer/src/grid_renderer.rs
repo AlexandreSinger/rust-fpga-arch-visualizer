@@ -1,5 +1,6 @@
 use crate::block_style::darken_color;
 use crate::grid::{DeviceGrid, GridCell};
+use crate::grid_view::GridState;
 use eframe::egui;
 use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
@@ -148,11 +149,10 @@ impl GridRenderer {
         ui: &mut egui::Ui,
         grid: &DeviceGrid,
         arch: &FPGAArch,
-        zoom_factor: f32,
-        selected_die_id: usize,
+        state: &GridState,
     ) -> Option<String> {
         // Cell size is based on the available space
-        let cell_size = get_cell_size(grid, zoom_factor, ui);
+        let cell_size = get_cell_size(grid, state.zoom_factor, ui);
 
         let mut clicked_tile: Option<String> = None;
 
@@ -172,7 +172,7 @@ impl GridRenderer {
                 // to allow us to render very large FPGAs.
                 // TODO: This clone can be wasteful. Should consider using egui::Context::set_transform_layer()
                 //       in the future.
-                let mut shapes = self.grid_shapes[selected_die_id].clone();
+                let mut shapes = self.grid_shapes[state.selected_die_id].clone();
                 for shape in &mut shapes {
                     shape.translate(offset.to_vec2());
                 }
@@ -186,7 +186,7 @@ impl GridRenderer {
                     // we are so zoomed in, we only collect the visible text
                     // shapes. This greatly improves performance.
                     let mut text_shapes = Vec::new();
-                    for shape in &self.text_shapes[selected_die_id] {
+                    for shape in &self.text_shapes[state.selected_die_id] {
                         if ui.is_rect_visible(
                             shape.visual_bounding_rect().translate(offset.to_vec2()),
                         ) {
@@ -200,6 +200,35 @@ impl GridRenderer {
                     painter.extend(text_shapes);
                 }
 
+                // Draw the NoC if requested.
+                if state.show_noc && let Some(noc_info) = &arch.noc {
+                    // Create a lookup between each router and their positions.
+                    let mut router_positions = HashMap::new();
+                    for router in &noc_info.topology.routers {
+                        let x_pos = router.position_x * cell_size;
+                        let y_pos = (grid.height as f32 - router.position_y) * cell_size;
+                        router_positions.insert(router.id, offset + egui::vec2(x_pos, y_pos));
+                    }
+
+                    let mut noc_shapes: Vec<egui::Shape> = Vec::new();
+
+                    // Draw each router's connections.
+                    for router in &noc_info.topology.routers {
+                        let from_pos = router_positions[&router.id];
+                        for target_id in &router.connections {
+                            let to_pos = router_positions[target_id];
+                            noc_shapes.push(egui::Shape::line_segment([from_pos, to_pos], egui::Stroke::new(2.0, egui::Color32::BLACK)));
+                        }
+                    }
+
+                    // Draw each router.
+                    for router_position in router_positions.values() {
+                        noc_shapes.push(egui::Shape::circle_filled(*router_position, cell_size / 2.0, egui::Color32::BLACK));
+                    }
+
+                    painter.extend(noc_shapes);
+                }
+
                 // Check for which tile is currently being hovered over.
                 if let Some(hover_pos) = response.hover_pos() {
                     let mut col = ((hover_pos.x - offset.x) / cell_size).floor() as usize;
@@ -211,7 +240,7 @@ impl GridRenderer {
                         pb_type: _,
                         anchor_row,
                         anchor_col,
-                    }) = grid.get(row, col, selected_die_id)
+                    }) = grid.get(row, col, state.selected_die_id)
                     {
                         col = *anchor_col;
                         row = *anchor_row;
@@ -221,7 +250,7 @@ impl GridRenderer {
                         pb_type,
                         width,
                         height,
-                    }) = grid.get(row, col, selected_die_id)
+                    }) = grid.get(row, col, state.selected_die_id)
                     {
                         // If a tile has been clicked, mark it as the clicked tile.
                         if response.clicked() {

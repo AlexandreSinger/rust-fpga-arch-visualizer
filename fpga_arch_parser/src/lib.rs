@@ -22,6 +22,7 @@ mod parse_segment_list;
 mod parse_switch_list;
 mod parse_tiles;
 mod parse_timing;
+mod verify_noc;
 
 pub use crate::arch::*;
 pub use crate::parse_error::FPGAArchParseError;
@@ -36,6 +37,7 @@ use crate::parse_noc::parse_noc;
 use crate::parse_segment_list::parse_segment_list;
 use crate::parse_switch_list::parse_switch_list;
 use crate::parse_tiles::parse_tiles;
+use crate::verify_noc::verify_noc;
 
 fn parse_architecture<R: BufRead>(
     name: &OwnedName,
@@ -282,6 +284,10 @@ fn parse_architecture<R: BufRead>(
     };
     let custom_switch_blocks = custom_switch_blocks.unwrap_or_default();
     let direct_list = direct_list.unwrap_or_default();
+
+    if let Some(noc_info) = &noc {
+        verify_noc(noc_info, &tiles, parser.position())?;
+    }
 
     Ok(FPGAArch {
         models,

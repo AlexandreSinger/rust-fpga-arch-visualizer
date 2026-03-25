@@ -14,6 +14,7 @@ mod parse_device;
 mod parse_direct_list;
 mod parse_error;
 mod parse_layouts;
+mod parse_noc;
 mod parse_metadata;
 mod parse_models;
 mod parse_port;
@@ -31,6 +32,7 @@ use crate::parse_device::parse_device;
 use crate::parse_direct_list::parse_direct_list;
 use crate::parse_layouts::parse_layouts;
 use crate::parse_models::parse_models;
+use crate::parse_noc::parse_noc;
 use crate::parse_segment_list::parse_segment_list;
 use crate::parse_switch_list::parse_switch_list;
 use crate::parse_tiles::parse_tiles;
@@ -57,6 +59,7 @@ fn parse_architecture<R: BufRead>(
     let mut custom_switch_blocks: Option<Vec<CustomSwitchBlock>> = None;
     let mut direct_list: Option<Vec<GlobalDirect>> = None;
     let mut complex_block_list: Option<Vec<PBType>> = None;
+    let mut noc: Option<NoCInfo> = None;
 
     loop {
         match parser.next() {
@@ -163,6 +166,17 @@ fn parse_architecture<R: BufRead>(
                             }
                         }
                     }
+                    "noc" => {
+                        noc = match noc {
+                            None => Some(parse_noc(&name, &attributes, parser)?),
+                            Some(_) => {
+                                return Err(FPGAArchParseError::DuplicateTag(
+                                    format!("<{name}>"),
+                                    parser.position(),
+                                ));
+                            }
+                        }
+                    },
                     "power" => {
                         // TODO: Implement.
                         // FIXME: Check that this is documented in VTR.
@@ -279,6 +293,7 @@ fn parse_architecture<R: BufRead>(
         custom_switch_blocks,
         direct_list,
         complex_block_list,
+        noc,
     })
 }
 

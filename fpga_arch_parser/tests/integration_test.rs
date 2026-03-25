@@ -630,7 +630,9 @@ fn test_3d_k4_n4_90nm_opin_per_block() -> Result<(), FPGAArchParseError> {
 
 #[test]
 fn embedded_star_noc_topology() -> Result<(), FPGAArchParseError> {
-    let input_xml_relative = PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm_with_a_embedded_star_noc_topology.xml");
+    let input_xml_relative = PathBuf::from(
+        "tests/k6_frac_N10_frac_chain_mem32K_40nm_with_a_embedded_star_noc_topology.xml",
+    );
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
 
     let res = fpga_arch_parser::parse(&input_xml)?;

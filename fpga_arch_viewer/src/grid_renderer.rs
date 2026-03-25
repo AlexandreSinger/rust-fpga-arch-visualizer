@@ -201,7 +201,9 @@ impl GridRenderer {
                 }
 
                 // Draw the NoC if requested.
-                if state.show_noc && let Some(noc_info) = &arch.noc {
+                if state.show_noc
+                    && let Some(noc_info) = &arch.noc
+                {
                     // Create a lookup between each router and their positions.
                     let mut router_positions = HashMap::new();
                     for router in &noc_info.topology.routers {
@@ -217,13 +219,20 @@ impl GridRenderer {
                         let from_pos = router_positions[&router.id];
                         for target_id in &router.connections {
                             let to_pos = router_positions[target_id];
-                            noc_shapes.push(egui::Shape::line_segment([from_pos, to_pos], egui::Stroke::new(2.0, egui::Color32::BLACK)));
+                            noc_shapes.push(egui::Shape::line_segment(
+                                [from_pos, to_pos],
+                                egui::Stroke::new(2.0, egui::Color32::BLACK),
+                            ));
                         }
                     }
 
                     // Draw each router.
                     for router_position in router_positions.values() {
-                        noc_shapes.push(egui::Shape::circle_filled(*router_position, cell_size / 2.0, egui::Color32::BLACK));
+                        noc_shapes.push(egui::Shape::circle_filled(
+                            *router_position,
+                            cell_size / 2.0,
+                            egui::Color32::BLACK,
+                        ));
                     }
 
                     painter.extend(noc_shapes);

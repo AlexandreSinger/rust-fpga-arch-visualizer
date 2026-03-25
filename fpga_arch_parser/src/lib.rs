@@ -14,9 +14,9 @@ mod parse_device;
 mod parse_direct_list;
 mod parse_error;
 mod parse_layouts;
-mod parse_noc;
 mod parse_metadata;
 mod parse_models;
+mod parse_noc;
 mod parse_port;
 mod parse_segment_list;
 mod parse_switch_list;
@@ -178,7 +178,7 @@ fn parse_architecture<R: BufRead>(
                                 ));
                             }
                         }
-                    },
+                    }
                     "power" => {
                         // TODO: Implement.
                         // FIXME: Check that this is documented in VTR.

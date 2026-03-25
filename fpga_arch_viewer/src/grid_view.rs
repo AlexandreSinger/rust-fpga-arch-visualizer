@@ -208,12 +208,10 @@ impl GridView {
                 );
                 self.grid_state.last_available_size = current_available_size;
             }
-            if let Some(clicked_tile) = self.grid_renderer.render_grid(
-                ui,
-                grid,
-                arch,
-                &self.grid_state,
-            ) {
+            if let Some(clicked_tile) =
+                self.grid_renderer
+                    .render_grid(ui, grid, arch, &self.grid_state)
+            {
                 *selected_tile_name = Some(clicked_tile);
                 *next_view_mode = ViewMode::Tile;
             }

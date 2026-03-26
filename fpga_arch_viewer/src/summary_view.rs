@@ -10,6 +10,7 @@ impl SummaryView {
         arch: &FPGAArch,
         selected_tile_name: &mut Option<String>,
         complex_block_view_state: &mut ComplexBlockViewState,
+        selected_model_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
         ctx: &egui::Context,
     ) {
@@ -18,6 +19,7 @@ impl SummaryView {
                 arch,
                 selected_tile_name,
                 complex_block_view_state,
+                selected_model_name,
                 next_view_mode,
                 ui,
             );
@@ -29,6 +31,7 @@ impl SummaryView {
         arch: &FPGAArch,
         selected_tile_name: &mut Option<String>,
         complex_block_view_state: &mut ComplexBlockViewState,
+        selected_model_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
         ui: &mut egui::Ui,
     ) {
@@ -212,6 +215,32 @@ impl SummaryView {
                                         Some(pb_type.name.clone());
                                     *next_view_mode = ViewMode::ComplexBlock;
                                 }
+                            });
+                        }
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                // Models Section
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading(format!("Models ({})", arch.models.len()));
+                        if ui.button("View Primitive Diagrams").clicked() {
+                            *selected_model_name = None;
+                            *next_view_mode = ViewMode::Primitive;
+                        }
+                    });
+                    ui.separator();
+
+                    ui.collapsing("Models", |ui| {
+                        for model in &arch.models {
+                            ui.horizontal(|ui| {
+                                if ui.button("View Primitive").clicked() {
+                                    *selected_model_name = Some(model.name.clone());
+                                    *next_view_mode = ViewMode::Primitive;
+                                }
+                                ui.label(&model.name);
                             });
                         }
                     });

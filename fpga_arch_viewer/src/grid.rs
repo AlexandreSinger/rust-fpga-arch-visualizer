@@ -1,4 +1,5 @@
 use fpga_arch_parser::{AutoLayout, FPGAArch, GridLocation};
+use log::warn;
 use std::collections::HashMap;
 
 // A single cell in the FPGA grid
@@ -383,9 +384,16 @@ impl DeviceGrid {
                         .and_then(|expr| self.eval_expr(expr, tile_width, tile_height))
                         .unwrap_or(self.width);
 
-                    for x in (start_x..self.width).step_by(repeat_x) {
-                        for y in (start_y..self.height).step_by(incr_y) {
-                            self.place_tile(y, x, &col_loc.pb_type, col_loc.priority, die_id);
+                    if repeat_x == 0 || incr_y == 0 {
+                        warn!(
+                            "Skipping col tile placement for '{}': step_by value is zero (repeat_x={repeat_x}, incr_y={incr_y})",
+                            col_loc.pb_type
+                        );
+                    } else {
+                        for x in (start_x..self.width).step_by(repeat_x) {
+                            for y in (start_y..self.height).step_by(incr_y) {
+                                self.place_tile(y, x, &col_loc.pb_type, col_loc.priority, die_id);
+                            }
                         }
                     }
                 }
@@ -405,9 +413,16 @@ impl DeviceGrid {
                         .and_then(|expr| self.eval_expr(expr, tile_width, tile_height))
                         .unwrap_or(self.height);
 
-                    for y in (start_y..self.height).step_by(repeat_y) {
-                        for x in (start_x..self.width).step_by(incr_x) {
-                            self.place_tile(y, x, &row_loc.pb_type, row_loc.priority, die_id);
+                    if repeat_y == 0 || incr_x == 0 {
+                        warn!(
+                            "Skipping row tile placement for '{}': step_by value is zero (repeat_y={repeat_y}, incr_x={incr_x})",
+                            row_loc.pb_type
+                        );
+                    } else {
+                        for y in (start_y..self.height).step_by(repeat_y) {
+                            for x in (start_x..self.width).step_by(incr_x) {
+                                self.place_tile(y, x, &row_loc.pb_type, row_loc.priority, die_id);
+                            }
                         }
                     }
                 }
@@ -427,9 +442,16 @@ impl DeviceGrid {
                         .eval_expr(&region.incr_y_expr, tile_width, tile_height)
                         .unwrap_or(end_y - start_y + 1);
 
-                    for y in (start_y..=end_y.min(self.height - 1)).step_by(incr_y) {
-                        for x in (start_x..=end_x.min(self.width - 1)).step_by(incr_x) {
-                            self.place_tile(y, x, &region.pb_type, region.priority, die_id);
+                    if incr_y == 0 || incr_x == 0 {
+                        warn!(
+                            "Skipping region tile placement for '{}': step_by value is zero (incr_y={incr_y}, incr_x={incr_x})",
+                            region.pb_type
+                        );
+                    } else {
+                        for y in (start_y..=end_y.min(self.height - 1)).step_by(incr_y) {
+                            for x in (start_x..=end_x.min(self.width - 1)).step_by(incr_x) {
+                                self.place_tile(y, x, &region.pb_type, region.priority, die_id);
+                            }
                         }
                     }
                 }

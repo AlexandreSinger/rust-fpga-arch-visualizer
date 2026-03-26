@@ -204,9 +204,13 @@ impl GridRenderer {
                 if state.show_noc
                     && let Some(noc_info) = &arch.noc
                 {
-                    // Create a lookup between each router and their positions.
+                    // Build a position lookup for all routers, but only
+                    // include routers on the currently selected die.
                     let mut router_positions = HashMap::new();
                     for router in &noc_info.topology.routers {
+                        if router.layer != state.selected_die_id {
+                            continue;
+                        }
                         let x_pos = router.position_x * cell_size;
                         let y_pos = (grid.height as f32 - router.position_y) * cell_size;
                         router_positions.insert(router.id, offset + egui::vec2(x_pos, y_pos));
@@ -214,11 +218,15 @@ impl GridRenderer {
 
                     let mut noc_shapes: Vec<egui::Shape> = Vec::new();
 
-                    // Draw each router's connections.
+                    // Draw connections between routers on this die only.
                     for router in &noc_info.topology.routers {
-                        let from_pos = router_positions[&router.id];
+                        let Some(&from_pos) = router_positions.get(&router.id) else {
+                            continue;
+                        };
                         for target_id in &router.connections {
-                            let to_pos = router_positions[target_id];
+                            let Some(&to_pos) = router_positions.get(target_id) else {
+                                continue;
+                            };
                             noc_shapes.push(egui::Shape::line_segment(
                                 [from_pos, to_pos],
                                 egui::Stroke::new(2.0, egui::Color32::BLACK),
@@ -226,7 +234,7 @@ impl GridRenderer {
                         }
                     }
 
-                    // Draw each router.
+                    // Draw each router on this die.
                     for router_position in router_positions.values() {
                         noc_shapes.push(egui::Shape::circle_filled(
                             *router_position,

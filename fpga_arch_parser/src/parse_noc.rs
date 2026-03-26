@@ -181,12 +181,328 @@ fn parse_router<R: BufRead>(
         };
     }
 
+    // FIXME: Currently VTR cannot specify an individual NoC router's layer;
+    //        however, the mesh topology can. There is a gap in the spec.
     Ok(NoCRouterInfo {
         id,
         position_x,
         position_y,
+        layer: 0,
         connections,
     })
+}
+
+fn parse_mesh<R: BufRead>(
+    tag_name: &OwnedName,
+    attributes: &[OwnedAttribute],
+    parser: &mut EventReader<R>,
+) -> Result<NoCTopologyInfo, FPGAArchParseError> {
+    assert!(tag_name.to_string() == "mesh");
+
+    let mut start_x: Option<f32> = None;
+    let mut end_x: Option<f32> = None;
+    let mut start_y: Option<f32> = None;
+    let mut end_y: Option<f32> = None;
+    let mut start_layer: Option<i32> = None;
+    let mut end_layer: Option<i32> = None;
+    let mut size: Option<i32> = None;
+
+    for a in attributes {
+        match a.name.to_string().as_ref() {
+            "startx" => {
+                start_x = match start_x {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "endx" => {
+                end_x = match end_x {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "starty" => {
+                start_y = match start_y {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "endy" => {
+                end_y = match end_y {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "startlayer" => {
+                start_layer = match start_layer {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "endlayer" => {
+                end_layer = match end_layer {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            "size" => {
+                size = match size {
+                    None => match a.value.parse() {
+                        Ok(v) => Some(v),
+                        Err(e) => {
+                            return Err(FPGAArchParseError::AttributeParseError(
+                                format!("{a}: {e}"),
+                                parser.position(),
+                            ));
+                        }
+                    },
+                    Some(_) => {
+                        return Err(FPGAArchParseError::DuplicateAttribute(
+                            a.to_string(),
+                            parser.position(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(FPGAArchParseError::UnknownAttribute(
+                    a.to_string(),
+                    parser.position(),
+                ));
+            }
+        };
+    }
+
+    let start_x = match start_x {
+        Some(v) => v,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "startx".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let end_x = match end_x {
+        Some(v) => v,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "endx".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let start_y = match start_y {
+        Some(v) => v,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "starty".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let end_y = match end_y {
+        Some(v) => v,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "endy".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+    let start_layer = start_layer.unwrap_or(0);
+    let end_layer = end_layer.unwrap_or(0);
+    let size = match size {
+        Some(v) => v,
+        None => {
+            return Err(FPGAArchParseError::MissingRequiredAttribute(
+                "size".to_string(),
+                parser.position(),
+            ));
+        }
+    };
+
+    if size < 2 {
+        return Err(FPGAArchParseError::InvalidTag(
+            format!("NoC mesh size must be greater than 1, got {size}"),
+            parser.position(),
+        ));
+    }
+    if end_layer < start_layer {
+        return Err(FPGAArchParseError::InvalidTag(
+            format!("NoC mesh endlayer ({end_layer}) must be >= startlayer ({start_layer})"),
+            parser.position(),
+        ));
+    }
+    if start_layer < 0 {
+        return Err(FPGAArchParseError::InvalidTag(
+            format!("NoC mesh start_layer ({start_layer}) must be non-negative"),
+            parser.position(),
+        ));
+    }
+
+    // Consume the mesh end tag; the mesh element has no children.
+    loop {
+        match parser.next() {
+            Ok(XmlEvent::StartElement { name, .. }) => {
+                return Err(FPGAArchParseError::InvalidTag(
+                    name.to_string(),
+                    parser.position(),
+                ));
+            }
+            Ok(XmlEvent::EndElement { name }) => match name.to_string().as_ref() {
+                "mesh" => break,
+                _ => {
+                    return Err(FPGAArchParseError::UnexpectedEndTag(
+                        name.to_string(),
+                        parser.position(),
+                    ));
+                }
+            },
+            Ok(XmlEvent::EndDocument) => {
+                return Err(FPGAArchParseError::UnexpectedEndOfDocument(
+                    tag_name.to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(FPGAArchParseError::XMLParseError(
+                    format!("{e:?}"),
+                    parser.position(),
+                ));
+            }
+            _ => {}
+        };
+    }
+
+    // Generate the mesh topology. Router IDs start at 0 at the bottom-left
+    // corner of the first layer and increase in row-major order across layers.
+    let num_layers = (end_layer - start_layer + 1) as usize;
+    let size = size as usize;
+    let mut routers: Vec<NoCRouterInfo> = Vec::with_capacity(num_layers * size * size);
+
+    for layer in 0..num_layers {
+        for row in 0..size {
+            for col in 0..size {
+                let id = (layer * size * size + row * size + col) as i32;
+
+                let pos_x = start_x + col as f32 * (end_x - start_x) / (size - 1) as f32;
+                let pos_y = start_y + row as f32 * (end_y - start_y) / (size - 1) as f32;
+
+                let mut connections: Vec<i32> = Vec::new();
+                if col > 0 {
+                    // Left neighbour.
+                    connections.push((layer * size * size + row * size + (col - 1)) as i32);
+                }
+                if col < size - 1 {
+                    // Right neighbour.
+                    connections.push((layer * size * size + row * size + (col + 1)) as i32);
+                }
+                if row > 0 {
+                    // Below neighbour.
+                    connections.push((layer * size * size + (row - 1) * size + col) as i32);
+                }
+                if row < size - 1 {
+                    // Above neighbour.
+                    connections.push((layer * size * size + (row + 1) * size + col) as i32);
+                }
+                if layer > 0 {
+                    // Neighbour on layer below.
+                    connections.push(((layer - 1) * size * size + row * size + col) as i32);
+                }
+                if layer < num_layers - 1 {
+                    // Neighbour on layer above.
+                    connections.push(((layer + 1) * size * size + row * size + col) as i32);
+                }
+
+                routers.push(NoCRouterInfo {
+                    id,
+                    position_x: pos_x,
+                    position_y: pos_y,
+                    layer: start_layer as usize + layer,
+                    connections,
+                });
+            }
+        }
+    }
+
+    Ok(NoCTopologyInfo { routers })
 }
 
 fn parse_topology<R: BufRead>(
@@ -421,6 +737,17 @@ pub fn parse_noc<R: BufRead>(
                         }
                     }
                 }
+                "mesh" => {
+                    topology = match topology {
+                        None => Some(parse_mesh(&child_name, &child_attributes, parser)?),
+                        Some(_) => {
+                            return Err(FPGAArchParseError::DuplicateTag(
+                                format!("<{child_name}>"),
+                                parser.position(),
+                            ));
+                        }
+                    }
+                }
                 _ => {
                     return Err(FPGAArchParseError::InvalidTag(
                         child_name.to_string(),
@@ -456,7 +783,7 @@ pub fn parse_noc<R: BufRead>(
         Some(t) => t,
         None => {
             return Err(FPGAArchParseError::MissingRequiredTag(
-                "<topology>".to_string(),
+                "<topology> or <mesh>".to_string(),
             ));
         }
     };

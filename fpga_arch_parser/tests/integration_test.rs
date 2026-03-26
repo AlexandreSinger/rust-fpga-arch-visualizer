@@ -629,6 +629,59 @@ fn test_3d_k4_n4_90nm_opin_per_block() -> Result<(), FPGAArchParseError> {
 }
 
 #[test]
+fn mesh_noc_topology() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative =
+        PathBuf::from("tests/k6_frac_N10_frac_chain_mem32K_40nm_with_a_2x2_mesh_noc_topology.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    // Check NoC info.
+    let noc = res.noc.as_ref().expect("Expected NoC info to be present");
+    assert_eq!(noc.link_latency, 1e-9);
+    assert_eq!(noc.router_latency, 2e-9);
+    assert_eq!(noc.link_bandwidth, 1.2e9);
+    assert_eq!(noc.noc_router_tile_name, "noc_router");
+
+    // A 2x2 single-layer mesh produces 4 routers.
+    // IDs are assigned row-major from the bottom-left corner:
+    //   id=0 (row=0,col=0)  id=1 (row=0,col=1)
+    //   id=2 (row=1,col=0)  id=3 (row=1,col=1)
+    let routers = &noc.topology.routers;
+    assert_eq!(routers.len(), 4);
+
+    // Bottom-left: connected to right (1) and above (2).
+    assert_eq!(routers[0].id, 0);
+    assert_eq!(routers[0].position_x, 0.0);
+    assert_eq!(routers[0].position_y, 0.0);
+    assert_eq!(routers[0].layer, 0);
+    assert_eq!(routers[0].connections, vec![1, 2]);
+
+    // Bottom-right: connected to left (0) and above (3).
+    assert_eq!(routers[1].id, 1);
+    assert_eq!(routers[1].position_x, 5.0);
+    assert_eq!(routers[1].position_y, 0.0);
+    assert_eq!(routers[1].layer, 0);
+    assert_eq!(routers[1].connections, vec![0, 3]);
+
+    // Top-left: connected to right (3) and below (0).
+    assert_eq!(routers[2].id, 2);
+    assert_eq!(routers[2].position_x, 0.0);
+    assert_eq!(routers[2].position_y, 5.0);
+    assert_eq!(routers[2].layer, 0);
+    assert_eq!(routers[2].connections, vec![3, 0]);
+
+    // Top-right: connected to left (2) and below (1).
+    assert_eq!(routers[3].id, 3);
+    assert_eq!(routers[3].position_x, 5.0);
+    assert_eq!(routers[3].position_y, 5.0);
+    assert_eq!(routers[3].layer, 0);
+    assert_eq!(routers[3].connections, vec![2, 1]);
+
+    Ok(())
+}
+
+#[test]
 fn embedded_star_noc_topology() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from(
         "tests/k6_frac_N10_frac_chain_mem32K_40nm_with_a_embedded_star_noc_topology.xml",
@@ -663,6 +716,7 @@ fn embedded_star_noc_topology() -> Result<(), FPGAArchParseError> {
         assert_eq!(routers[i].id, *id);
         assert_eq!(routers[i].position_x, *pos_x);
         assert_eq!(routers[i].position_y, *pos_y);
+        assert_eq!(routers[i].layer, 0);
         assert_eq!(routers[i].connections, vec![9]);
     }
 
@@ -671,6 +725,7 @@ fn embedded_star_noc_topology() -> Result<(), FPGAArchParseError> {
     assert_eq!(center.id, 9);
     assert_eq!(center.position_x, 16.5);
     assert_eq!(center.position_y, 10.5);
+    assert_eq!(center.layer, 0);
     assert_eq!(center.connections, vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
     Ok(())

@@ -103,6 +103,8 @@ impl TilePinMapper {
 
 pub fn build_tile_pin_mapper(
     sub_tiles: &Vec<SubTile>,
+    tile_width: usize,
+    tile_height: usize,
 ) -> Result<TilePinMapper, FPGAArchParseError> {
     let mut num_pins_in_tile: usize = 0;
     let mut pin_index_lookup: TilePinIndexMap = HashMap::new();
@@ -169,8 +171,25 @@ pub fn build_tile_pin_mapper(
                     }
                 }
             }
-            // TODO: Implement for other pin locations.
-            _ => {}
+            SubTilePinLocations::Spread => {
+                let slots = spread_slots(tile_width, tile_height);
+                assign_pins_round_robin(sub_tile, &pin_index_lookup, &slots, &mut pin_locs);
+            }
+            SubTilePinLocations::Perimeter => {
+                let slots = perimeter_slots(tile_width, tile_height);
+                assign_pins_round_robin(sub_tile, &pin_index_lookup, &slots, &mut pin_locs);
+            }
+            SubTilePinLocations::SpreadInputsPerimeterOutputs => {
+                let spread = spread_slots(tile_width, tile_height);
+                let perimeter = perimeter_slots(tile_width, tile_height);
+                assign_pins_spread_inputs_perimeter_outputs(
+                    sub_tile,
+                    &pin_index_lookup,
+                    &spread,
+                    &perimeter,
+                    &mut pin_locs,
+                );
+            }
         }
     }
 
@@ -180,6 +199,87 @@ pub fn build_tile_pin_mapper(
         pin_name_lookup,
         pin_locs,
     })
+}
+
+fn spread_slots(tile_width: usize, tile_height: usize) -> Vec<PhysicalPinLoc> {
+    let mut slots = Vec::new();
+    for side in [PinSide::Left, PinSide::Right, PinSide::Bottom, PinSide::Top] {
+        for yoffset in 0..tile_height {
+            for xoffset in 0..tile_width {
+                slots.push(PhysicalPinLoc { side: side.clone(), xoffset, yoffset });
+            }
+        }
+    }
+    slots
+}
+
+fn perimeter_slots(tile_width: usize, tile_height: usize) -> Vec<PhysicalPinLoc> {
+    let mut slots = Vec::new();
+    for side in [PinSide::Left, PinSide::Right, PinSide::Bottom, PinSide::Top] {
+        for yoffset in 0..tile_height {
+            for xoffset in 0..tile_width {
+                let on_perimeter = match side {
+                    PinSide::Left => xoffset == 0,
+                    PinSide::Right => xoffset == tile_width - 1,
+                    PinSide::Bottom => yoffset == 0,
+                    PinSide::Top => yoffset == tile_height - 1,
+                };
+                if on_perimeter {
+                    slots.push(PhysicalPinLoc { side: side.clone(), xoffset, yoffset });
+                }
+            }
+        }
+    }
+    slots
+}
+
+fn assign_pins_round_robin(
+    sub_tile: &SubTile,
+    pin_index_lookup: &TilePinIndexMap,
+    slots: &[PhysicalPinLoc],
+    pin_locs: &mut Vec<Vec<PhysicalPinLoc>>,
+) {
+    if slots.is_empty() {
+        return;
+    }
+    let sub_tile_lookup = &pin_index_lookup[&sub_tile.name];
+    for cap_lookup in sub_tile_lookup {
+        for port in &sub_tile.ports {
+            let port_name = match port {
+                Port::Input(p) => &p.name,
+                Port::Output(p) => &p.name,
+                Port::Clock(p) => &p.name,
+            };
+            for &pin_idx in &cap_lookup[port_name] {
+                pin_locs[pin_idx].push(slots[pin_idx % slots.len()].clone());
+            }
+        }
+    }
+}
+
+fn assign_pins_spread_inputs_perimeter_outputs(
+    sub_tile: &SubTile,
+    pin_index_lookup: &TilePinIndexMap,
+    spread: &[PhysicalPinLoc],
+    perimeter: &[PhysicalPinLoc],
+    pin_locs: &mut Vec<Vec<PhysicalPinLoc>>,
+) {
+    let sub_tile_lookup = &pin_index_lookup[&sub_tile.name];
+    for cap_lookup in sub_tile_lookup {
+        for port in &sub_tile.ports {
+            let (port_name, slots): (&String, &[PhysicalPinLoc]) = match port {
+                Port::Input(p) => (&p.name, spread),
+                Port::Output(p) => (&p.name, perimeter),
+                Port::Clock(p) => (&p.name, spread),
+            };
+            if slots.is_empty() {
+                continue;
+            }
+            for &pin_idx in &cap_lookup[port_name] {
+                pin_locs[pin_idx].push(slots[pin_idx % slots.len()].clone());
+            }
+        }
+    }
 }
 
 fn get_pins_in_pin_loc(

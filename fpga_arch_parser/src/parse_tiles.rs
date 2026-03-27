@@ -1365,7 +1365,7 @@ fn parse_tile<R: BufRead>(
         }
     }
 
-    let pin_mapper = build_tile_pin_mapper(&sub_tiles)?;
+    let pin_mapper = build_tile_pin_mapper(&sub_tiles, width as usize, height as usize)?;
 
     Ok(Tile {
         name: tile_name,

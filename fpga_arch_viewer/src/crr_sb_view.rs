@@ -357,7 +357,7 @@ impl CRRSBView {
                     for j in visible_j_min..visible_j_max {
                         let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
                         let lb_render_tile_info = match grid.get(j, i, 0) {
-                            Some(GridCell::BlockAnchor { pb_type, width, height }) => {
+                            Some(GridCell::BlockAnchor { pb_type, width: _, height }) => {
                                 let lb_render_tile = &render_tile_lookup[pb_type];
                                 let mut lb_shapes = lb_render_tile.lb_shapes.clone();
                                 let tile_relative_offset = egui::vec2(0.0, -tile_size.y * (height - 1) as f32);
@@ -367,13 +367,13 @@ impl CRRSBView {
                                 }
                                 painter.extend(lb_shapes);
 
-                                Some((lb_render_tile, tile_object_lookup[pb_type]))
+                                Some((lb_render_tile, tile_object_lookup[pb_type], tile_relative_offset))
                             },
-                            Some(GridCell::BlockOccupied { pb_type, anchor_row, anchor_col }) => {
-                                // if let Some(GridCell::BlockAnchor { pb_type, width, height }) = grid.get(*anchor_row, *anchor_col, 0) {
-                                //     Some(&r)
-                                // }
-                                Some((&render_tile_lookup[pb_type], tile_object_lookup[pb_type]))
+                            Some(GridCell::BlockOccupied { pb_type, anchor_row, anchor_col: _}) => {
+                                let tile = tile_object_lookup[pb_type];
+                                let dh = usize::abs_diff(*anchor_row, j) as i32;
+                                let tile_relative_offset = egui::vec2(0.0, -tile_size.y * (tile.height - dh - 1) as f32);
+                                Some((&render_tile_lookup[pb_type], tile, tile_relative_offset))
                             },
                             _ => None,
                         };
@@ -401,13 +401,37 @@ impl CRRSBView {
                                     painter.extend(switch_conn_shapes);
                                 }
 
-                                if self.crr_view_state.show_lb_pin_connections && let Some((lb_render_tile, tile)) = lb_render_tile_info {
+                                if self.crr_view_state.show_lb_pin_connections && let Some((lb_render_tile, tile, tile_relative_offset)) = lb_render_tile_info {
                                     let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[file_name];
-                                    let mut lb_connection_shapes = build_lb_connection_shapes(&tile.pin_mapper, crr_sb, crr_sb_info, spacing_between_points, lb_render_tile, &sb_rect);
+                                    let mut lb_connection_shapes = build_lb_connection_shapes(&tile.pin_mapper, crr_sb, crr_sb_info, spacing_between_points, lb_render_tile, &tile_relative_offset, &sb_rect);
                                     for shape in &mut lb_connection_shapes {
                                         shape.translate(tile_offset.to_vec2());
                                     }
                                     painter.extend(lb_connection_shapes);
+
+                                    if painter.clip_rect().size().max_elem() < (tile_draw_area.size().max_elem() * 2.0) {
+                                        // If we are zoomed in close enough, render the tile pins.
+                                        let mut pin_shapes = lb_render_tile.pin_shapes.clone();
+                                        for shape in &mut pin_shapes {
+                                            shape.translate(tile_offset.to_vec2());
+                                        }
+                                        painter.extend(pin_shapes);
+
+                                        // When hovering over a pin, print the name of the pin.
+                                        for (pin_index, pin_locations) in lb_render_tile.pin_locations.iter().enumerate() {
+                                            let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
+                                            for pin_location in pin_locations {
+                                                let hit_rect = egui::Rect::from_center_size(
+                                                    tile_offset + *pin_location,
+                                                    egui::Vec2::ONE * lb_render_tile.pin_radius * 3.0,
+                                                );
+                                                let pin_hit_response = ui.put(hit_rect, egui::Label::new(""));
+                                                pin_hit_response.on_hover_ui(|ui| {
+                                                    ui.label(pin_name);
+                                                });
+                                            }
+                                        }
+                                    }
                                 }
                             },
                             _ => {},
@@ -850,6 +874,7 @@ fn build_lb_connection_shapes(
     crr_sb_info: &CRRSwitchBlockDeserialized,
     spacing_between_points: f32,
     logic_block_renderer: &TileRenderer,
+    tile_relative_offset: &egui::Vec2,
     sb_rect: &egui::Rect,
 ) -> Vec<egui::Shape> {
     let mut lb_connection_shapes: Vec<egui::Shape> = Vec::new();
@@ -870,14 +895,16 @@ fn build_lb_connection_shapes(
                 let pin_indices = pin_mapper.parse_pin_name(pin_name);
                 let pin_indices = match pin_indices {
                     Ok(idx) => idx,
-                    Err(e) => {
+                    Err(_e) => {
                         // println!("{e}");
                         continue;
                     }
                 };
                 let mut pin_locs = Vec::new();
                 for pin_index in pin_indices {
-                    pin_locs.append(&mut logic_block_renderer.pin_locations[pin_index].clone())
+                    for pin_loc in &logic_block_renderer.pin_locations[pin_index] {
+                        pin_locs.push(*pin_loc + *tile_relative_offset);
+                    }
                 }
                 pin_locs
             } else {
@@ -893,14 +920,16 @@ fn build_lb_connection_shapes(
                 let pin_indices = pin_mapper.parse_pin_name(pin_name);
                 let pin_indices = match pin_indices {
                     Ok(idx) => idx,
-                    Err(e) => {
+                    Err(_e) => {
                         // println!("{e}");
                         continue;
                     }
                 };
                 let mut pin_locs = Vec::new();
                 for pin_index in pin_indices {
-                    pin_locs.append(&mut logic_block_renderer.pin_locations[pin_index].clone())
+                    for pin_loc in &logic_block_renderer.pin_locations[pin_index] {
+                        pin_locs.push(*pin_loc + *tile_relative_offset);
+                    }
                 }
                 pin_locs
             } else {

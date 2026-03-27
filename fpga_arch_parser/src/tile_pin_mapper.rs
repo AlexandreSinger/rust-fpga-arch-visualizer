@@ -1,6 +1,9 @@
 use std::{collections::HashMap, ops::RangeInclusive};
 
-use crate::{FPGAArchParseError, arch::{PinLoc, PinSide, Port, SubTile, SubTilePinLocations}};
+use crate::{
+    FPGAArchParseError,
+    arch::{PinLoc, PinSide, Port, SubTile, SubTilePinLocations},
+};
 
 type TilePinIndexMap = HashMap<String, Vec<HashMap<String, Vec<usize>>>>;
 
@@ -39,13 +42,17 @@ impl TilePinMapper {
         // Expect there to only be 2.
         // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
         if split_pin_string.len() != 2 {
-            return Err("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string());
+            return Err(
+                "Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'."
+                    .to_string(),
+            );
         }
         let sub_tile_portion = split_pin_string[0];
         let port_portion = split_pin_string[1];
 
         // Split the sub-tile name and the bus.
-        let (sub_tile, sub_tile_bus_slice) = split_bus_name(sub_tile_portion).map_err(|e| { format!("{:?}", e) })?;
+        let (sub_tile, sub_tile_bus_slice) =
+            split_bus_name(sub_tile_portion).map_err(|e| format!("{:?}", e))?;
         // Get the sub-tile lookup. We will use this to get the capacity of the sub-tile.
         let sub_tile_lookup = match self.pin_index_lookup.get(sub_tile) {
             Some(l) => l,
@@ -54,14 +61,13 @@ impl TilePinMapper {
         let sub_tile_capacity = sub_tile_lookup.len() as i32;
         // Parse the bus.
         let sub_tile_bus = match sub_tile_bus_slice {
-            Some(bus_slice) => parse_bus(bus_slice).map_err(|e| { format!("{:?}", e) })?,
-            None => {
-                0..=(sub_tile_capacity - 1)
-            }
+            Some(bus_slice) => parse_bus(bus_slice).map_err(|e| format!("{:?}", e))?,
+            None => 0..=(sub_tile_capacity - 1),
         };
 
         // Split the port name from the bus
-        let (port_name, port_bus_slice) = split_bus_name(port_portion).map_err(|e| { format!("{:?}", e) })?;
+        let (port_name, port_bus_slice) =
+            split_bus_name(port_portion).map_err(|e| format!("{:?}", e))?;
         // Get the number of pins in the port.
         // Note: Here we assume that each sub-tile with the same name has the same ports.
         //       This is currently guaranteed by the architecture description.
@@ -71,10 +77,8 @@ impl TilePinMapper {
         };
         // Parse the bus.
         let port_bus = match port_bus_slice {
-            Some(bus_slice) => parse_bus(bus_slice).map_err(|e| { format!("{:?}", e) })?,
-            None => {
-                0..=(num_port_pins - 1)
-            },
+            Some(bus_slice) => parse_bus(bus_slice).map_err(|e| format!("{:?}", e))?,
+            None => 0..=(num_port_pins - 1),
         };
 
         // Get the pins.
@@ -83,7 +87,8 @@ impl TilePinMapper {
             if sub_tile_cap_index < 0 || sub_tile_cap_index >= sub_tile_capacity {
                 return Err("Invalid sub tile index.".to_string());
             }
-            let sub_tile_pin_index_lookup = &sub_tile_lookup[sub_tile_cap_index as usize][port_name];
+            let sub_tile_pin_index_lookup =
+                &sub_tile_lookup[sub_tile_cap_index as usize][port_name];
             for bit in port_bus.clone() {
                 if bit < 0 || bit >= num_port_pins {
                     return Err("Invalid port bit position.".to_string());
@@ -96,7 +101,9 @@ impl TilePinMapper {
     }
 }
 
-pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, FPGAArchParseError> {
+pub fn build_tile_pin_mapper(
+    sub_tiles: &Vec<SubTile>,
+) -> Result<TilePinMapper, FPGAArchParseError> {
     let mut num_pins_in_tile: usize = 0;
     let mut pin_index_lookup: TilePinIndexMap = HashMap::new();
     let mut pin_name_lookup: Vec<String> = Vec::new();
@@ -112,7 +119,7 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
                 };
                 let num_pins = num_pins as usize;
                 let mut pin_indices = Vec::new();
-                for pin_index in num_pins_in_tile..num_pins_in_tile+num_pins {
+                for pin_index in num_pins_in_tile..num_pins_in_tile + num_pins {
                     pin_indices.push(pin_index);
                     let sub_tile_name = if sub_tile.capacity > 1 {
                         format!("{}[{}]", sub_tile.name, sub_tile_cap_index)
@@ -128,14 +135,20 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
                 }
                 num_pins_in_tile += num_pins;
                 if port_name_pin_lookup.contains_key(port_name) {
-                    return Err(FPGAArchParseError::PinParsingError(format!("Found duplicate port name: {}", port_name)));
+                    return Err(FPGAArchParseError::PinParsingError(format!(
+                        "Found duplicate port name: {}",
+                        port_name
+                    )));
                 }
                 port_name_pin_lookup.insert(port_name.clone(), pin_indices);
             }
             sub_tile_pin_lookup.push(port_name_pin_lookup);
         }
         if pin_index_lookup.contains_key(&sub_tile.name) {
-            return Err(FPGAArchParseError::PinParsingError(format!("Found duplicate port name: {}", sub_tile.name)));
+            return Err(FPGAArchParseError::PinParsingError(format!(
+                "Found duplicate port name: {}",
+                sub_tile.name
+            )));
         }
         pin_index_lookup.insert(sub_tile.name.clone(), sub_tile_pin_lookup);
     }
@@ -155,9 +168,9 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
                         pin_locs[pin].push(pin_loc.clone());
                     }
                 }
-            },
+            }
             // TODO: Implement for other pin locations.
-            _ => {},
+            _ => {}
         }
     }
 
@@ -169,14 +182,21 @@ pub fn build_tile_pin_mapper(sub_tiles: &Vec<SubTile>) -> Result<TilePinMapper, 
     })
 }
 
-fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &TilePinIndexMap) -> Result<Vec<usize>, FPGAArchParseError> {
+fn get_pins_in_pin_loc(
+    loc: &PinLoc,
+    sub_tile: &SubTile,
+    pin_index_lookup: &TilePinIndexMap,
+) -> Result<Vec<usize>, FPGAArchParseError> {
     let mut pins: Vec<usize> = Vec::new();
     for pin_string in &loc.pin_strings {
         let split_pin_string: Vec<&str> = pin_string.split(".").collect();
         // Expect there to only be 2.
         // <sub_tile_name>([{bus}])?.<sub_tile_port>([{bus}])?
         if split_pin_string.len() != 2 {
-            return Err(FPGAArchParseError::PinParsingError("Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'.".to_string()));
+            return Err(FPGAArchParseError::PinParsingError(
+                "Invalid pin string, expected to be of the form '<sub_tile_name>.<sub_tile_port>'."
+                    .to_string(),
+            ));
         }
         let sub_tile_portion = split_pin_string[0];
         let port_portion = split_pin_string[1];
@@ -184,11 +204,13 @@ fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &Tile
         // Parse the sub-tile portion.
         let (sub_tile_name, sub_tile_bus_slice) = split_bus_name(sub_tile_portion)?;
         if sub_tile_name != sub_tile.name {
-            return Err(FPGAArchParseError::PinParsingError("Invalid pin string, does not start with the correct sub-tile.".to_string()));
+            return Err(FPGAArchParseError::PinParsingError(
+                "Invalid pin string, does not start with the correct sub-tile.".to_string(),
+            ));
         }
         let sub_tile_bus = match sub_tile_bus_slice {
             Some(bus_slice) => parse_bus(bus_slice)?,
-            None => 0..=(sub_tile.capacity-1),
+            None => 0..=(sub_tile.capacity - 1),
         };
 
         // Parse port portion.
@@ -204,7 +226,11 @@ fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &Tile
         });
         let port = match port {
             Some(p) => p,
-            None => { return Err(FPGAArchParseError::PinParsingError("Cannot find port in pin string".to_string())) }
+            None => {
+                return Err(FPGAArchParseError::PinParsingError(
+                    "Cannot find port in pin string".to_string(),
+                ));
+            }
         };
         let num_port_pins = match &port {
             Port::Input(input_port) => input_port.num_pins,
@@ -213,18 +239,23 @@ fn get_pins_in_pin_loc(loc: &PinLoc, sub_tile: &SubTile, pin_index_lookup: &Tile
         };
         let port_bus = match port_bus_slice {
             Some(bus_slice) => parse_bus(bus_slice)?,
-            None => 0..=(num_port_pins-1),
+            None => 0..=(num_port_pins - 1),
         };
 
         // Get the pins.
         for sub_tile_cap_index in sub_tile_bus {
             if sub_tile_cap_index < 0 || sub_tile_cap_index >= sub_tile.capacity {
-                return Err(FPGAArchParseError::PinParsingError("Invalid sub tile index.".to_string()));
+                return Err(FPGAArchParseError::PinParsingError(
+                    "Invalid sub tile index.".to_string(),
+                ));
             }
-            let sub_tile_pin_index_lookup = &pin_index_lookup[sub_tile_name][sub_tile_cap_index as usize][port_name];
+            let sub_tile_pin_index_lookup =
+                &pin_index_lookup[sub_tile_name][sub_tile_cap_index as usize][port_name];
             for bit in port_bus.clone() {
                 if bit < 0 || bit >= num_port_pins {
-                    return Err(FPGAArchParseError::PinParsingError("Invalid port bit position.".to_string()));
+                    return Err(FPGAArchParseError::PinParsingError(
+                        "Invalid port bit position.".to_string(),
+                    ));
                 }
                 pins.push(sub_tile_pin_index_lookup[bit as usize]);
             }
@@ -239,7 +270,10 @@ fn split_bus_name(s: &str) -> Result<(&str, Option<&str>), FPGAArchParseError> {
         let (name, slice) = s.split_at(idx);
 
         if !slice.ends_with(']') {
-            return Err(FPGAArchParseError::PinParsingError(format!("Invalid bus slice: {}", s)));
+            return Err(FPGAArchParseError::PinParsingError(format!(
+                "Invalid bus slice: {}",
+                s
+            )));
         }
 
         Ok((name, Some(slice)))
@@ -250,17 +284,29 @@ fn split_bus_name(s: &str) -> Result<(&str, Option<&str>), FPGAArchParseError> {
 
 fn parse_bus(bus: &str) -> Result<RangeInclusive<i32>, FPGAArchParseError> {
     if !bus.starts_with('[') || !bus.ends_with(']') {
-        return Err(FPGAArchParseError::PinParsingError(format!("Invalid bus format: {}", bus)));
+        return Err(FPGAArchParseError::PinParsingError(format!(
+            "Invalid bus format: {}",
+            bus
+        )));
     }
 
     let inner = &bus[1..bus.len() - 1];
 
     if let Some((a, b)) = inner.split_once(':') {
-        let msb: i32 = a.trim().parse().map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
-        let lsb: i32 = b.trim().parse().map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
+        let msb: i32 = a
+            .trim()
+            .parse()
+            .map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
+        let lsb: i32 = b
+            .trim()
+            .parse()
+            .map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
         Ok(msb.min(lsb)..=msb.max(lsb))
     } else {
-        let bit: i32 = inner.trim().parse().map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
+        let bit: i32 = inner
+            .trim()
+            .parse()
+            .map_err(|_| FPGAArchParseError::PinParsingError("Invalid number".to_string()))?;
         Ok(bit..=bit)
     }
 }

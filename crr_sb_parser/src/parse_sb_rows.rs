@@ -3,15 +3,26 @@ use std::fs::File;
 use csv::{StringRecord, StringRecordsIter};
 
 use crate::{
-    crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo}, parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num}, CRRSBParseError, CRRSwitchDir, CRRSwitchSourcePin
+    CRRSBParseError, CRRSwitchDir, CRRSwitchSourcePin,
+    crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo},
+    parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num},
 };
 
-fn parse_source_pin(source_pin_str: &str, dir: CRRSwitchDir) -> Result<CRRSwitchSourcePin, CRRSBParseError> {
+fn parse_source_pin(
+    source_pin_str: &str,
+    dir: CRRSwitchDir,
+) -> Result<CRRSwitchSourcePin, CRRSBParseError> {
     match dir {
-        CRRSwitchDir::OPIN => Ok(CRRSwitchSourcePin::Pin { pin_name: source_pin_str.to_string() }),
-        CRRSwitchDir::IPIN => Err(CRRSBParseError::SBHeaderCellParseError("Source node cannot have IPIN dir.".to_string())),
+        CRRSwitchDir::OPIN => Ok(CRRSwitchSourcePin::Pin {
+            pin_name: source_pin_str.to_string(),
+        }),
+        CRRSwitchDir::IPIN => Err(CRRSBParseError::SBHeaderCellParseError(
+            "Source node cannot have IPIN dir.".to_string(),
+        )),
         CRRSwitchDir::Left | CRRSwitchDir::Right | CRRSwitchDir::Bottom | CRRSwitchDir::Top => {
-            Ok(CRRSwitchSourcePin::Tap { tap_num: parse_crr_tap_num(source_pin_str)? })
+            Ok(CRRSwitchSourcePin::Tap {
+                tap_num: parse_crr_tap_num(source_pin_str)?,
+            })
         }
     }
 }

@@ -8,15 +8,17 @@ pub fn parse_crr_switch_dir(dir_str: &str) -> Result<CRRSwitchDir, CRRSBParseErr
         "bottom" => Ok(CRRSwitchDir::Bottom),
         "ipin" => Ok(CRRSwitchDir::IPIN),
         "opin" => Ok(CRRSwitchDir::OPIN),
-        _ => Err(CRRSBParseError::SBHeaderCellParseError(
-            format!("Invalid dir string: {dir_str}."),
-        )),
+        _ => Err(CRRSBParseError::SBHeaderCellParseError(format!(
+            "Invalid dir string: {dir_str}."
+        ))),
     }
 }
 
 fn parse_usize(value: &str, field_name: &str) -> Result<usize, CRRSBParseError> {
     value.parse().map_err(|e| {
-        CRRSBParseError::SBHeaderCellParseError(format!("Invalid {field_name} string ({value}): {e}."))
+        CRRSBParseError::SBHeaderCellParseError(format!(
+            "Invalid {field_name} string ({value}): {e}."
+        ))
     })
 }
 

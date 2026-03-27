@@ -72,9 +72,9 @@ pub fn parse_sink_nodes(
             || !lane_num_val.is_empty()
             || !target_pin_val.is_empty()
         {
-            return Err(CRRSBParseError::SBHeaderCellParseError(
-                format!("The first 4 cells of the header rows are expected to be empty. Found a column: |{dir_val};{segment_val};{fan_in_val};{lane_num_val};{target_pin_val}|."),
-            ));
+            return Err(CRRSBParseError::SBHeaderCellParseError(format!(
+                "The first 4 cells of the header rows are expected to be empty. Found a column: |{dir_val};{segment_val};{fan_in_val};{lane_num_val};{target_pin_val}|."
+            )));
         }
     }
 
@@ -88,7 +88,7 @@ pub fn parse_sink_nodes(
             target_pin: match target_pin_row[i].trim() {
                 "" => None,
                 s => Some(s.to_string()),
-            }
+            },
         });
     }
 

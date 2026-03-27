@@ -221,20 +221,34 @@ fn test_sb_autogen_w8_fw10_fi8_f04() -> Result<(), CRRSBParseError> {
         assert_eq!(chan_src_node.dir, sides_in_order[i / 4]);
         assert_eq!(chan_src_node.segment_type, "L4");
         assert_eq!(chan_src_node.lane_num, 1);
-        assert_eq!(chan_src_node.source_pin, CRRSwitchSourcePin::Tap { tap_num: i % 4 + 1} );
+        assert_eq!(
+            chan_src_node.source_pin,
+            CRRSwitchSourcePin::Tap { tap_num: i % 4 + 1 }
+        );
     }
     for i in 16..36 {
         let opin_src_node = &res.source_nodes[i];
         assert_eq!(opin_src_node.dir, CRRSwitchDir::OPIN);
         assert_eq!(opin_src_node.segment_type, "L4");
         assert_eq!(opin_src_node.lane_num, 41 + i - 16);
-        assert_eq!(opin_src_node.source_pin, CRRSwitchSourcePin::Pin { pin_name: format!("clb.O[{}]", i - 16) });
+        assert_eq!(
+            opin_src_node.source_pin,
+            CRRSwitchSourcePin::Pin {
+                pin_name: format!("clb.O[{}]", i - 16)
+            }
+        );
     }
 
     // Check edges.
     assert_eq!(res.edges.len(), 440);
-    assert_eq!(res.edges[0].delay, CRRSwitchConnectionDelay::DelaySpecified { delay: 69.0 });
-    assert_eq!(res.edges[439].delay, CRRSwitchConnectionDelay::DelaySpecified { delay: 58.0 });
+    assert_eq!(
+        res.edges[0].delay,
+        CRRSwitchConnectionDelay::DelaySpecified { delay: 69.0 }
+    );
+    assert_eq!(
+        res.edges[439].delay,
+        CRRSwitchConnectionDelay::DelaySpecified { delay: 58.0 }
+    );
 
     Ok(())
 }

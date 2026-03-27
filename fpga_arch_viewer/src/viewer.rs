@@ -228,10 +228,10 @@ fn format_parse_error(error: &FPGAArchParseError, file_path: Option<&std::path::
         }
         FPGAArchParseError::UnexpectedEndOfDocument(msg) => {
             format!("Unexpected end of document:\n{}", msg)
-        },
+        }
         FPGAArchParseError::PinParsingError(msg) => {
             format!("Pin parsing error:\n{}", msg)
-        },
+        }
     }
 }
 
@@ -643,7 +643,10 @@ impl FpgaViewer {
                     ctx,
                 ),
                 ViewMode::Primitive => self.primitive_view.render(arch, ctx),
-                ViewMode::CRRSwitchBlock => self.crr_sb_view.render(arch, &self.grid_view.tile_colors, ctx),
+                ViewMode::CRRSwitchBlock => {
+                    self.crr_sb_view
+                        .render(arch, &self.grid_view.tile_colors, ctx)
+                }
             },
             None => {
                 // If no architecture is loaded, no view can be seen, so show a welcome message.

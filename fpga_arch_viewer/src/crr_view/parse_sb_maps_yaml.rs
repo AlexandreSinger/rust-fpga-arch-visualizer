@@ -10,10 +10,18 @@ pub struct SBMaps {
 
 #[derive(Debug, PartialEq)]
 pub enum SBPatternVal {
-    Constant { val: usize },
+    Constant {
+        val: usize,
+    },
     Wildcard,
-    List { vals: Vec<usize> },
-    Range { start: usize, end: usize, step: usize },
+    List {
+        vals: Vec<usize>,
+    },
+    Range {
+        start: usize,
+        end: usize,
+        step: usize,
+    },
 }
 
 pub struct SBPattern {
@@ -46,16 +54,13 @@ impl SBMaps {
     }
 
     pub fn get_unique_file_names(&self) -> &HashSet<String> {
-        return &self.unique_file_names;
+        &self.unique_file_names
     }
 }
 
 fn check_for_pattern_match(pattern: &SBPattern, x: usize, y: usize) -> bool {
-    if check_for_val_pattern_match(&pattern.x_pattern, x) && check_for_val_pattern_match(&pattern.y_pattern, y) {
-        true
-    } else {
-        false
-    }
+    check_for_val_pattern_match(&pattern.x_pattern, x)
+        && check_for_val_pattern_match(&pattern.y_pattern, y)
 }
 
 fn check_for_val_pattern_match(pattern: &SBPatternVal, v: usize) -> bool {
@@ -73,25 +78,24 @@ fn check_for_val_pattern_match(pattern: &SBPatternVal, v: usize) -> bool {
                 false
             } else {
                 // Return true if hits one of the step points.
-                (v - *start) % *step == 0
+                (v - *start).is_multiple_of(*step)
             }
         }
     }
 }
 
 pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {
-
     let docs = YamlLoader::load_from_str(sb_maps_str);
     let docs = match docs {
         Ok(d) => d,
-        Err(e) => { return Err(format!("{e}")) },
+        Err(e) => return Err(format!("{e}")),
     };
 
     if docs.len() != 1 {
         return Err("YAML file has more than one document. Something went wrong.".to_string());
     }
 
-    let doc = match docs.get(0) {
+    let doc = match docs.first() {
         Some(v) => v,
         None => return Err("YAML Docs are empty. Something went wrong.".to_string()),
     };
@@ -119,15 +123,20 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
                 None => return Err("SB pattern expected to be a string.".to_string()),
             };
             let pattern = parse_sb_pattern(sb_pattern_string)?;
-            let sb_template =  match value {
+            let sb_template = match value {
                 yaml_rust::Yaml::String(str) => {
                     unique_file_names.insert(str.clone());
-                    SBMapTemplate::File { file_name: str.clone() }
-                },
+                    SBMapTemplate::File {
+                        file_name: str.clone(),
+                    }
+                }
                 yaml_rust::Yaml::Null => SBMapTemplate::Null,
                 _ => return Err("SB template expected to be a string or null.".to_string()),
             };
-            patterns.push(SBMapPattern { pattern, template: sb_template });
+            patterns.push(SBMapPattern {
+                pattern,
+                template: sb_template,
+            });
         }
     } else {
         return Err("SB_MAPS YAML object expected to be a hash.".to_string());
@@ -141,23 +150,35 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
 
 fn parse_sb_pattern(sb_pattern_string: &str) -> Result<SBPattern, String> {
     if !sb_pattern_string.starts_with("SB_") {
-        return Err(format!("SB pattern should start with 'SB_'. Pattern found: {}", sb_pattern_string));
+        return Err(format!(
+            "SB pattern should start with 'SB_'. Pattern found: {}",
+            sb_pattern_string
+        ));
     }
     if !sb_pattern_string.ends_with("_") {
-        return Err(format!("SB pattern should end with '_'. Pattern found: {}", sb_pattern_string));
+        return Err(format!(
+            "SB pattern should end with '_'. Pattern found: {}",
+            sb_pattern_string
+        ));
     }
     let sb_pattern_string = &sb_pattern_string[3..(sb_pattern_string.len() - 1)];
 
     let split_pattern: Vec<&str> = sb_pattern_string.split("__").collect();
 
     if split_pattern.len() != 2 {
-        return Err(format!("SB pattern should have two pattern dimensions. Pattern found: {}", sb_pattern_string));
+        return Err(format!(
+            "SB pattern should have two pattern dimensions. Pattern found: {}",
+            sb_pattern_string
+        ));
     }
 
     let x_pattern = parse_sb_pattern_val(split_pattern[0])?;
     let y_pattern = parse_sb_pattern_val(split_pattern[1])?;
 
-    Ok(SBPattern { x_pattern, y_pattern })
+    Ok(SBPattern {
+        x_pattern,
+        y_pattern,
+    })
 }
 
 fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
@@ -194,20 +215,35 @@ fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
         // Split the colons.
         let range_vals: Vec<&str> = no_brackets_str.split(":").collect();
         if range_vals.len() != 3 {
-            return Err(format!("Range expected to have 3 elements: {}", pattern_str));
+            return Err(format!(
+                "Range expected to have 3 elements: {}",
+                pattern_str
+            ));
         }
         // Parse the start, step, and end.
         let start = match range_vals[0].parse::<usize>() {
             Ok(v) => v,
-            Err(e) => return Err(format!("Error parsing range start element in pattern {pattern_str}: {e}")),
+            Err(e) => {
+                return Err(format!(
+                    "Error parsing range start element in pattern {pattern_str}: {e}"
+                ));
+            }
         };
         let end = match range_vals[1].parse::<usize>() {
             Ok(v) => v,
-            Err(e) => return Err(format!("Error parsing range end element in pattern {pattern_str}: {e}")),
+            Err(e) => {
+                return Err(format!(
+                    "Error parsing range end element in pattern {pattern_str}: {e}"
+                ));
+            }
         };
         let step = match range_vals[2].parse::<usize>() {
             Ok(v) => v,
-            Err(e) => return Err(format!("Error parsing range step element in pattern {pattern_str}: {e}")),
+            Err(e) => {
+                return Err(format!(
+                    "Error parsing range step element in pattern {pattern_str}: {e}"
+                ));
+            }
         };
 
         return Ok(SBPatternVal::Range { start, end, step });
@@ -223,8 +259,7 @@ mod tests {
 
     #[test]
     fn doc_example() -> Result<(), String> {
-        let s =
-"
+        let s = "
 SB_MAPS:
    SB_0__*_: null
    SB_*__0_: null
@@ -237,53 +272,158 @@ SB_MAPS:
 
         assert_eq!(sb_maps.patterns.len(), 6);
 
-        assert_eq!(sb_maps.patterns[0].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
-        assert_eq!(sb_maps.patterns[0].pattern.y_pattern, SBPatternVal::Wildcard);
+        assert_eq!(
+            sb_maps.patterns[0].pattern.x_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
+        assert_eq!(
+            sb_maps.patterns[0].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
         assert_eq!(sb_maps.patterns[0].template, SBMapTemplate::Null);
 
-        assert_eq!(sb_maps.patterns[1].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[1].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(
+            sb_maps.patterns[1].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[1].pattern.y_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
         assert_eq!(sb_maps.patterns[1].template, SBMapTemplate::Null);
 
-        assert_eq!(sb_maps.patterns[2].pattern.x_pattern, SBPatternVal::Constant { val: 1 });
-        assert_eq!(sb_maps.patterns[2].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[2].template, SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[2].pattern.x_pattern,
+            SBPatternVal::Constant { val: 1 }
+        );
+        assert_eq!(
+            sb_maps.patterns[2].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[2].template,
+            SBMapTemplate::File {
+                file_name: "sb_perimeter.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[3].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[3].pattern.y_pattern, SBPatternVal::Constant { val: 1 });
-        assert_eq!(sb_maps.patterns[3].template, SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[3].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[3].pattern.y_pattern,
+            SBPatternVal::Constant { val: 1 }
+        );
+        assert_eq!(
+            sb_maps.patterns[3].template,
+            SBMapTemplate::File {
+                file_name: "sb_perimeter.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[4].pattern.x_pattern, SBPatternVal::Range { start: 2, end: 10, step: 2 });
-        assert_eq!(sb_maps.patterns[4].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[4].template, SBMapTemplate::File { file_name: "sb_dsp.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[4].pattern.x_pattern,
+            SBPatternVal::Range {
+                start: 2,
+                end: 10,
+                step: 2
+            }
+        );
+        assert_eq!(
+            sb_maps.patterns[4].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[4].template,
+            SBMapTemplate::File {
+                file_name: "sb_dsp.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[5].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[5].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[5].template, SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[5].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[5].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[5].template,
+            SBMapTemplate::File {
+                file_name: "sb_main.csv".to_string()
+            }
+        );
 
         // From the first 2 templates, these rows should be null.
         for i in 0..10 {
-            assert_eq!(*sb_maps.get_sb_template(i, 0).expect("template should match"), SBMapTemplate::Null);
-            assert_eq!(*sb_maps.get_sb_template(0, i).expect("template should match"), SBMapTemplate::Null);
+            assert_eq!(
+                *sb_maps
+                    .get_sb_template(i, 0)
+                    .expect("template should match"),
+                SBMapTemplate::Null
+            );
+            assert_eq!(
+                *sb_maps
+                    .get_sb_template(0, i)
+                    .expect("template should match"),
+                SBMapTemplate::Null
+            );
         }
         // From the following 2 templates, these should be perimeter.
         for i in 1..10 {
-            assert_eq!(*sb_maps.get_sb_template(i, 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
-            assert_eq!(*sb_maps.get_sb_template(1, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_perimeter.csv".to_string() });
+            assert_eq!(
+                *sb_maps
+                    .get_sb_template(i, 1)
+                    .expect("template should match"),
+                SBMapTemplate::File {
+                    file_name: "sb_perimeter.csv".to_string()
+                }
+            );
+            assert_eq!(
+                *sb_maps
+                    .get_sb_template(1, i)
+                    .expect("template should match"),
+                SBMapTemplate::File {
+                    file_name: "sb_perimeter.csv".to_string()
+                }
+            );
         }
 
         for i in 2..10 {
             for j in (2..=10).step_by(2) {
                 // From the dsp pattern.
-                assert_eq!(*sb_maps.get_sb_template(j, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_dsp.csv".to_string() });
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(j, i)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_dsp.csv".to_string()
+                    }
+                );
                 // Everywhere else.
-                assert_eq!(*sb_maps.get_sb_template(j + 1, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(j + 1, i)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_main.csv".to_string()
+                    }
+                );
             }
         }
 
         // Check that the end step is working for the dsp.
         for i in 2..10 {
-            assert_eq!(*sb_maps.get_sb_template(12, i).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+            assert_eq!(
+                *sb_maps
+                    .get_sb_template(12, i)
+                    .expect("template should match"),
+                SBMapTemplate::File {
+                    file_name: "sb_main.csv".to_string()
+                }
+            );
         }
 
         // Check the unique file names all exist.
@@ -298,8 +438,7 @@ SB_MAPS:
 
     #[test]
     fn sample_example() -> Result<(), String> {
-        let s =
-"
+        let s = "
 SB_MAPS:
   # ==================================================
   # Corners
@@ -339,97 +478,353 @@ SB_MAPS:
         assert_eq!(sb_maps.patterns.len(), 19);
 
         // Validate corner patterns
-        assert_eq!(sb_maps.patterns[0].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
-        assert_eq!(sb_maps.patterns[0].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(
+            sb_maps.patterns[0].pattern.x_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
+        assert_eq!(
+            sb_maps.patterns[0].pattern.y_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
         assert_eq!(sb_maps.patterns[0].template, SBMapTemplate::Null);
 
-        assert_eq!(sb_maps.patterns[1].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
-        assert_eq!(sb_maps.patterns[1].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(
+            sb_maps.patterns[1].pattern.x_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
+        assert_eq!(
+            sb_maps.patterns[1].pattern.y_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
         assert_eq!(sb_maps.patterns[1].template, SBMapTemplate::Null);
 
-        assert_eq!(sb_maps.patterns[2].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
-        assert_eq!(sb_maps.patterns[2].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
+        assert_eq!(
+            sb_maps.patterns[2].pattern.x_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
+        assert_eq!(
+            sb_maps.patterns[2].pattern.y_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
         assert_eq!(sb_maps.patterns[2].template, SBMapTemplate::Null);
 
-        assert_eq!(sb_maps.patterns[3].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
-        assert_eq!(sb_maps.patterns[3].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
+        assert_eq!(
+            sb_maps.patterns[3].pattern.x_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
+        assert_eq!(
+            sb_maps.patterns[3].pattern.y_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
         assert_eq!(sb_maps.patterns[3].template, SBMapTemplate::Null);
 
         // Validate IO edge patterns
-        assert_eq!(sb_maps.patterns[4].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[4].pattern.y_pattern, SBPatternVal::Constant { val: 0 });
-        assert_eq!(sb_maps.patterns[4].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[4].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[4].pattern.y_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
+        assert_eq!(
+            sb_maps.patterns[4].template,
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[5].pattern.x_pattern, SBPatternVal::Constant { val: 0 });
-        assert_eq!(sb_maps.patterns[5].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[5].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[5].pattern.x_pattern,
+            SBPatternVal::Constant { val: 0 }
+        );
+        assert_eq!(
+            sb_maps.patterns[5].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[5].template,
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[6].pattern.x_pattern, SBPatternVal::Constant { val: 41 });
-        assert_eq!(sb_maps.patterns[6].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[6].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[6].pattern.x_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
+        assert_eq!(
+            sb_maps.patterns[6].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[6].template,
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
 
-        assert_eq!(sb_maps.patterns[7].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[7].pattern.y_pattern, SBPatternVal::Constant { val: 41 });
-        assert_eq!(sb_maps.patterns[7].template, SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[7].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[7].pattern.y_pattern,
+            SBPatternVal::Constant { val: 41 }
+        );
+        assert_eq!(
+            sb_maps.patterns[7].template,
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
 
         // Validate DSP patterns
         for i in 0..4 {
-            assert_eq!(sb_maps.patterns[8 + i].pattern.x_pattern, SBPatternVal::Range { start: 6, end: 41, step: 8 });
-            assert_eq!(sb_maps.patterns[8 + i].pattern.y_pattern, SBPatternVal::Range { start: (1 + i) as usize, end: 41, step: 4 });
-            assert_eq!(sb_maps.patterns[8 + i].template, SBMapTemplate::File { file_name: format!("sb_mult_36_{}.csv", i) });
+            assert_eq!(
+                sb_maps.patterns[8 + i].pattern.x_pattern,
+                SBPatternVal::Range {
+                    start: 6,
+                    end: 41,
+                    step: 8
+                }
+            );
+            assert_eq!(
+                sb_maps.patterns[8 + i].pattern.y_pattern,
+                SBPatternVal::Range {
+                    start: (1 + i) as usize,
+                    end: 41,
+                    step: 4
+                }
+            );
+            assert_eq!(
+                sb_maps.patterns[8 + i].template,
+                SBMapTemplate::File {
+                    file_name: format!("sb_mult_36_{}.csv", i)
+                }
+            );
         }
 
         // Validate BRAM patterns
         for i in 0..6 {
-            assert_eq!(sb_maps.patterns[12 + i].pattern.x_pattern, SBPatternVal::Range { start: 2, end: 41, step: 8 });
-            assert_eq!(sb_maps.patterns[12 + i].pattern.y_pattern, SBPatternVal::Range { start: (1 + i) as usize, end: 41, step: 6 });
-            assert_eq!(sb_maps.patterns[12 + i].template, SBMapTemplate::File { file_name: format!("sb_memory_{}.csv", i) });
+            assert_eq!(
+                sb_maps.patterns[12 + i].pattern.x_pattern,
+                SBPatternVal::Range {
+                    start: 2,
+                    end: 41,
+                    step: 8
+                }
+            );
+            assert_eq!(
+                sb_maps.patterns[12 + i].pattern.y_pattern,
+                SBPatternVal::Range {
+                    start: (1 + i) as usize,
+                    end: 41,
+                    step: 6
+                }
+            );
+            assert_eq!(
+                sb_maps.patterns[12 + i].template,
+                SBMapTemplate::File {
+                    file_name: format!("sb_memory_{}.csv", i)
+                }
+            );
         }
 
         // Validate catch-all pattern
-        assert_eq!(sb_maps.patterns[18].pattern.x_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[18].pattern.y_pattern, SBPatternVal::Wildcard);
-        assert_eq!(sb_maps.patterns[18].template, SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        assert_eq!(
+            sb_maps.patterns[18].pattern.x_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[18].pattern.y_pattern,
+            SBPatternVal::Wildcard
+        );
+        assert_eq!(
+            sb_maps.patterns[18].template,
+            SBMapTemplate::File {
+                file_name: "sb_main.csv".to_string()
+            }
+        );
 
         // Test get_sb_template for a 41x41 device
         // Corners should return null
-        assert_eq!(*sb_maps.get_sb_template(0, 0).expect("template should match"), SBMapTemplate::Null);
-        assert_eq!(*sb_maps.get_sb_template(0, 41).expect("template should match"), SBMapTemplate::Null);
-        assert_eq!(*sb_maps.get_sb_template(41, 0).expect("template should match"), SBMapTemplate::Null);
-        assert_eq!(*sb_maps.get_sb_template(41, 41).expect("template should match"), SBMapTemplate::Null);
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(0, 0)
+                .expect("template should match"),
+            SBMapTemplate::Null
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(0, 41)
+                .expect("template should match"),
+            SBMapTemplate::Null
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(41, 0)
+                .expect("template should match"),
+            SBMapTemplate::Null
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(41, 41)
+                .expect("template should match"),
+            SBMapTemplate::Null
+        );
 
         // IO edges should return sb_io.csv
-        assert_eq!(*sb_maps.get_sb_template(5, 0).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
-        assert_eq!(*sb_maps.get_sb_template(0, 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
-        assert_eq!(*sb_maps.get_sb_template(41, 20).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
-        assert_eq!(*sb_maps.get_sb_template(15, 41).expect("template should match"), SBMapTemplate::File { file_name: "sb_io.csv".to_string() });
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(5, 0)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(0, 5)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(41, 20)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(15, 41)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_io.csv".to_string()
+            }
+        );
 
         // DSP positions should return sb_mult files
         for x in (6..=40).step_by(8) {
             for y in (1..=40).step_by(4) {
-                assert_eq!(*sb_maps.get_sb_template(x, y).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_0.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_1.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_2.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 3).expect("template should match"), SBMapTemplate::File { file_name: "sb_mult_36_3.csv".to_string() });
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_mult_36_0.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 1)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_mult_36_1.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 2)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_mult_36_2.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 3)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_mult_36_3.csv".to_string()
+                    }
+                );
             }
         }
 
         // BRAM positions should return sb_memory files
         for x in (2..=40).step_by(8) {
             for y in (1..=31).step_by(6) {
-                assert_eq!(*sb_maps.get_sb_template(x, y).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_0.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 1).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_1.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 2).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_2.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 3).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_3.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 4).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_4.csv".to_string() });
-                assert_eq!(*sb_maps.get_sb_template(x, y + 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_memory_5.csv".to_string() });
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_0.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 1)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_1.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 2)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_2.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 3)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_3.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 4)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_4.csv".to_string()
+                    }
+                );
+                assert_eq!(
+                    *sb_maps
+                        .get_sb_template(x, y + 5)
+                        .expect("template should match"),
+                    SBMapTemplate::File {
+                        file_name: "sb_memory_5.csv".to_string()
+                    }
+                );
             }
         }
 
         // Regular interior positions should return sb_main.csv (catch-all)
-        assert_eq!(*sb_maps.get_sb_template(5, 5).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
-        assert_eq!(*sb_maps.get_sb_template(15, 20).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
-        assert_eq!(*sb_maps.get_sb_template(35, 35).expect("template should match"), SBMapTemplate::File { file_name: "sb_main.csv".to_string() });
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(5, 5)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_main.csv".to_string()
+            }
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(15, 20)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_main.csv".to_string()
+            }
+        );
+        assert_eq!(
+            *sb_maps
+                .get_sb_template(35, 35)
+                .expect("template should match"),
+            SBMapTemplate::File {
+                file_name: "sb_main.csv".to_string()
+            }
+        );
 
         // Check the unique file names all exist.
         let unique_file_names = sb_maps.get_unique_file_names();

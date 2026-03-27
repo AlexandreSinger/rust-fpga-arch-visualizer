@@ -1,10 +1,11 @@
-use egui::{ScrollArea};
+use egui::ScrollArea;
 use fpga_arch_parser::FPGAArch;
 
 use std::collections::HashMap;
 
 use crate::{
-    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree, tile_rendering::tile_renderer::build_render_tile, viewer::ViewMode
+    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree,
+    tile_rendering::tile_renderer::build_render_tile, viewer::ViewMode,
 };
 
 pub struct TileView {
@@ -37,7 +38,13 @@ impl TileView {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, complex_block_view_state, next_view_mode, tile_colors, ui);
+            self.render_central_panel(
+                arch,
+                complex_block_view_state,
+                next_view_mode,
+                tile_colors,
+                ui,
+            );
         });
     }
 
@@ -92,7 +99,14 @@ impl TileView {
         match &self.selected_tile_name {
             Some(tile_name) => {
                 if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                    self.render_tile(tile, complex_block_view_state, next_view_mode, tile_colors, arch, ui);
+                    self.render_tile(
+                        tile,
+                        complex_block_view_state,
+                        next_view_mode,
+                        tile_colors,
+                        arch,
+                        ui,
+                    );
                 } else if common_ui::render_centered_message(
                     ui,
                     "Tile not found",
@@ -153,32 +167,30 @@ impl TileView {
             ScrollArea::both()
                 .id_salt("tile_visualization_scroll")
                 .show(ui, |ui| {
-                    let tile_size = egui::vec2(
-                        250.0 * tile.width as f32,
-                        250.0 * tile.height as f32) * self.tile_zoom;
+                    let tile_size =
+                        egui::vec2(250.0 * tile.width as f32, 250.0 * tile.height as f32)
+                            * self.tile_zoom;
                     let painter_size = egui::vec2(
                         (tile_size.x * 1.05).max(ui.available_width()),
                         (tile_size.y * 1.05).max(ui.available_height()),
                     );
-                    let (response, painter) = ui
-                        .allocate_painter(
-                            painter_size,
-                            egui::Sense::click().union(egui::Sense::hover()),
-                        );
-                    let tile_bounding_box = egui::Rect::from_center_size(
-                        response.rect.center(),
-                        tile_size,
+                    let (response, painter) = ui.allocate_painter(
+                        painter_size,
+                        egui::Sense::click().union(egui::Sense::hover()),
                     );
+                    let tile_bounding_box =
+                        egui::Rect::from_center_size(response.rect.center(), tile_size);
                     let color = tile_colors
                         .get(&tile.name)
                         .copied()
                         .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
-                    let tile_renderer = build_render_tile(&tile, &tile_bounding_box, &color);
+                    let tile_renderer = build_render_tile(tile, &tile_bounding_box, &color);
                     painter.extend(tile_renderer.lb_shapes);
                     painter.extend(tile_renderer.pin_shapes);
 
                     // When hovering over a pin, print the name of the pin.
-                    for (pin_index, pin_locations) in tile_renderer.pin_locations.iter().enumerate() {
+                    for (pin_index, pin_locations) in tile_renderer.pin_locations.iter().enumerate()
+                    {
                         let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
                         for pin_location in pin_locations {
                             let hit_rect = egui::Rect::from_center_size(
@@ -193,7 +205,7 @@ impl TileView {
                     }
                 });
         });
-        
+
         ui.add_space(10.0);
         ui.separator();
         ui.add_space(10.0);

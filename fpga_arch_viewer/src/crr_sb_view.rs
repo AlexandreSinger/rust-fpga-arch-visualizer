@@ -2,11 +2,18 @@
 use std::collections::HashMap;
 
 use crr_sb_parser::{
-    CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo, CRRSwitchSourcePin,
+    CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo,
+    CRRSwitchSourcePin,
 };
 use fpga_arch_parser::{FPGAArch, Layout, TilePinMapper};
 
-use crate::{color_scheme, crr_view::parse_sb_maps_yaml::{parse_sb_maps_yaml_from_string, SBMapTemplate, SBMaps}, grid::{DeviceGrid, GridCell}, grid_view::get_layout_name, tile_rendering::tile_renderer::{build_render_tile, TileRenderer}};
+use crate::{
+    color_scheme,
+    crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string},
+    grid::{DeviceGrid, GridCell},
+    grid_view::get_layout_name,
+    tile_rendering::tile_renderer::{TileRenderer, build_render_tile},
+};
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -75,7 +82,7 @@ impl CRRSBView {
     #[cfg(not(target_arch = "wasm32"))]
     fn load_crr_csv_dir(&mut self, dir_path: std::path::PathBuf) {
         let unique_files: Vec<String> = match self.crr_view_state.sb_maps.as_ref() {
-            Some(m) => m.get_unique_file_names().into_iter().cloned().collect(),
+            Some(m) => m.get_unique_file_names().iter().cloned().collect(),
             None => return,
         };
         for unique_file in &unique_files {
@@ -104,12 +111,20 @@ impl CRRSBView {
                 }
             };
             // Store the switch block info.
-            self.crr_view_state.switch_blocks.insert(unique_file.clone(), (crr_sb_info, crr_sb));
+            self.crr_view_state
+                .switch_blocks
+                .insert(unique_file.clone(), (crr_sb_info, crr_sb));
         }
-        self.crr_view_state.selected_dir = Some(dir_path.into_os_string().into_string().expect("AHHHH!"));
+        self.crr_view_state.selected_dir =
+            Some(dir_path.into_os_string().into_string().expect("AHHHH!"));
     }
 
-    pub fn render(&mut self, arch: &FPGAArch, tile_colors: &HashMap<String, egui::Color32>, ctx: &egui::Context) {
+    pub fn render(
+        &mut self,
+        arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
+        ctx: &egui::Context,
+    ) {
         egui::SidePanel::right("crr_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
@@ -126,15 +141,24 @@ impl CRRSBView {
         ui.separator();
         ui.add_space(10.0);
 
-        ui.checkbox(&mut self.crr_view_state.show_segment_connections, "Show Segment Connections");
+        ui.checkbox(
+            &mut self.crr_view_state.show_segment_connections,
+            "Show Segment Connections",
+        );
 
         ui.add_space(10.0);
 
-        ui.checkbox(&mut self.crr_view_state.show_switch_connections, "Show Switch Connections");
+        ui.checkbox(
+            &mut self.crr_view_state.show_switch_connections,
+            "Show Switch Connections",
+        );
 
         ui.add_space(10.0);
 
-        ui.checkbox(&mut self.crr_view_state.show_lb_pin_connections, "Show LB Pin Connections");
+        ui.checkbox(
+            &mut self.crr_view_state.show_lb_pin_connections,
+            "Show LB Pin Connections",
+        );
 
         // Layout selection dropdown
         ui.add_space(10.0);
@@ -142,13 +166,14 @@ impl CRRSBView {
             ui.label("Layout:");
             let mut layout_changed = false;
             egui::ComboBox::from_id_salt("layout_selector")
-                .selected_text(get_layout_name(arch, self.crr_view_state.selected_layout_index))
+                .selected_text(get_layout_name(
+                    arch,
+                    self.crr_view_state.selected_layout_index,
+                ))
                 .show_ui(ui, |ui| {
                     for (idx, layout) in arch.layouts.layout_list.iter().enumerate() {
                         let layout_name = match &layout {
-                            fpga_arch_parser::Layout::AutoLayout(_) => {
-                                "Auto Layout".to_string()
-                            }
+                            fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
                             fpga_arch_parser::Layout::FixedLayout(fl) => {
                                 format!("Fixed: {}", fl.name)
                             }
@@ -172,7 +197,12 @@ impl CRRSBView {
         }
     }
 
-    fn render_central_panel(&mut self, arch: &FPGAArch, tile_colors: &HashMap<String, egui::Color32>, ui: &mut egui::Ui) {
+    fn render_central_panel(
+        &mut self,
+        arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
+        ui: &mut egui::Ui,
+    ) {
         if let Some(error_msg) = &self.last_error {
             ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             return;
@@ -198,8 +228,13 @@ impl CRRSBView {
                 self.zoom_factor *= zoom_delta;
             }
 
-            if let Some(Layout::FixedLayout(_)) = arch.layouts.layout_list.get(self.crr_view_state.selected_layout_index) {
-                let grid = DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
+            if let Some(Layout::FixedLayout(_)) = arch
+                .layouts
+                .layout_list
+                .get(self.crr_view_state.selected_layout_index)
+            {
+                let grid =
+                    DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
                 self.render_crr_sb(&grid, arch, tile_colors, ui);
             }
             // } else if let Some(error_msg) = &self.last_error {
@@ -215,33 +250,32 @@ impl CRRSBView {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 if self.crr_view_state.sb_maps.is_none() {
-                    if ui.button("Select SB Maps YAML file...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
+                    if ui.button("Select SB Maps YAML file...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
                             .add_filter("SB Maps YAML", &["yaml", "yml"])
                             .set_title("Open SB Maps YAML File")
                             .pick_file()
-                        {
-                            self.load_sb_maps_yaml(path);
-                        }
+                    {
+                        self.load_sb_maps_yaml(path);
                     }
                 } else {
-                    if ui.button("Select directory containing CSV files...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
+                    if ui
+                        .button("Select directory containing CSV files...")
+                        .clicked()
+                        && let Some(path) = rfd::FileDialog::new()
                             .set_title("Open CRR CSV Directory")
                             .pick_folder()
-                        {
-                            self.load_crr_csv_dir(path);
-                        }
+                    {
+                        self.load_crr_csv_dir(path);
                     }
                     ui.add_space(4.0);
-                    if ui.small_button("Change SB Maps YAML...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
+                    if ui.small_button("Change SB Maps YAML...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
                             .add_filter("SB Maps YAML", &["yaml", "yml"])
                             .set_title("Open SB Maps YAML File")
                             .pick_file()
-                        {
-                            self.load_sb_maps_yaml(path);
-                        }
+                    {
+                        self.load_sb_maps_yaml(path);
                     }
                 }
             }
@@ -267,7 +301,8 @@ impl CRRSBView {
                 let mut max_chan_w = 2;
                 if let Some(sb_maps) = &self.crr_view_state.sb_maps {
                     for unique_file in sb_maps.get_unique_file_names() {
-                        let (_crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[unique_file];
+                        let (_crr_sb_info, crr_sb) =
+                            &self.crr_view_state.switch_blocks[unique_file];
                         max_chan_w = max_chan_w.max(crr_sb.chan_x_width.max(crr_sb.chan_y_width));
                     }
                 }
@@ -288,13 +323,15 @@ impl CRRSBView {
 
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
-                let tile_draw_area = egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
+                let tile_draw_area =
+                    egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
 
                 let offset = response.rect.min;
 
                 let sub_tile_size = tile_draw_area.size() / 2.0;
                 let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
-                let chan_y_rect = egui::Rect::from_min_size(tile_draw_area.min + sub_tile_size, sub_tile_size);
+                let chan_y_rect =
+                    egui::Rect::from_min_size(tile_draw_area.min + sub_tile_size, sub_tile_size);
                 let sb_rect = egui::Rect::from_min_size(
                     tile_draw_area.min + egui::vec2(sub_tile_size.x, 0.0),
                     sub_tile_size,
@@ -310,14 +347,18 @@ impl CRRSBView {
                 for tile in &arch.tiles {
                     let sub_tile_lb_size = lb_area_rect.size() * 0.8;
                     let tile_min = lb_area_rect.min + (lb_area_rect.size() * 0.1);
-                    let tile_max = tile_min + (tile_draw_area.size() * egui::vec2((tile.width - 1) as f32, (tile.height - 1) as f32)) + sub_tile_lb_size;
+                    let tile_max = tile_min
+                        + (tile_draw_area.size()
+                            * egui::vec2((tile.width - 1) as f32, (tile.height - 1) as f32))
+                        + sub_tile_lb_size;
                     let tile_lb_rect = egui::Rect::from_min_max(tile_min, tile_max);
-                    
+
                     let tile_lb_color = match tile_colors.get(&tile.name) {
                         Some(c) => *c,
                         None => color_scheme::grid_cb_color(false),
                     };
-                    let logic_block_renderer = build_render_tile(&tile, &tile_lb_rect, &tile_lb_color);
+                    let logic_block_renderer =
+                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color);
                     render_tile_lookup.insert(tile.name.clone(), logic_block_renderer);
 
                     tile_object_lookup.insert(tile.name.clone(), tile);
@@ -327,123 +368,210 @@ impl CRRSBView {
                 let mut channel_wires_lookup = HashMap::new();
                 let mut segment_conns_lookup = HashMap::new();
                 let mut switch_conns_lookup = HashMap::new();
-                for csv_file_name in self.crr_view_state.sb_maps.as_ref().unwrap().get_unique_file_names() {
+                for csv_file_name in self
+                    .crr_view_state
+                    .sb_maps
+                    .as_ref()
+                    .unwrap()
+                    .get_unique_file_names()
+                {
                     let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[csv_file_name];
-                    let mut channel_wires = build_chan_x_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_x_rect, &sb_rect.size());
-                    channel_wires.append(&mut build_chan_y_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_y_rect, &sb_rect.size()));
+                    let mut channel_wires = build_chan_x_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &chan_x_rect,
+                        &sb_rect.size(),
+                    );
+                    channel_wires.append(&mut build_chan_y_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &chan_y_rect,
+                        &sb_rect.size(),
+                    ));
                     channel_wires_lookup.insert(csv_file_name.clone(), channel_wires);
 
-                    let segment_connections = build_segment_connection_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &sb_rect);
+                    let segment_connections = build_segment_connection_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &sb_rect,
+                    );
                     segment_conns_lookup.insert(csv_file_name.clone(), segment_connections);
 
-                    let switch_connections = build_switch_connection_shapes(crr_sb, crr_sb_info, spacing_between_points, &sb_rect);
+                    let switch_connections = build_switch_connection_shapes(
+                        crr_sb,
+                        crr_sb_info,
+                        spacing_between_points,
+                        &sb_rect,
+                    );
                     switch_conns_lookup.insert(csv_file_name.clone(), switch_connections);
                 }
 
                 // Get the visible tiles in the grid, this will only
                 // draw the tiles currently visible.
                 let clip_rect = painter.clip_rect();
-                let max_tile_width = arch.tiles.iter().map(|t| t.width as usize).max().unwrap_or(1);
-                let max_tile_height = arch.tiles.iter().map(|t| t.height as usize).max().unwrap_or(1);
+                let max_tile_width = arch
+                    .tiles
+                    .iter()
+                    .map(|t| t.width as usize)
+                    .max()
+                    .unwrap_or(1);
+                let max_tile_height = arch
+                    .tiles
+                    .iter()
+                    .map(|t| t.height as usize)
+                    .max()
+                    .unwrap_or(1);
 
-                let screen_col_min = ((clip_rect.min.x - offset.x) / tile_size.x).floor().max(0.0) as usize;
-                let screen_col_max = (((clip_rect.max.x - offset.x) / tile_size.x).ceil().max(0.0) as usize).min(grid_w);
+                let screen_col_min = ((clip_rect.min.x - offset.x) / tile_size.x)
+                    .floor()
+                    .max(0.0) as usize;
+                let screen_col_max = (((clip_rect.max.x - offset.x) / tile_size.x).ceil().max(0.0)
+                    as usize)
+                    .min(grid_w);
 
                 // j is flipped: screen_row = grid_h - j - 1, so larger j = smaller screen_row (higher on screen).
                 // BlockAnchor tiles with height > 1 draw above the anchor row by (height - 1) rows,
                 // so extend j_min downward by max_tile_height - 1 to avoid missing them.
                 // Similarly, BlockAnchor tiles with width > 1 draw rightward from the anchor column,
                 // so extend i_min leftward by max_tile_width - 1 to avoid missing them.
-                let screen_row_min = ((clip_rect.min.y - offset.y) / tile_size.y).floor().max(0.0) as usize;
-                let screen_row_max = (((clip_rect.max.y - offset.y) / tile_size.y).ceil().max(0.0) as usize).min(grid_h);
+                let screen_row_min = ((clip_rect.min.y - offset.y) / tile_size.y)
+                    .floor()
+                    .max(0.0) as usize;
+                let screen_row_max = (((clip_rect.max.y - offset.y) / tile_size.y).ceil().max(0.0)
+                    as usize)
+                    .min(grid_h);
 
-                let visible_i_min = screen_col_min.saturating_sub(max_tile_width - 1).min(grid_w);
+                let visible_i_min = screen_col_min
+                    .saturating_sub(max_tile_width - 1)
+                    .min(grid_w);
                 let visible_i_max = screen_col_max;
                 let visible_j_min = grid_h.saturating_sub(screen_row_max + max_tile_height - 1);
                 let visible_j_max = grid_h.saturating_sub(screen_row_min).min(grid_h);
 
                 for i in visible_i_min..visible_i_max {
                     for j in visible_j_min..visible_j_max {
-                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
+                        let tile_offset = offset
+                            + egui::Vec2::new(
+                                tile_size.x * i as f32,
+                                tile_size.y * (grid_h - j - 1) as f32,
+                            );
                         let lb_render_tile_info = match grid.get(j, i, 0) {
-                            Some(GridCell::BlockAnchor { pb_type, width: _, height }) => {
+                            Some(GridCell::BlockAnchor {
+                                pb_type,
+                                width: _,
+                                height,
+                            }) => {
                                 let lb_render_tile = &render_tile_lookup[pb_type];
                                 let mut lb_shapes = lb_render_tile.lb_shapes.clone();
-                                let tile_relative_offset = egui::vec2(0.0, -tile_size.y * (height - 1) as f32);
+                                let tile_relative_offset =
+                                    egui::vec2(0.0, -tile_size.y * (height - 1) as f32);
                                 let tile_final_offset = tile_offset + tile_relative_offset;
                                 for shape in &mut lb_shapes {
                                     shape.translate(tile_final_offset.to_vec2());
                                 }
                                 painter.extend(lb_shapes);
 
-                                Some((lb_render_tile, tile_object_lookup[pb_type], tile_relative_offset))
-                            },
-                            Some(GridCell::BlockOccupied { pb_type, anchor_row, anchor_col: _}) => {
+                                Some((
+                                    lb_render_tile,
+                                    tile_object_lookup[pb_type],
+                                    tile_relative_offset,
+                                ))
+                            }
+                            Some(GridCell::BlockOccupied {
+                                pb_type,
+                                anchor_row,
+                                anchor_col: _,
+                            }) => {
                                 let tile = tile_object_lookup[pb_type];
                                 let dh = usize::abs_diff(*anchor_row, j) as i32;
-                                let tile_relative_offset = egui::vec2(0.0, -tile_size.y * (tile.height - dh - 1) as f32);
+                                let tile_relative_offset =
+                                    egui::vec2(0.0, -tile_size.y * (tile.height - dh - 1) as f32);
                                 Some((&render_tile_lookup[pb_type], tile, tile_relative_offset))
-                            },
+                            }
                             _ => None,
                         };
-                        match self.crr_view_state.sb_maps.as_ref().unwrap().get_sb_template(i, j) {
-                            Some(SBMapTemplate::File { file_name }) => {
-                                let mut channel_wire_shapes = channel_wires_lookup[file_name].clone();
-                                for shape in &mut channel_wire_shapes {
+                        if let Some(SBMapTemplate::File { file_name }) = self
+                            .crr_view_state
+                            .sb_maps
+                            .as_ref()
+                            .unwrap()
+                            .get_sb_template(i, j)
+                        {
+                            let mut channel_wire_shapes = channel_wires_lookup[file_name].clone();
+                            for shape in &mut channel_wire_shapes {
+                                shape.translate(tile_offset.to_vec2());
+                            }
+                            painter.extend(channel_wire_shapes);
+
+                            if self.crr_view_state.show_segment_connections {
+                                let mut segment_conn_shapes =
+                                    segment_conns_lookup[file_name].clone();
+                                for shape in &mut segment_conn_shapes {
                                     shape.translate(tile_offset.to_vec2());
                                 }
-                                painter.extend(channel_wire_shapes);
+                                painter.extend(segment_conn_shapes);
+                            }
 
-                                if self.crr_view_state.show_segment_connections {
-                                    let mut segment_conn_shapes = segment_conns_lookup[file_name].clone();
-                                    for shape in &mut segment_conn_shapes {
-                                        shape.translate(tile_offset.to_vec2());
-                                    }
-                                    painter.extend(segment_conn_shapes);
+                            if self.crr_view_state.show_switch_connections {
+                                let mut switch_conn_shapes = switch_conns_lookup[file_name].clone();
+                                for shape in &mut switch_conn_shapes {
+                                    shape.translate(tile_offset.to_vec2());
                                 }
+                                painter.extend(switch_conn_shapes);
+                            }
 
-                                if self.crr_view_state.show_switch_connections {
-                                    let mut switch_conn_shapes = switch_conns_lookup[file_name].clone();
-                                    for shape in &mut switch_conn_shapes {
-                                        shape.translate(tile_offset.to_vec2());
-                                    }
-                                    painter.extend(switch_conn_shapes);
+                            if self.crr_view_state.show_lb_pin_connections
+                                && let Some((lb_render_tile, tile, tile_relative_offset)) =
+                                    lb_render_tile_info
+                            {
+                                let (crr_sb_info, crr_sb) =
+                                    &self.crr_view_state.switch_blocks[file_name];
+                                let mut lb_connection_shapes = build_lb_connection_shapes(
+                                    &tile.pin_mapper,
+                                    crr_sb,
+                                    crr_sb_info,
+                                    spacing_between_points,
+                                    lb_render_tile,
+                                    &tile_relative_offset,
+                                    &sb_rect,
+                                );
+                                for shape in &mut lb_connection_shapes {
+                                    shape.translate(tile_offset.to_vec2());
                                 }
+                                painter.extend(lb_connection_shapes);
 
-                                if self.crr_view_state.show_lb_pin_connections && let Some((lb_render_tile, tile, tile_relative_offset)) = lb_render_tile_info {
-                                    let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[file_name];
-                                    let mut lb_connection_shapes = build_lb_connection_shapes(&tile.pin_mapper, crr_sb, crr_sb_info, spacing_between_points, lb_render_tile, &tile_relative_offset, &sb_rect);
-                                    for shape in &mut lb_connection_shapes {
+                                if painter.clip_rect().size().max_elem()
+                                    < (tile_draw_area.size().max_elem() * 2.0)
+                                {
+                                    // If we are zoomed in close enough, render the tile pins.
+                                    let mut pin_shapes = lb_render_tile.pin_shapes.clone();
+                                    for shape in &mut pin_shapes {
                                         shape.translate(tile_offset.to_vec2());
                                     }
-                                    painter.extend(lb_connection_shapes);
+                                    painter.extend(pin_shapes);
 
-                                    if painter.clip_rect().size().max_elem() < (tile_draw_area.size().max_elem() * 2.0) {
-                                        // If we are zoomed in close enough, render the tile pins.
-                                        let mut pin_shapes = lb_render_tile.pin_shapes.clone();
-                                        for shape in &mut pin_shapes {
-                                            shape.translate(tile_offset.to_vec2());
+                                    // When hovering over a pin, print the name of the pin.
+                                    for (pin_index, pin_locations) in
+                                        lb_render_tile.pin_locations.iter().enumerate()
+                                    {
+                                        let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
+                                        for pin_location in pin_locations {
+                                            let hit_rect = egui::Rect::from_center_size(
+                                                tile_offset + *pin_location,
+                                                egui::Vec2::ONE * lb_render_tile.pin_radius * 3.0,
+                                            );
+                                            let pin_hit_response =
+                                                ui.put(hit_rect, egui::Label::new(""));
+                                            pin_hit_response.on_hover_ui(|ui| {
+                                                ui.label(pin_name);
+                                            });
                                         }
-                                        painter.extend(pin_shapes);
-
-                                        // When hovering over a pin, print the name of the pin.
-                                        for (pin_index, pin_locations) in lb_render_tile.pin_locations.iter().enumerate() {
-                                            let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
-                                            for pin_location in pin_locations {
-                                                let hit_rect = egui::Rect::from_center_size(
-                                                    tile_offset + *pin_location,
-                                                    egui::Vec2::ONE * lb_render_tile.pin_radius * 3.0,
-                                                );
-                                                let pin_hit_response = ui.put(hit_rect, egui::Label::new(""));
-                                                pin_hit_response.on_hover_ui(|ui| {
-                                                    ui.label(pin_name);
-                                                });
-                                            }
-                                        }
                                     }
                                 }
-                            },
-                            _ => {},
+                            }
                         };
                     }
                 }
@@ -511,7 +639,7 @@ fn get_crr_switch_block(
             CRRSwitchDir::Bottom => {
                 bottom_lane_num_to_segment.insert(lane_num, &sink_node.segment_type);
             }
-            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {},
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {}
         }
     }
 
@@ -583,7 +711,9 @@ fn get_crr_switch_block(
                 }
                 &chan_y_lanes[source_node_lane_id]
             }
-            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {panic!("TODO: Handle this.")},
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {
+                panic!("TODO: Handle this.")
+            }
         };
         if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
             return Err("Found a source node in a lane with the wrong segment type.");
@@ -621,14 +751,10 @@ fn get_source_node_loc(
     let ptc_num = match source_node.dir {
         // TODO: Verify that the lane is allowed.
         CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
-        CRRSwitchDir::Right => {
-            crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1
-        }
+        CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1,
         CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
-        CRRSwitchDir::Bottom => {
-            crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1
-        }
-        CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {0}
+        CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
+        CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0,
     };
     get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, sb_size)
 }
@@ -916,7 +1042,12 @@ fn build_lb_connection_shapes(
                 continue;
             }
         } else {
-            vec![(get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
+            vec![
+                (get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size())
+                    + sb_rect.min.to_vec2())
+                .to_vec2();
+                1
+            ]
         };
 
         let sink_node_locs = if sink_node.dir == CRRSwitchDir::IPIN {
@@ -941,16 +1072,18 @@ fn build_lb_connection_shapes(
                 continue;
             }
         } else {
-            vec![(get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size()) + sb_rect.min.to_vec2()).to_vec2(); 1]
+            vec![
+                (get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size())
+                    + sb_rect.min.to_vec2())
+                .to_vec2();
+                1
+            ]
         };
 
         for src_node_loc in src_node_locs {
             for sink_node_loc in &sink_node_locs {
                 lb_connection_shapes.push(egui::Shape::line_segment(
-                    [
-                        src_node_loc.to_pos2(),
-                        sink_node_loc.to_pos2(),
-                    ],
+                    [src_node_loc.to_pos2(), sink_node_loc.to_pos2()],
                     egui::Stroke::new(1.0, egui::Color32::BLACK),
                 ));
             }

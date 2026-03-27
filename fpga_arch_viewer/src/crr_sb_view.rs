@@ -628,7 +628,6 @@ fn get_source_node_loc(
         CRRSwitchDir::Bottom => {
             crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1
         }
-        // FIXME: Update.
         CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {0}
     };
     get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, sb_size)
@@ -649,7 +648,6 @@ fn get_sink_node_loc(
         CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
         CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
         CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
-        // FIXME: Handle this correctly.
         CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0,
     };
     get_ptc_loc(ptc_num, spacing_between_points, sink_node.dir, sb_size)
@@ -668,7 +666,6 @@ fn get_ptc_loc(
             CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
                 (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
             }
-            // FIXME: Update
             CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
         },
         match side {
@@ -677,7 +674,6 @@ fn get_ptc_loc(
             CRRSwitchDir::Left | CRRSwitchDir::Right => {
                 (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
             }
-            // FIXME: Update
             CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
         },
     )

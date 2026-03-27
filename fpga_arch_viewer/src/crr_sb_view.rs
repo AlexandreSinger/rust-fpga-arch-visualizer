@@ -354,8 +354,30 @@ impl CRRSBView {
                 //     tile_lookup.insert(tile.name.clone(), tile);
                 // }
 
-                for i in 0..grid_w {
-                    for j in 0..grid_h {
+                // Get the visible tiles in the grid, this will only
+                // draw the tiles currently visible.
+                let clip_rect = painter.clip_rect();
+                let max_tile_width = arch.tiles.iter().map(|t| t.width as usize).max().unwrap_or(1);
+                let max_tile_height = arch.tiles.iter().map(|t| t.height as usize).max().unwrap_or(1);
+
+                let screen_col_min = ((clip_rect.min.x - offset.x) / tile_size.x).floor().max(0.0) as usize;
+                let screen_col_max = (((clip_rect.max.x - offset.x) / tile_size.x).ceil().max(0.0) as usize).min(grid_w);
+
+                // j is flipped: screen_row = grid_h - j - 1, so larger j = smaller screen_row (higher on screen).
+                // BlockAnchor tiles with height > 1 draw above the anchor row by (height - 1) rows,
+                // so extend j_min downward by max_tile_height - 1 to avoid missing them.
+                // Similarly, BlockAnchor tiles with width > 1 draw rightward from the anchor column,
+                // so extend i_min leftward by max_tile_width - 1 to avoid missing them.
+                let screen_row_min = ((clip_rect.min.y - offset.y) / tile_size.y).floor().max(0.0) as usize;
+                let screen_row_max = (((clip_rect.max.y - offset.y) / tile_size.y).ceil().max(0.0) as usize).min(grid_h);
+
+                let visible_i_min = screen_col_min.saturating_sub(max_tile_width - 1).min(grid_w);
+                let visible_i_max = screen_col_max;
+                let visible_j_min = grid_h.saturating_sub(screen_row_max + max_tile_height - 1);
+                let visible_j_max = grid_h.saturating_sub(screen_row_min).min(grid_h);
+
+                for i in visible_i_min..visible_i_max {
+                    for j in visible_j_min..visible_j_max {
                         match grid.get(j, i, 0) {
                             Some(GridCell::BlockAnchor { pb_type, width, height }) => {
                                 let lb_render_tile = &render_tile_lookup[pb_type];

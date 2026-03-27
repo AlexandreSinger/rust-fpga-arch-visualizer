@@ -206,7 +206,11 @@ fn spread_slots(tile_width: usize, tile_height: usize) -> Vec<PhysicalPinLoc> {
     for side in [PinSide::Left, PinSide::Right, PinSide::Bottom, PinSide::Top] {
         for yoffset in 0..tile_height {
             for xoffset in 0..tile_width {
-                slots.push(PhysicalPinLoc { side: side.clone(), xoffset, yoffset });
+                slots.push(PhysicalPinLoc {
+                    side: side.clone(),
+                    xoffset,
+                    yoffset,
+                });
             }
         }
     }
@@ -225,7 +229,11 @@ fn perimeter_slots(tile_width: usize, tile_height: usize) -> Vec<PhysicalPinLoc>
                     PinSide::Top => yoffset == tile_height - 1,
                 };
                 if on_perimeter {
-                    slots.push(PhysicalPinLoc { side: side.clone(), xoffset, yoffset });
+                    slots.push(PhysicalPinLoc {
+                        side: side.clone(),
+                        xoffset,
+                        yoffset,
+                    });
                 }
             }
         }

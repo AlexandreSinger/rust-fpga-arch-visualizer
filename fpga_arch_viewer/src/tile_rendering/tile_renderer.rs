@@ -98,8 +98,7 @@ pub fn build_render_tile(
     let cell_min_length = (tile_bounding_box.width() / tile.width as f32)
         .min(tile_bounding_box.height() / tile.height as f32);
     let max_pin_radius = cell_min_length / 50.0;
-    let pin_radius =
-        (cell_min_length / (max_pins_per_cell_side as f32 * 3.0)).min(max_pin_radius);
+    let pin_radius = (cell_min_length / (max_pins_per_cell_side as f32 * 3.0)).min(max_pin_radius);
 
     // Internal pins on shared cell boundaries are nudged inward by 2 pin radii so that
     // pins on opposite sides of the same internal edge don't overlap.

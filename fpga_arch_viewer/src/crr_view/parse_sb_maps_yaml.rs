@@ -268,7 +268,7 @@ SB_MAPS:
    SB_[2:10:2]__*_: sb_dsp.csv
    SB_*__*_: sb_main.csv
 ";
-        let sb_maps = parse_sb_maps_yaml_from_string(&s)?;
+        let sb_maps = parse_sb_maps_yaml_from_string(s)?;
 
         assert_eq!(sb_maps.patterns.len(), 6);
 
@@ -473,7 +473,7 @@ SB_MAPS:
   # ==================================================
   SB_\\*__\\*_: sb_main.csv
 ";
-        let sb_maps = parse_sb_maps_yaml_from_string(&s)?;
+        let sb_maps = parse_sb_maps_yaml_from_string(s)?;
 
         assert_eq!(sb_maps.patterns.len(), 19);
 
@@ -592,7 +592,7 @@ SB_MAPS:
             assert_eq!(
                 sb_maps.patterns[8 + i].pattern.y_pattern,
                 SBPatternVal::Range {
-                    start: (1 + i) as usize,
+                    start: (1 + i),
                     end: 41,
                     step: 4
                 }
@@ -618,7 +618,7 @@ SB_MAPS:
             assert_eq!(
                 sb_maps.patterns[12 + i].pattern.y_pattern,
                 SBPatternVal::Range {
-                    start: (1 + i) as usize,
+                    start: (1 + i),
                     end: 41,
                     step: 6
                 }

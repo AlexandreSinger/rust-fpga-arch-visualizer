@@ -15,57 +15,19 @@ pub struct CRRViewState {
 
     pub selected_layout_index: usize,
 
-    sb_maps: SBMaps,
+    sb_maps: Option<SBMaps>,
     switch_blocks: HashMap<String, (CRRSwitchBlockDeserialized, CRRSwitchBlock)>,
     selected_dir: Option<String>,
 }
 
 impl Default for CRRViewState {
     fn default() -> Self {
-        // HACK! For now I am just going to hard-code the sb_maps file to make debugging easier.
-        let sb_maps_str =
-"
-SB_MAPS:
-    # ==================================================
-    # Corners
-    # ==================================================
-    SB_0__0_: null
-    SB_0__41_: null
-    SB_41__0_: null
-    SB_41__41_: null
-    # ==================================================
-    # IO Switchboxes
-    # ==================================================
-    SB_\\*__0_: sb_io.csv
-    SB_0__\\*_: sb_io.csv
-    SB_41__\\*_: sb_io.csv
-    SB_\\*__41_: sb_io.csv
-    # ==================================================
-    # DSP Related Column 1
-    # ==================================================
-    SB_[6:41:8]__[1:41:4]_: sb_mult_36_0.csv
-    SB_[6:41:8]__[2:41:4]_: sb_mult_36_1.csv
-    SB_[6:41:8]__[3:41:4]_: sb_mult_36_2.csv
-    SB_[6:41:8]__[4:41:4]_: sb_mult_36_3.csv
-    # ==================================================
-    # BRAM Related
-    # ==================================================
-    SB_[2:41:8]__[1:41:6]_: sb_memory_0.csv
-    SB_[2:41:8]__[2:41:6]_: sb_memory_1.csv
-    SB_[2:41:8]__[3:41:6]_: sb_memory_2.csv
-    SB_[2:41:8]__[4:41:6]_: sb_memory_3.csv
-    SB_[2:41:8]__[5:41:6]_: sb_memory_4.csv
-    SB_[2:41:8]__[6:41:6]_: sb_memory_5.csv
-    # ==================================================
-    SB_\\*__\\*_: sb_main.csv
-";
-        let sb_maps = parse_sb_maps_yaml_from_string(sb_maps_str).expect("This should work.");
         Self {
             show_segment_connections: true,
             show_switch_connections: true,
             show_lb_pin_connections: false,
             selected_layout_index: 0,
-            sb_maps,
+            sb_maps: None,
             switch_blocks: HashMap::new(),
             selected_dir: None,
         }
@@ -91,8 +53,32 @@ impl Default for CRRSBView {
 
 impl CRRSBView {
     #[cfg(not(target_arch = "wasm32"))]
+    fn load_sb_maps_yaml(&mut self, file_path: std::path::PathBuf) {
+        match std::fs::read_to_string(&file_path) {
+            Ok(contents) => match parse_sb_maps_yaml_from_string(&contents) {
+                Ok(sb_maps) => {
+                    self.crr_view_state.sb_maps = Some(sb_maps);
+                    self.crr_view_state.switch_blocks.clear();
+                    self.crr_view_state.selected_dir = None;
+                    self.last_error = None;
+                }
+                Err(e) => {
+                    self.last_error = Some(e);
+                }
+            },
+            Err(e) => {
+                self.last_error = Some(e.to_string());
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_crr_csv_dir(&mut self, dir_path: std::path::PathBuf) {
-        for unique_file in self.crr_view_state.sb_maps.get_unique_file_names() {
+        let unique_files: Vec<String> = match self.crr_view_state.sb_maps.as_ref() {
+            Some(m) => m.get_unique_file_names().into_iter().cloned().collect(),
+            None => return,
+        };
+        for unique_file in &unique_files {
             // Create the CSV file path.
             let file_path = dir_path.join(unique_file);
             // Parse the CSV file.
@@ -227,15 +213,36 @@ impl CRRSBView {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
             }
             #[cfg(not(target_arch = "wasm32"))]
-            if ui.button("Select directory containing CSV files.").clicked() {
-                // TODO: Make this cleaner by combining with view.
-                // TODO: Add WASM support.
-                if let Some(path) = rfd::FileDialog::new()
-                    // .add_filter("CRR CSV Files", &["csv"])
-                    .set_title("Open CRR CSV Directory")
-                    .pick_folder()
-                {
-                    self.load_crr_csv_dir(path);
+            {
+                if self.crr_view_state.sb_maps.is_none() {
+                    if ui.button("Select SB Maps YAML file...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SB Maps YAML", &["yaml", "yml"])
+                            .set_title("Open SB Maps YAML File")
+                            .pick_file()
+                        {
+                            self.load_sb_maps_yaml(path);
+                        }
+                    }
+                } else {
+                    if ui.button("Select directory containing CSV files...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title("Open CRR CSV Directory")
+                            .pick_folder()
+                        {
+                            self.load_crr_csv_dir(path);
+                        }
+                    }
+                    ui.add_space(4.0);
+                    if ui.small_button("Change SB Maps YAML...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SB Maps YAML", &["yaml", "yml"])
+                            .set_title("Open SB Maps YAML File")
+                            .pick_file()
+                        {
+                            self.load_sb_maps_yaml(path);
+                        }
+                    }
                 }
             }
 
@@ -258,9 +265,11 @@ impl CRRSBView {
                 let grid_h = grid.height;
 
                 let mut max_chan_w = 2;
-                for unique_file in self.crr_view_state.sb_maps.get_unique_file_names() {
-                    let (_crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[unique_file];
-                    max_chan_w = max_chan_w.max(crr_sb.chan_x_width.max(crr_sb.chan_y_width));
+                if let Some(sb_maps) = &self.crr_view_state.sb_maps {
+                    for unique_file in sb_maps.get_unique_file_names() {
+                        let (_crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[unique_file];
+                        max_chan_w = max_chan_w.max(crr_sb.chan_x_width.max(crr_sb.chan_y_width));
+                    }
                 }
 
                 let smaller_available_size = ui.available_height().min(ui.available_width());
@@ -318,7 +327,7 @@ impl CRRSBView {
                 let mut channel_wires_lookup = HashMap::new();
                 let mut segment_conns_lookup = HashMap::new();
                 let mut switch_conns_lookup = HashMap::new();
-                for csv_file_name in self.crr_view_state.sb_maps.get_unique_file_names() {
+                for csv_file_name in self.crr_view_state.sb_maps.as_ref().unwrap().get_unique_file_names() {
                     let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[csv_file_name];
                     let mut channel_wires = build_chan_x_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_x_rect, &sb_rect.size());
                     channel_wires.append(&mut build_chan_y_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_y_rect, &sb_rect.size()));
@@ -377,7 +386,7 @@ impl CRRSBView {
                             },
                             _ => None,
                         };
-                        match self.crr_view_state.sb_maps.get_sb_template(i, j) {
+                        match self.crr_view_state.sb_maps.as_ref().unwrap().get_sb_template(i, j) {
                             Some(SBMapTemplate::File { file_name }) => {
                                 let mut channel_wire_shapes = channel_wires_lookup[file_name].clone();
                                 for shape in &mut channel_wire_shapes {

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs::{self}, path::Path};
+use std::collections::HashSet;
 
 use yaml_rust::YamlLoader;
 
@@ -77,12 +77,6 @@ fn check_for_val_pattern_match(pattern: &SBPatternVal, v: usize) -> bool {
             }
         }
     }
-}
-
-fn parse_sb_maps_yaml(sb_maps_file_path: &Path) -> Result<SBMaps, String> {
-    let sb_maps_str = fs::read_to_string(sb_maps_file_path).map_err(|e| { format!("{e}") })?;
-
-    parse_sb_maps_yaml_from_string(&sb_maps_str)
 }
 
 pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {

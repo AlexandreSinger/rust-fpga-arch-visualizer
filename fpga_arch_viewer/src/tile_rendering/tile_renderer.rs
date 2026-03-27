@@ -74,45 +74,67 @@ pub fn build_render_tile(
     let mut pin_locations: Vec<Vec<egui::Vec2>> =
         vec![Vec::new(); tile.pin_mapper.num_pins_in_tile];
     let mut pin_shapes: Vec<egui::Shape> = Vec::with_capacity(tile.pin_mapper.num_pins_in_tile);
-    // TODO: To handle offsets, we need to have TileW x TileH of these.
-    let mut top_pins: Vec<usize> = Vec::new();
-    let mut bottom_pins: Vec<usize> = Vec::new();
-    let mut left_pins: Vec<usize> = Vec::new();
-    let mut right_pins: Vec<usize> = Vec::new();
+    // Group pins by (side, xoffset, yoffset) so they are distributed within
+    // the edge of the specific grid cell they belong to, not the full tile side.
+    // Key: (side as u8, xoffset, yoffset) where side encoding: 0=Left, 1=Right, 2=Bottom, 3=Top
+    let mut grouped: std::collections::HashMap<(u8, usize, usize), Vec<usize>> =
+        std::collections::HashMap::new();
     for (pin_index, pin_locs) in tile.pin_mapper.pin_locs.iter().enumerate() {
         for pin_loc in pin_locs {
-            // TODO: Handle xoffset and yoffset
-            match pin_loc.side {
-                PinSide::Top => top_pins.push(pin_index),
-                PinSide::Bottom => bottom_pins.push(pin_index),
-                PinSide::Left => left_pins.push(pin_index),
-                PinSide::Right => right_pins.push(pin_index),
+            let side_key: u8 = match pin_loc.side {
+                PinSide::Left => 0,
+                PinSide::Right => 1,
+                PinSide::Bottom => 2,
+                PinSide::Top => 3,
             };
+            grouped
+                .entry((side_key, pin_loc.xoffset, pin_loc.yoffset))
+                .or_default()
+                .push(pin_index);
         }
     }
-    for (i, pin_index) in top_pins.iter().enumerate() {
-        pin_locations[*pin_index].push(egui::Vec2::new(
-            ((i + 1) as f32) / ((top_pins.len() + 1) as f32),
-            0.0,
-        ));
-    }
-    for (i, pin_index) in bottom_pins.iter().enumerate() {
-        pin_locations[*pin_index].push(egui::Vec2::new(
-            ((i + 1) as f32) / ((bottom_pins.len() + 1) as f32),
-            1.0,
-        ));
-    }
-    for (i, pin_index) in left_pins.iter().enumerate() {
-        pin_locations[*pin_index].push(egui::Vec2::new(
-            0.0,
-            ((i + 1) as f32) / ((left_pins.len() + 1) as f32),
-        ));
-    }
-    for (i, pin_index) in right_pins.iter().enumerate() {
-        pin_locations[*pin_index].push(egui::Vec2::new(
-            1.0,
-            ((i + 1) as f32) / ((right_pins.len() + 1) as f32),
-        ));
+
+    let max_pins_per_cell_side = grouped.values().map(|v| v.len()).max().unwrap_or(1);
+    let cell_min_length = (tile_bounding_box.width() / tile.width as f32)
+        .min(tile_bounding_box.height() / tile.height as f32);
+    let max_pin_radius = cell_min_length / 50.0;
+    let pin_radius =
+        (cell_min_length / (max_pins_per_cell_side as f32 * 3.0)).min(max_pin_radius);
+
+    // Internal pins on shared cell boundaries are nudged inward by 2 pin radii so that
+    // pins on opposite sides of the same internal edge don't overlap.
+    let cell_width_norm = 1.0 / tile.width as f32;
+    let cell_height_norm = 1.0 / tile.height as f32;
+    let internal_nudge_x = 2.0 * pin_radius / tile_bounding_box.width();
+    let internal_nudge_y = 2.0 * pin_radius / tile_bounding_box.height();
+    for (&(side_key, xoffset, yoffset), pins) in &grouped {
+        let x_start = xoffset as f32 * cell_width_norm;
+        let x_end = (xoffset + 1) as f32 * cell_width_norm;
+        // Arch yoffset=0 is the bottom row; screen y increases downward, so flip.
+        let y_start = (tile.height as usize - 1 - yoffset) as f32 * cell_height_norm;
+        let y_end = (tile.height as usize - yoffset) as f32 * cell_height_norm;
+
+        // A side is internal when its edge is shared with an adjacent cell inside the tile.
+        let is_internal = match side_key {
+            0 => xoffset > 0,                        // Left
+            1 => xoffset < tile.width as usize - 1,  // Right
+            2 => yoffset > 0,                        // Bottom
+            _ => yoffset < tile.height as usize - 1, // Top
+        };
+        let nudge_x = if is_internal { internal_nudge_x } else { 0.0 };
+        let nudge_y = if is_internal { internal_nudge_y } else { 0.0 };
+
+        let n = pins.len();
+        for (i, &pin_index) in pins.iter().enumerate() {
+            let t = (i + 1) as f32 / (n + 1) as f32;
+            let pos = match side_key {
+                0 => egui::Vec2::new(x_start + nudge_x, y_start + t * (y_end - y_start)), // Left
+                1 => egui::Vec2::new(x_end - nudge_x, y_start + t * (y_end - y_start)),   // Right
+                2 => egui::Vec2::new(x_start + t * (x_end - x_start), y_end - nudge_y),   // Bottom
+                _ => egui::Vec2::new(x_start + t * (x_end - x_start), y_start + nudge_y), // Top
+            };
+            pin_locations[pin_index].push(pos);
+        }
     }
 
     // A bit of a hack. All numbers above are normalized to the size of the tile. Fix it here.
@@ -121,15 +143,6 @@ pub fn build_render_tile(
             *pin_pos = *pin_pos * tile_bounding_box.size() + tile_bounding_box.min.to_vec2();
         }
     }
-
-    let max_pins_per_side = top_pins
-        .len()
-        .max(bottom_pins.len())
-        .max(left_pins.len())
-        .max(right_pins.len());
-    let min_tile_length = tile_bounding_box.width().min(tile_bounding_box.height());
-    let max_pin_radius = min_tile_length / 50.0;
-    let pin_radius = (min_tile_length / (max_pins_per_side as f32 * 3.0)).min(max_pin_radius);
 
     for pin_location in &pin_locations {
         for pin_pos in pin_location {

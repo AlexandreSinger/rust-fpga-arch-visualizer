@@ -302,54 +302,129 @@ impl CRRSBView {
 
                 let offset = response.rect.min;
 
-                let mut lazy_render_tile_cache: HashMap<(String, String), CRRRenderTile> = HashMap::new();
+                let sub_tile_size = tile_draw_area.size() / 2.0;
+                let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
+                let chan_y_rect = egui::Rect::from_min_size(tile_draw_area.min + sub_tile_size, sub_tile_size);
+                let sb_rect = egui::Rect::from_min_size(
+                    tile_draw_area.min + egui::vec2(sub_tile_size.x, 0.0),
+                    sub_tile_size,
+                );
+                let lb_area_rect = egui::Rect::from_min_size(
+                    tile_draw_area.min + egui::vec2(0.0, sub_tile_size.y),
+                    sub_tile_size,
+                );
 
-                let mut tile_lookup: HashMap<String, &Tile> = HashMap::new();
+                // Build the tiles to render.
+                let mut render_tile_lookup = HashMap::new();
                 for tile in &arch.tiles {
-                    tile_lookup.insert(tile.name.clone(), tile);
+                    let sub_tile_lb_size = lb_area_rect.size() * 0.8;
+                    let tile_min = lb_area_rect.min + (lb_area_rect.size() * 0.1);
+                    let tile_max = tile_min + (tile_draw_area.size() * egui::vec2((tile.width - 1) as f32, (tile.height - 1) as f32)) + sub_tile_lb_size;
+                    let tile_lb_rect = egui::Rect::from_min_max(tile_min, tile_max);
+                    
+                    let tile_lb_color = match tile_colors.get(&tile.name) {
+                        Some(c) => *c,
+                        None => color_scheme::grid_cb_color(false),
+                    };
+                    let logic_block_renderer = build_render_tile(&tile, &tile_lb_rect, &tile_lb_color);
+                    render_tile_lookup.insert(tile.name.clone(), logic_block_renderer);
                 }
+
+                // Build the routing connections which are the same for each CRR tile.
+                let mut channel_wires_lookup = HashMap::new();
+                let mut segment_conns_lookup = HashMap::new();
+                let mut switch_conns_lookup = HashMap::new();
+                for csv_file_name in self.crr_view_state.sb_maps.get_unique_file_names() {
+                    let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[csv_file_name];
+                    let mut channel_wires = CRRRenderTile::build_chan_x_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_x_rect, &sb_rect.size());
+                    channel_wires.append(&mut CRRRenderTile::build_chan_y_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &chan_y_rect, &sb_rect.size()));
+                    channel_wires_lookup.insert(csv_file_name.clone(), channel_wires);
+
+                    let segment_connections = CRRRenderTile::build_segment_connection_shapes(crr_sb, spacing_between_points, chan_wire_stroke, &sb_rect);
+                    segment_conns_lookup.insert(csv_file_name.clone(), segment_connections);
+
+                    let switch_connections = CRRRenderTile::build_switch_connection_shapes(crr_sb, crr_sb_info, spacing_between_points, &sb_rect);
+                    switch_conns_lookup.insert(csv_file_name.clone(), switch_connections);
+                }
+
+                // let mut lazy_render_tile_cache: HashMap<(String, String), CRRRenderTile> = HashMap::new();
+
+                // let mut tile_lookup: HashMap<String, &Tile> = HashMap::new();
+                // for tile in &arch.tiles {
+                //     tile_lookup.insert(tile.name.clone(), tile);
+                // }
 
                 for i in 0..grid_w {
                     for j in 0..grid_h {
-                        let tile_name = match grid.get(j, i, 0) {
+                        match grid.get(j, i, 0) {
                             Some(GridCell::BlockAnchor { pb_type, width, height }) => {
-                                pb_type
+                                let lb_render_tile = &render_tile_lookup[pb_type];
+                                let mut lb_shapes = lb_render_tile.lb_shapes.clone();
+                                let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1 - (height - 1)) as f32);
+                                for shape in &mut lb_shapes {
+                                    shape.translate(tile_offset.to_vec2());
+                                }
+                                painter.extend(lb_shapes);
+                                // pb_type
                             },
                             Some(GridCell::BlockOccupied { pb_type, anchor_row, anchor_col }) => {
-                                pb_type
+                                // pb_type
                             },
-                            _ => continue,
+                            _ => {},
                         };
+                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
                         let crr_sb_template_file_name = match self.crr_view_state.sb_maps.get_sb_template(i, j) {
                             Some(SBMapTemplate::File { file_name }) => {
+                                let mut channel_wire_shapes = channel_wires_lookup[file_name].clone();
+                                for shape in &mut channel_wire_shapes {
+                                    shape.translate(tile_offset.to_vec2());
+                                }
+                                painter.extend(channel_wire_shapes);
+
+                                if self.crr_view_state.show_segment_connections {
+                                    let mut segment_conn_shapes = segment_conns_lookup[file_name].clone();
+                                    for shape in &mut segment_conn_shapes {
+                                        shape.translate(tile_offset.to_vec2());
+                                    }
+                                    painter.extend(segment_conn_shapes);
+                                }
+
+                                if self.crr_view_state.show_switch_connections {
+                                    let mut switch_conn_shapes = switch_conns_lookup[file_name].clone();
+                                    for shape in &mut switch_conn_shapes {
+                                        shape.translate(tile_offset.to_vec2());
+                                    }
+                                    painter.extend(switch_conn_shapes);
+                                }
+
                                 file_name
                             },
                             _ => continue,
                         };
-                        let render_tile = match lazy_render_tile_cache.get(&(tile_name.clone(), crr_sb_template_file_name.clone())) {
-                            Some(r) => r,
-                            None => {
-                                let tile = tile_lookup.get(tile_name);
-                                let tile = match tile {
-                                    Some(t) => t,
-                                    None => continue,
-                                };
-                                let (crr_sb_info, crr_sb) = match self.crr_view_state.sb_maps.get_sb_template(i, j) {
-                                    Some(SBMapTemplate::File { file_name }) => {
-                                        &self.crr_view_state.switch_blocks[file_name]
-                                    },
-                                    _ => continue,
-                                };
-                                let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area, tile_colors);
+                        // let render_tile = match lazy_render_tile_cache.get(&(tile_name.clone(), crr_sb_template_file_name.clone())) {
+                        //     Some(r) => r,
+                        //     None => {
+                        //         let tile = tile_lookup.get(tile_name);
+                        //         let tile = match tile {
+                        //             Some(t) => t,
+                        //             None => continue,
+                        //         };
+                        //         let (crr_sb_info, crr_sb) = match self.crr_view_state.sb_maps.get_sb_template(i, j) {
+                        //             Some(SBMapTemplate::File { file_name }) => {
+                        //                 &self.crr_view_state.switch_blocks[file_name]
+                        //             },
+                        //             _ => continue,
+                        //         };
+                        //         let render_tile = CRRRenderTile::build_render_tile(tile, crr_sb, crr_sb_info, spacing_between_points, chan_wire_stroke, &tile_draw_area, tile_colors);
 
-                                lazy_render_tile_cache.insert((tile_name.clone(), crr_sb_template_file_name.clone()), render_tile);
+                        //         lazy_render_tile_cache.insert((tile_name.clone(), crr_sb_template_file_name.clone()), render_tile);
 
-                                &lazy_render_tile_cache[&(tile_name.clone(), crr_sb_template_file_name.clone())]
-                            },
-                        };
+                        //         &lazy_render_tile_cache[&(tile_name.clone(), crr_sb_template_file_name.clone())]
+                        //     },
+                        // };
 
-                        let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
-                        Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
+                        // let tile_offset = offset + egui::Vec2::new(tile_size.x * i as f32, tile_size.y * (grid_h - j - 1) as f32);
+                        // Self::render_tile(&render_tile, tile_offset, crr_view_state, &painter);
 
 
                         // let sb_template = sb_maps.get_sb_template(i, j);

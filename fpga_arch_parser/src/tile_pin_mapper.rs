@@ -237,7 +237,7 @@ fn assign_pins_round_robin(
     sub_tile: &SubTile,
     pin_index_lookup: &TilePinIndexMap,
     slots: &[PhysicalPinLoc],
-    pin_locs: &mut Vec<Vec<PhysicalPinLoc>>,
+    pin_locs: &mut [Vec<PhysicalPinLoc>],
 ) {
     if slots.is_empty() {
         return;
@@ -262,7 +262,7 @@ fn assign_pins_spread_inputs_perimeter_outputs(
     pin_index_lookup: &TilePinIndexMap,
     spread: &[PhysicalPinLoc],
     perimeter: &[PhysicalPinLoc],
-    pin_locs: &mut Vec<Vec<PhysicalPinLoc>>,
+    pin_locs: &mut [Vec<PhysicalPinLoc>],
 ) {
     let sub_tile_lookup = &pin_index_lookup[&sub_tile.name];
     for cap_lookup in sub_tile_lookup {

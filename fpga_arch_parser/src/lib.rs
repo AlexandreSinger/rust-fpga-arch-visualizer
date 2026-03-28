@@ -8,6 +8,7 @@ use xml::name::OwnedName;
 use xml::reader::{EventReader, XmlEvent};
 
 mod arch;
+mod complex_block_graph;
 mod parse_complex_block_list;
 mod parse_custom_switch_blocks;
 mod parse_device;

@@ -251,6 +251,16 @@ fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
                 ));
             }
         };
+        if step == 0 {
+            return Err(format!(
+                "Range step must be greater than 0 in pattern {pattern_str}"
+            ));
+        }
+        if start > end {
+            return Err(format!(
+                "Range start must be less than or equal to end in pattern {pattern_str}"
+            ));
+        }
 
         return Ok(SBPatternVal::Range { start, end, step });
     }

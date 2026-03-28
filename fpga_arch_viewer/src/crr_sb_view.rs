@@ -206,7 +206,7 @@ impl CRRSBView {
     ) {
         if let Some(error_msg) = &self.last_error {
             ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
-            return;
+            ui.add_space(8.0);
         }
         if self.crr_view_state.selected_dir.is_some() {
             // Handle zoom input (Cmd + scroll wheel or pinch gesture)
@@ -719,9 +719,11 @@ fn get_crr_switch_block(
         if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
             return Err("Found a source node in a lane with the wrong segment type.");
         }
-        let tap_num = match source_node.source_pin {
-            CRRSwitchSourcePin::Tap { tap_num } => tap_num,
-            _ => 1,
+        let tap_num = match &source_node.source_pin {
+            CRRSwitchSourcePin::Tap { tap_num } => *tap_num,
+            CRRSwitchSourcePin::Pin { .. } => {
+                return Err("Source lane nodes must use tap metadata.");
+            }
         };
         if tap_num == 0 || tap_num > source_node_lane.segment_len {
             return Err("Found a source node with an invalid tap number.");

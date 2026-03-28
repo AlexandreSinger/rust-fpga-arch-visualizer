@@ -1,7 +1,7 @@
 
 use std::ops::{Index, IndexMut};
 
-use crate::{FPGAArchParseError, PBType, PBTypeClass, Port};
+use crate::{FPGAArchParseError, Interconnect, InterconnectType, PBType, PBTypeClass, Port};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComplexBlockNodeId(usize);
@@ -141,9 +141,9 @@ fn add_pb_type_recursive(
         }
     }
 
-    // Collect (mode_id, child pb_types) so we can build modes child-first.
+    // Collect (mode_id, child pb_types, interconnects) so we can build modes child-first.
     // A pb_type has either explicit modes or direct pb_type children (implicit default mode).
-    let mode_sources: Vec<(ComplexBlockModeId, &Vec<PBType>)> = if !pb_type.modes.is_empty() {
+    let mode_sources: Vec<(ComplexBlockModeId, &[PBType], &[Interconnect])> = if !pb_type.modes.is_empty() {
         pb_type.modes.iter().map(|mode| {
             let mode_id = ComplexBlockModeId(modes.len());
             modes.push(ComplexBlockMode {
@@ -151,7 +151,7 @@ fn add_pb_type_recursive(
                 children_complex_blocks: Vec::new(),
                 interconnect: Vec::new(),
             });
-            (mode_id, &mode.pb_types)
+            (mode_id, mode.pb_types.as_slice(), mode.interconnects.as_slice())
         }).collect()
     } else if !pb_type.pb_types.is_empty() {
         // Implicit single default mode for pb_types with direct children but no named modes.
@@ -161,18 +161,21 @@ fn add_pb_type_recursive(
             children_complex_blocks: Vec::new(),
             interconnect: Vec::new(),
         });
-        vec![(mode_id, &pb_type.pb_types)]
+        vec![(mode_id, pb_type.pb_types.as_slice(), pb_type.interconnects.as_slice())]
     } else {
         Vec::new()
     };
 
     // Recurse into children and fill in each mode's children list.
     let mut mode_ids: Vec<ComplexBlockModeId> = Vec::new();
-    for (mode_id, children) in mode_sources {
-        let child_ids: Vec<ComplexBlockNodeId> = children
+    for (mode_id, children, interconnects) in mode_sources {
+        let mut child_ids: Vec<ComplexBlockNodeId> = children
             .iter()
             .map(|child| add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins))
             .collect();
+        for interconnect in interconnects {
+            child_ids.push(add_interconnect(interconnect, mode_id, nodes, ports));
+        }
         modes[mode_id].children_complex_blocks = child_ids;
         mode_ids.push(mode_id);
     }
@@ -187,6 +190,51 @@ fn add_pb_type_recursive(
             class: pb_type.class.clone(),
         }
     });
+
+    node_id
+}
+
+fn add_interconnect(
+    interconnect: &Interconnect,
+    parent_mode: ComplexBlockModeId,
+    nodes: &mut Vec<ComplexBlockNode>,
+    ports: &mut Vec<ComplexBlockPort>,
+) -> ComplexBlockNodeId {
+    let node_id = ComplexBlockNodeId(nodes.len());
+    nodes.push(ComplexBlockNode {
+        parent_mode: Some(parent_mode),
+        modes: Vec::new(),
+        primitive_info: None,
+        input_ports: Vec::new(),
+        output_ports: Vec::new(),
+        clock_ports: Vec::new(),
+    });
+
+    let class = match interconnect.interconnect_type {
+        InterconnectType::Direct   => PBTypeClass::InterconnectDirect,
+        InterconnectType::Mux      => PBTypeClass::InterconnectMux,
+        InterconnectType::Complete => PBTypeClass::InterconnectComplete,
+    };
+
+    // Mux has 2 input ports; direct and complete have 1. All types have 1 output port.
+    let num_input_ports = match interconnect.interconnect_type {
+        InterconnectType::Mux => 2,
+        _                     => 1,
+    };
+    let input_port_ids: Vec<ComplexBlockPortId> = (0..num_input_ports).map(|_| {
+        let port_id = ComplexBlockPortId(ports.len());
+        ports.push(ComplexBlockPort { parent_complex_block: node_id, pins: Vec::new() });
+        port_id
+    }).collect();
+    let output_port_id = ComplexBlockPortId(ports.len());
+    ports.push(ComplexBlockPort { parent_complex_block: node_id, pins: Vec::new() });
+
+    nodes[node_id].primitive_info = Some(ComplexBlockPrimitiveInfo {
+        blif_model: interconnect.name.clone(),
+        class,
+    });
+    nodes[node_id].input_ports = input_port_ids;
+    nodes[node_id].output_ports = vec![output_port_id];
 
     node_id
 }

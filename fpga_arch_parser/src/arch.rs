@@ -593,6 +593,9 @@ pub enum PBTypeClass {
     Lut,
     FlipFlop,
     Memory,
+    InterconnectDirect,
+    InterconnectMux,
+    InterconnectComplete,
 }
 
 pub struct PBType {

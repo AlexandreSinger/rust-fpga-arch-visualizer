@@ -987,7 +987,10 @@ fn draw_pb_type(
         PBTypeClass::Memory => {
             intra_block_drawing::draw_memory(painter, rect, pb_type, state, ui, dark_mode)
         }
-        PBTypeClass::None => {
+        PBTypeClass::None
+        | PBTypeClass::InterconnectDirect
+        | PBTypeClass::InterconnectMux
+        | PBTypeClass::InterconnectComplete => {
             if pb_type.blif_model.is_some() {
                 intra_block_drawing::draw_blif_block(painter, rect, pb_type, state, ui, dark_mode)
             } else {

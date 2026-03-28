@@ -71,7 +71,10 @@ fn render_pb_type_tree_node(ui: &mut egui::Ui, pb_type: &PBType) {
                 PBTypeClass::Memory => {
                     ui.label(egui::RichText::new("[MEM]").color(egui::Color32::GREEN));
                 }
-                PBTypeClass::None => {}
+                PBTypeClass::None
+                | PBTypeClass::InterconnectDirect
+                | PBTypeClass::InterconnectMux
+                | PBTypeClass::InterconnectComplete => {}
             }
         });
 

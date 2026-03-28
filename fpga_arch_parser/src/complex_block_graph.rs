@@ -1,7 +1,7 @@
 
 use std::ops::{Index, IndexMut};
 
-use crate::{FPGAArchParseError, PBType, PBTypeClass};
+use crate::{FPGAArchParseError, PBType, PBTypeClass, Port};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComplexBlockNodeId(usize);
@@ -58,6 +58,7 @@ pub struct ComplexBlockNode {
 }
 
 pub struct ComplexBlockPort {
+    pub parent_complex_block: ComplexBlockNodeId,
     pub pins: Vec<ComplexBlockPinId>,
 }
 
@@ -83,15 +84,17 @@ pub fn build_complex_block_graph(root_pb_type: &PBType) -> Result<ComplexBlockGr
     // and then constructing their parents.
     let mut nodes: Vec<ComplexBlockNode> = Vec::new();
     let mut modes: Vec<ComplexBlockMode> = Vec::new();
+    let mut ports: Vec<ComplexBlockPort> = Vec::new();
+    let mut pins: Vec<ComplexBlockPin> = Vec::new();
 
-    let root_id = add_pb_type_recursive(root_pb_type, None, &mut nodes, &mut modes);
+    let root_id = add_pb_type_recursive(root_pb_type, None, &mut nodes, &mut modes, &mut ports, &mut pins);
 
     Ok(ComplexBlockGraph {
         root_complex_block_node: root_id,
         complex_block_nodes: nodes,
         complex_block_modes: modes,
-        complex_block_ports: Vec::new(),
-        complex_block_pins: Vec::new(),
+        complex_block_ports: ports,
+        complex_block_pins: pins,
     })
 }
 
@@ -100,6 +103,8 @@ fn add_pb_type_recursive(
     parent_mode: Option<ComplexBlockModeId>,
     nodes: &mut Vec<ComplexBlockNode>,
     modes: &mut Vec<ComplexBlockMode>,
+    ports: &mut Vec<ComplexBlockPort>,
+    pins: &mut Vec<ComplexBlockPin>,
 ) -> ComplexBlockNodeId {
     // Reserve the node slot so its ID is known before processing children.
     let node_id = ComplexBlockNodeId(nodes.len());
@@ -111,6 +116,30 @@ fn add_pb_type_recursive(
         output_ports: Vec::new(),
         clock_ports: Vec::new(),
     });
+
+    // Build ports and pins for this node.
+    let mut input_port_ids: Vec<ComplexBlockPortId> = Vec::new();
+    let mut output_port_ids: Vec<ComplexBlockPortId> = Vec::new();
+    let mut clock_port_ids: Vec<ComplexBlockPortId> = Vec::new();
+    for port in &pb_type.ports {
+        let num_pins = match port {
+            Port::Input(p) => p.num_pins,
+            Port::Output(p) => p.num_pins,
+            Port::Clock(p) => p.num_pins,
+        };
+        let port_id = ComplexBlockPortId(ports.len());
+        let pin_ids: Vec<ComplexBlockPinId> = (0..num_pins as usize).map(|_| {
+            let pin_id = ComplexBlockPinId(pins.len());
+            pins.push(ComplexBlockPin { parent_port: port_id });
+            pin_id
+        }).collect();
+        ports.push(ComplexBlockPort { parent_complex_block: node_id, pins: pin_ids });
+        match port {
+            Port::Input(_)  => input_port_ids.push(port_id),
+            Port::Output(_) => output_port_ids.push(port_id),
+            Port::Clock(_)  => clock_port_ids.push(port_id),
+        }
+    }
 
     // Collect (mode_id, child pb_types) so we can build modes child-first.
     // A pb_type has either explicit modes or direct pb_type children (implicit default mode).
@@ -142,13 +171,16 @@ fn add_pb_type_recursive(
     for (mode_id, children) in mode_sources {
         let child_ids: Vec<ComplexBlockNodeId> = children
             .iter()
-            .map(|child| add_pb_type_recursive(child, Some(mode_id), nodes, modes))
+            .map(|child| add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins))
             .collect();
         modes[mode_id].children_complex_blocks = child_ids;
         mode_ids.push(mode_id);
     }
 
     nodes[node_id].modes = mode_ids;
+    nodes[node_id].input_ports = input_port_ids;
+    nodes[node_id].output_ports = output_port_ids;
+    nodes[node_id].clock_ports = clock_port_ids;
     nodes[node_id].primitive_info = pb_type.blif_model.as_ref().map(|blif_model| {
         ComplexBlockPrimitiveInfo {
             blif_model: blif_model.clone(),

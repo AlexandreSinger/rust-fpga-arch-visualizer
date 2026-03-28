@@ -753,8 +753,14 @@ impl eframe::App for FpgaViewer {
 
         // Update FPS (smoothed with exponential moving average)
         let dt = ctx.input(|i| i.stable_dt);
-        let instant_fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-        self.fps = self.fps * 0.9 + instant_fps * 0.1;
+        if dt > 0.0 {
+            let instant_fps = 1.0 / dt;
+            if self.fps == 0.0 {
+                self.fps = instant_fps;
+            } else {
+                self.fps = self.fps * 0.9 + instant_fps * 0.1;
+            }
+        }
 
         // Render UI panels and windows
         self.render_menu_bar(ctx);

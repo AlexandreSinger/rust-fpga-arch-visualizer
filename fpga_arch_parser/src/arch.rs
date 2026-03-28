@@ -564,40 +564,20 @@ pub struct PackPattern {
     pub out_port: String,
 }
 
-pub struct CompleteInterconnect {
+pub enum InterconnectType {
+    Complete,
+    Direct,
+    Mux,
+}
+
+pub struct Interconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    // FIXME: The documentation needs to be updated. The documentation says there
-    //        may be a single pack pattern; however, an interconnect may have many
-    //        pack patterns.
+    pub interconnect_type: InterconnectType,
     pub pack_patterns: Vec<PackPattern>,
     pub delays: Vec<DelayInfo>,
     pub metadata: Option<Vec<Metadata>>,
-}
-
-pub struct DirectInterconnect {
-    pub name: String,
-    pub input: String,
-    pub output: String,
-    pub pack_patterns: Vec<PackPattern>,
-    pub delays: Vec<DelayInfo>,
-    pub metadata: Option<Vec<Metadata>>,
-}
-
-pub struct MuxInterconnect {
-    pub name: String,
-    pub input: String,
-    pub output: String,
-    pub pack_patterns: Vec<PackPattern>,
-    pub delays: Vec<DelayInfo>,
-    pub metadata: Option<Vec<Metadata>>,
-}
-
-pub enum Interconnect {
-    Complete(CompleteInterconnect),
-    Direct(DirectInterconnect),
-    Mux(MuxInterconnect),
 }
 
 pub struct PBMode {

@@ -279,36 +279,25 @@ fn parse_interconnect<R: BufRead>(
         }
     }
 
-    match name.to_string().as_ref() {
-        "direct" => Ok(Interconnect::Direct(DirectInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        "mux" => Ok(Interconnect::Mux(MuxInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        "complete" => Ok(Interconnect::Complete(CompleteInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        _ => Err(FPGAArchParseError::InvalidTag(
+    let interconnect_type = match name.to_string().as_ref() {
+        "direct" => InterconnectType::Direct,
+        "mux" => InterconnectType::Mux,
+        "complete" => InterconnectType::Complete,
+        _ => return Err(FPGAArchParseError::InvalidTag(
             format!("Unknown interconnect tag: {name}"),
             parser.position(),
         )),
-    }
+    };
+
+    Ok(Interconnect {
+        name: inter_name,
+        input,
+        output,
+        interconnect_type,
+        pack_patterns,
+        delays,
+        metadata,
+    })
 }
 
 fn parse_interconnects<R: BufRead>(

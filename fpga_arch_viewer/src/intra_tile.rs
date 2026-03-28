@@ -512,7 +512,7 @@ fn measure_pb_type(
     let has_complete_interconnect = pb_type
         .interconnects
         .iter()
-        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+        .any(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Complete));
 
     let is_clock_complete = pb_type
         .interconnects
@@ -521,7 +521,7 @@ fn measure_pb_type(
 
     let mux_count = get_interconnects_for_mode(pb_type, mode_index)
         .iter()
-        .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+        .filter(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Mux))
         .count();
     let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
         MUX_GUTTER * zoom
@@ -723,10 +723,10 @@ fn is_clock_complete_interconnect(
     current_pb: &PBType,
     children: &[PBType],
 ) -> bool {
-    if let fpga_arch_parser::Interconnect::Complete(c) = interconnect {
+    if matches!(interconnect.interconnect_type, fpga_arch_parser::InterconnectType::Complete) {
         // Expand port lists to get individual port references
-        let raw_inputs = expand_port_list(&c.input);
-        let raw_outputs = expand_port_list(&c.output);
+        let raw_inputs = expand_port_list(&interconnect.input);
+        let raw_outputs = expand_port_list(&interconnect.output);
 
         // Check if all input ports are clock ports
         let all_inputs_clock = raw_inputs
@@ -915,7 +915,7 @@ fn draw_pb_type(
     let has_complete_interconnect = pb_type
         .interconnects
         .iter()
-        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+        .any(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Complete));
     let _is_clock_complete = pb_type
         .interconnects
         .iter()
@@ -1074,7 +1074,7 @@ fn draw_pb_type(
 
         let mux_count = get_interconnects_for_mode(pb_type, mode_index)
             .iter()
-            .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+            .filter(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Mux))
             .count();
         let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
             MUX_GUTTER * zoom
@@ -1131,10 +1131,10 @@ fn draw_pb_type(
         let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
-            match inter {
-                fpga_arch_parser::Interconnect::Direct(d) => {
-                    let raw_sources = expand_port_list(&d.input);
-                    let raw_sinks = expand_port_list(&d.output);
+            match inter.interconnect_type {
+                fpga_arch_parser::InterconnectType::Direct => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let mut sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let mut sinks =
@@ -1203,9 +1203,9 @@ fn draw_pb_type(
                         }
                     }
                 }
-                fpga_arch_parser::Interconnect::Mux(m) => {
-                    let raw_sources = expand_port_list(&m.input);
-                    let raw_sinks = expand_port_list(&m.output);
+                fpga_arch_parser::InterconnectType::Mux => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let sinks =
@@ -1226,9 +1226,9 @@ fn draw_pb_type(
                         dark_mode,
                     );
                 }
-                fpga_arch_parser::Interconnect::Complete(c) => {
-                    let raw_sources = expand_port_list(&c.input);
-                    let raw_sinks = expand_port_list(&c.output);
+                fpga_arch_parser::InterconnectType::Complete => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let sinks =

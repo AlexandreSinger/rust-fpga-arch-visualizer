@@ -35,17 +35,13 @@ pub fn render_hierarchy_tree(ui: &mut egui::Ui, arch: &FPGAArch, tile: &Tile) {
 
 fn render_interconnects(ui: &mut egui::Ui, interconnects: &[fpga_arch_parser::Interconnect]) {
     for inter in interconnects {
-        let (kind, name, input, output, pack_patterns) = match inter {
-            fpga_arch_parser::Interconnect::Direct(d) => {
-                ("Direct", &d.name, &d.input, &d.output, &d.pack_patterns)
-            }
-            fpga_arch_parser::Interconnect::Mux(m) => {
-                ("Mux", &m.name, &m.input, &m.output, &m.pack_patterns)
-            }
-            fpga_arch_parser::Interconnect::Complete(c) => {
-                ("Complete", &c.name, &c.input, &c.output, &c.pack_patterns)
-            }
+        let kind = match inter.interconnect_type {
+            fpga_arch_parser::InterconnectType::Direct => "Direct",
+            fpga_arch_parser::InterconnectType::Mux => "Mux",
+            fpga_arch_parser::InterconnectType::Complete => "Complete",
         };
+        let (name, input, output, pack_patterns) =
+            (&inter.name, &inter.input, &inter.output, &inter.pack_patterns);
         ui.horizontal(|ui| {
             ui.label(format!("{}: {} ({} -> {})", kind, name, input, output));
             if !pack_patterns.is_empty() {

@@ -81,6 +81,8 @@ pub struct FpgaViewer {
 
     view_mode: ViewMode,
     next_view_mode: ViewMode,
+
+    fps: f32,
 }
 
 fn get_file_line(file_path: &std::path::Path, line_num: u64) -> Option<String> {
@@ -260,6 +262,7 @@ impl FpgaViewer {
             crr_sb_view: CRRSBView::default(),
             view_mode: ViewMode::Summary,
             next_view_mode: ViewMode::Summary,
+            fps: 0.0,
         }
     }
 
@@ -590,6 +593,8 @@ impl FpgaViewer {
                     } else {
                         ui.label(egui::RichText::new("No file loaded").weak());
                     }
+                    ui.separator();
+                    ui.label(egui::RichText::new(format!("{:.0} FPS", self.fps)).weak());
                 });
             });
         });
@@ -745,6 +750,11 @@ impl eframe::App for FpgaViewer {
         self.viewer_ctx
             .block_styles
             .update_colors(self.viewer_ctx.dark_mode);
+
+        // Update FPS (smoothed with exponential moving average)
+        let dt = ctx.input(|i| i.stable_dt);
+        let instant_fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+        self.fps = self.fps * 0.9 + instant_fps * 0.1;
 
         // Render UI panels and windows
         self.render_menu_bar(ctx);

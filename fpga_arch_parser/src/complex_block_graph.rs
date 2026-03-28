@@ -167,12 +167,15 @@ fn add_pb_type_recursive(
     };
 
     // Recurse into children and fill in each mode's children list.
+    // Each child pb_type is instantiated num_pb times, producing independent nodes.
     let mut mode_ids: Vec<ComplexBlockModeId> = Vec::new();
     for (mode_id, children, interconnects) in mode_sources {
-        let mut child_ids: Vec<ComplexBlockNodeId> = children
-            .iter()
-            .map(|child| add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins))
-            .collect();
+        let mut child_ids: Vec<ComplexBlockNodeId> = Vec::new();
+        for child in children {
+            for _ in 0..child.num_pb as usize {
+                child_ids.push(add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins));
+            }
+        }
         for interconnect in interconnects {
             child_ids.push(add_interconnect(interconnect, mode_id, nodes, ports));
         }

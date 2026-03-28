@@ -4,6 +4,14 @@ pub enum CRRSwitchDir {
     Right,
     Top,
     Bottom,
+    IPIN,
+    OPIN,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CRRSwitchSourcePin {
+    Tap { tap_num: usize },
+    Pin { pin_name: String },
 }
 
 #[derive(Debug)]
@@ -11,7 +19,7 @@ pub struct CRRSwitchSourceNodeInfo {
     pub dir: CRRSwitchDir,
     pub segment_type: String,
     pub lane_num: usize,
-    pub tap_num: usize,
+    pub source_pin: CRRSwitchSourcePin,
 }
 
 #[derive(Debug)]
@@ -20,9 +28,10 @@ pub struct CRRSwitchSinkNodeInfo {
     pub segment_type: String,
     pub fan_in: Option<usize>,
     pub lane_num: usize,
+    pub target_pin: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CRRSwitchConnectionDelay {
     Undefined,
     DelaySpecified { delay: f32 },

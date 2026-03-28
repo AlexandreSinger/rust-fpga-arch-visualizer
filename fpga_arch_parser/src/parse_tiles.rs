@@ -9,6 +9,7 @@ use crate::arch::*;
 use crate::parse_error::*;
 
 use crate::parse_port::parse_port;
+use crate::tile_pin_mapper::build_tile_pin_mapper;
 
 fn parse_sb_loc<R: BufRead>(
     name: &OwnedName,
@@ -784,8 +785,8 @@ fn parse_pin_loc<R: BufRead>(
     assert!(name.to_string() == "loc");
 
     let mut side: Option<PinSide> = None;
-    let mut xoffset: Option<i32> = None;
-    let mut yoffset: Option<i32> = None;
+    let mut xoffset: Option<usize> = None;
+    let mut yoffset: Option<usize> = None;
     for a in attributes {
         match a.name.to_string().as_str() {
             "side" => {
@@ -1305,6 +1306,15 @@ fn parse_tile<R: BufRead>(
     // If the width or height is not provided, they are assumed to be 1.
     let width = width.unwrap_or(1);
     let height = height.unwrap_or(1);
+    if width <= 0 || height <= 0 {
+        return Err(FPGAArchParseError::AttributeParseError(
+            format!(
+                "Tile dimensions must be positive: width={}, height={}",
+                width, height
+            ),
+            parser.position(),
+        ));
+    }
 
     let mut ports: Vec<Port> = Vec::new();
     let mut sub_tiles: Vec<SubTile> = Vec::new();
@@ -1364,6 +1374,8 @@ fn parse_tile<R: BufRead>(
         }
     }
 
+    let pin_mapper = build_tile_pin_mapper(&sub_tiles, width as usize, height as usize)?;
+
     Ok(Tile {
         name: tile_name,
         ports,
@@ -1372,6 +1384,7 @@ fn parse_tile<R: BufRead>(
         height,
         area,
         switchblock_locations,
+        pin_mapper,
     })
 }
 

@@ -1,105 +1,283 @@
-#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
 use crr_sb_parser::{
     CRRSwitchBlockDeserialized, CRRSwitchDir, CRRSwitchSinkNodeInfo, CRRSwitchSourceNodeInfo,
+    CRRSwitchSourcePin,
+};
+use fpga_arch_parser::{FPGAArch, Layout, TilePinMapper};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::crr_view::parse_sb_maps_yaml::parse_sb_maps_yaml_from_string;
+use crate::{
+    color_scheme,
+    crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps},
+    grid::{DeviceGrid, GridCell},
+    grid_view::get_layout_name,
+    tile_rendering::tile_renderer::{TileRenderer, build_render_tile},
 };
 
-use crate::{block_style, color_scheme};
+pub struct CRRViewState {
+    show_segment_connections: bool,
+    show_switch_connections: bool,
+    show_lb_pin_connections: bool,
+
+    pub selected_layout_index: usize,
+
+    sb_maps: Option<SBMaps>,
+    switch_blocks: HashMap<String, (CRRSwitchBlockDeserialized, CRRSwitchBlock)>,
+    selected_dir: Option<String>,
+}
+
+impl Default for CRRViewState {
+    fn default() -> Self {
+        Self {
+            show_segment_connections: true,
+            show_switch_connections: true,
+            show_lb_pin_connections: false,
+            selected_layout_index: 0,
+            sb_maps: None,
+            switch_blocks: HashMap::new(),
+            selected_dir: None,
+        }
+    }
+}
 
 pub struct CRRSBView {
-    crr_sb_info: Option<crr_sb_parser::CRRSwitchBlockDeserialized>,
-    crr_sb: Option<CRRSwitchBlock>,
     zoom_factor: f32,
     last_error: Option<String>,
+
+    crr_view_state: CRRViewState,
 }
 
 impl Default for CRRSBView {
     fn default() -> Self {
         Self {
-            crr_sb_info: None,
-            crr_sb: None,
             zoom_factor: 1.0,
             last_error: None,
+            crr_view_state: CRRViewState::default(),
         }
     }
 }
 
 impl CRRSBView {
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_crr_csv_file(&mut self, file_path: std::path::PathBuf) {
-        self.crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
-            Ok(crr_sb_info) => {
-                self.last_error = None;
-                Some(crr_sb_info)
-            }
-            Err(e) => {
-                self.last_error = Some(e.to_string());
-                None
-            }
-        };
-
-        if let Some(crr_sb_info) = &self.crr_sb_info {
-            self.crr_sb = match get_crr_switch_block(crr_sb_info) {
-                Ok(crr_sb) => {
+    fn load_sb_maps_yaml(&mut self, file_path: std::path::PathBuf) {
+        match std::fs::read_to_string(&file_path) {
+            Ok(contents) => match parse_sb_maps_yaml_from_string(&contents) {
+                Ok(sb_maps) => {
+                    self.crr_view_state.sb_maps = Some(sb_maps);
+                    self.crr_view_state.switch_blocks.clear();
+                    self.crr_view_state.selected_dir = None;
                     self.last_error = None;
-                    Some(crr_sb)
                 }
                 Err(e) => {
-                    self.last_error = Some(e.to_string());
-                    None
+                    self.last_error = Some(e);
                 }
+            },
+            Err(e) => {
+                self.last_error = Some(e.to_string());
             }
         }
     }
 
-    pub fn render(&mut self, ctx: &egui::Context) {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_crr_csv_dir(&mut self, dir_path: std::path::PathBuf) {
+        let unique_files: Vec<String> = match self.crr_view_state.sb_maps.as_ref() {
+            Some(m) => m.get_unique_file_names().iter().cloned().collect(),
+            None => return,
+        };
+        for unique_file in &unique_files {
+            // Create the CSV file path.
+            let file_path = dir_path.join(unique_file);
+            // Parse the CSV file.
+            let crr_sb_info = match crr_sb_parser::parse_csv_file(&file_path) {
+                Ok(crr_sb_info) => {
+                    self.last_error = None;
+                    crr_sb_info
+                }
+                Err(e) => {
+                    self.last_error = Some(e.to_string());
+                    return;
+                }
+            };
+            // Prepare the switch block.
+            let crr_sb = match get_crr_switch_block(&crr_sb_info) {
+                Ok(crr_sb) => {
+                    self.last_error = None;
+                    crr_sb
+                }
+                Err(e) => {
+                    self.last_error = Some(e.to_string());
+                    return;
+                }
+            };
+            // Store the switch block info.
+            self.crr_view_state
+                .switch_blocks
+                .insert(unique_file.clone(), (crr_sb_info, crr_sb));
+        }
+        self.crr_view_state.selected_dir =
+            Some(dir_path.into_os_string().to_string_lossy().into_owned());
+    }
+
+    pub fn render(
+        &mut self,
+        arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
+        ctx: &egui::Context,
+    ) {
+        egui::SidePanel::right("crr_view_controls")
+            .default_width(250.0)
+            .show(ctx, |ui| {
+                self.render_side_panel(arch, ui);
+            });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(ui);
+            self.render_central_panel(arch, tile_colors, ui);
         });
     }
 
-    fn render_central_panel(&mut self, ui: &mut egui::Ui) {
-        if let Some(crr_sb_info) = &self.crr_sb_info {
-            if let Some(crr_sb) = &self.crr_sb {
-                // Handle zoom input (Cmd + scroll wheel or pinch gesture)
-                let input = ui.input(|i| {
-                    let scroll_delta = i.raw_scroll_delta.y;
-                    let zoom_modifier = i.modifiers.command;
-                    (scroll_delta, zoom_modifier)
-                });
-                let (scroll_delta, zoom_modifier) = input;
-                if zoom_modifier && scroll_delta != 0.0 {
-                    if scroll_delta > 0.0 {
-                        self.zoom_factor *= 1.1;
-                    } else {
-                        self.zoom_factor /= 1.1;
-                    }
-                }
-                // Check for pinch gesture (trackpad zoom on macOS)
-                let zoom_delta = ui.input(|i| i.zoom_delta());
-                if zoom_delta != 1.0 {
-                    self.zoom_factor *= zoom_delta;
-                }
+    fn render_side_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
+        ui.heading("CRR View");
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-                self.render_crr_sb(crr_sb, crr_sb_info, ui);
-            } else if let Some(error_msg) = &self.last_error {
-                ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
-            } else {
-                ui.label("Error occurred while interpreting the CRR SB.");
+        ui.checkbox(
+            &mut self.crr_view_state.show_segment_connections,
+            "Show Segment Connections",
+        );
+
+        ui.add_space(10.0);
+
+        ui.checkbox(
+            &mut self.crr_view_state.show_switch_connections,
+            "Show Switch Connections",
+        );
+
+        ui.add_space(10.0);
+
+        ui.checkbox(
+            &mut self.crr_view_state.show_lb_pin_connections,
+            "Show LB Pin Connections",
+        );
+
+        // Layout selection dropdown
+        ui.add_space(10.0);
+        if arch.layouts.layout_list.len() > 1 {
+            ui.label("Layout:");
+            let mut layout_changed = false;
+            egui::ComboBox::from_id_salt("layout_selector")
+                .selected_text(get_layout_name(
+                    arch,
+                    self.crr_view_state.selected_layout_index,
+                ))
+                .show_ui(ui, |ui| {
+                    for (idx, layout) in arch.layouts.layout_list.iter().enumerate() {
+                        let layout_name = match &layout {
+                            fpga_arch_parser::Layout::AutoLayout(_) => "Auto Layout".to_string(),
+                            fpga_arch_parser::Layout::FixedLayout(fl) => {
+                                format!("Fixed: {}", fl.name)
+                            }
+                        };
+                        if ui
+                            .selectable_value(
+                                &mut self.crr_view_state.selected_layout_index,
+                                idx,
+                                layout_name,
+                            )
+                            .clicked()
+                        {
+                            layout_changed = true;
+                        }
+                    }
+                });
+            if layout_changed {
+                // grid_changed = true;
+                // state.selected_die_id = 0;
             }
+        }
+    }
+
+    fn render_central_panel(
+        &mut self,
+        arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
+        ui: &mut egui::Ui,
+    ) {
+        if let Some(error_msg) = &self.last_error {
+            ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            ui.add_space(8.0);
+        }
+        if self.crr_view_state.selected_dir.is_some() {
+            // Handle zoom input (Cmd + scroll wheel or pinch gesture)
+            let input = ui.input(|i| {
+                let scroll_delta = i.raw_scroll_delta.y;
+                let zoom_modifier = i.modifiers.command;
+                (scroll_delta, zoom_modifier)
+            });
+            let (scroll_delta, zoom_modifier) = input;
+            if zoom_modifier && scroll_delta != 0.0 {
+                if scroll_delta > 0.0 {
+                    self.zoom_factor *= 1.1;
+                } else {
+                    self.zoom_factor /= 1.1;
+                }
+            }
+            // Check for pinch gesture (trackpad zoom on macOS)
+            let zoom_delta = ui.input(|i| i.zoom_delta());
+            if zoom_delta != 1.0 {
+                self.zoom_factor *= zoom_delta;
+            }
+
+            if let Some(Layout::FixedLayout(_)) = arch
+                .layouts
+                .layout_list
+                .get(self.crr_view_state.selected_layout_index)
+            {
+                let grid =
+                    DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
+                self.render_crr_sb(&grid, arch, tile_colors, ui);
+            }
+            // } else if let Some(error_msg) = &self.last_error {
+            //     ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            // } else {
+            //     ui.label("Error occurred while interpreting the CRR SB.");
+            // }
         } else {
             ui.label("The CRR View is currently under development.");
+            if let Some(error_msg) = &self.last_error {
+                ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
+            }
             #[cfg(not(target_arch = "wasm32"))]
-            if ui.button("Select CSV file to view").clicked() {
-                // TODO: Make this cleaner by combining with view.
-                // TODO: Add WASM support.
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("CRR CSV Files", &["csv"])
-                    .set_title("Open CRR CSV File")
-                    .pick_file()
-                {
-                    self.load_crr_csv_file(path);
+            {
+                if self.crr_view_state.sb_maps.is_none() {
+                    if ui.button("Select SB Maps YAML file...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SB Maps YAML", &["yaml", "yml"])
+                            .set_title("Open SB Maps YAML File")
+                            .pick_file()
+                    {
+                        self.load_sb_maps_yaml(path);
+                    }
+                } else {
+                    if ui
+                        .button("Select directory containing CSV files...")
+                        .clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .set_title("Open CRR CSV Directory")
+                            .pick_folder()
+                    {
+                        self.load_crr_csv_dir(path);
+                    }
+                    ui.add_space(4.0);
+                    if ui.small_button("Change SB Maps YAML...").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SB Maps YAML", &["yaml", "yml"])
+                            .set_title("Open SB Maps YAML File")
+                            .pick_file()
+                    {
+                        self.load_sb_maps_yaml(path);
+                    }
                 }
             }
 
@@ -108,302 +286,296 @@ impl CRRSBView {
         }
     }
 
-    fn get_source_node_loc(
-        source_node: &CRRSwitchSourceNodeInfo,
-        spacing_between_points: f32,
-        crr_sb: &CRRSwitchBlock,
-    ) -> egui::Pos2 {
-        // TODO: Catch for underflow!
-        let lane_num = source_node.lane_num - 1;
-        let ptc_offset = (source_node.tap_num - 1) * 2;
-        let ptc_num = match source_node.dir {
-            // TODO: Verify that the lane is allowed.
-            CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
-            CRRSwitchDir::Right => {
-                crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1
-            }
-            CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
-            CRRSwitchDir::Bottom => {
-                crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1
-            }
-        };
-        let chan_w = match source_node.dir {
-            CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
-            CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
-        };
-        Self::get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, chan_w)
-    }
-
-    fn get_sink_node_loc(
-        sink_node: &CRRSwitchSinkNodeInfo,
-        spacing_between_points: f32,
-        crr_sb: &CRRSwitchBlock,
-    ) -> egui::Pos2 {
-        // TODO: Catch for underflow!
-        let lane_num = sink_node.lane_num - 1;
-        let ptc_offset = 0;
-        let ptc_num = match sink_node.dir {
-            // TODO: Verify that the lane is allowed.
-            CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1,
-            CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
-            CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
-            CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
-        };
-        let chan_w = match sink_node.dir {
-            CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
-            CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
-        };
-        Self::get_ptc_loc(ptc_num, spacing_between_points, sink_node.dir, chan_w)
-    }
-
-    fn get_ptc_loc(
-        ptc_track_num: usize,
-        spacing_between_points: f32,
-        side: CRRSwitchDir,
-        chan_w: usize,
-    ) -> egui::Pos2 {
-        egui::Pos2::new(
-            match side {
-                CRRSwitchDir::Left => 0.0,
-                CRRSwitchDir::Right => chan_w as f32 * spacing_between_points,
-                CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
-                    (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
-                }
-            },
-            match side {
-                CRRSwitchDir::Top => 0.0,
-                CRRSwitchDir::Bottom => chan_w as f32 * spacing_between_points,
-                CRRSwitchDir::Left | CRRSwitchDir::Right => {
-                    (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
-                }
-            },
-        )
-    }
-
     fn render_crr_sb(
         &self,
-        crr_sb: &CRRSwitchBlock,
-        crr_sb_info: &CRRSwitchBlockDeserialized,
+        grid: &DeviceGrid,
+        arch: &FPGAArch,
+        tile_colors: &HashMap<String, egui::Color32>,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let max_chan_w = crr_sb.chan_x_width.max(crr_sb.chan_y_width);
+                let grid_w = grid.width;
+                let grid_h = grid.height;
+
+                let mut max_chan_w = 2;
+                if let Some(sb_maps) = &self.crr_view_state.sb_maps {
+                    for unique_file in sb_maps.get_unique_file_names() {
+                        let (_crr_sb_info, crr_sb) =
+                            &self.crr_view_state.switch_blocks[unique_file];
+                        max_chan_w = max_chan_w.max(crr_sb.chan_x_width.max(crr_sb.chan_y_width));
+                    }
+                }
+
                 let smaller_available_size = ui.available_height().min(ui.available_width());
                 let spacing_between_points =
                     ((smaller_available_size / max_chan_w as f32) / 2.0) * self.zoom_factor;
-                let draw_area_size = egui::vec2(
-                    (max_chan_w + 1) as f32 * spacing_between_points * 2.0,
-                    (max_chan_w + 1) as f32 * spacing_between_points * 2.0,
+                let tile_size = egui::vec2(
+                    max_chan_w as f32 * spacing_between_points * 2.0,
+                    max_chan_w as f32 * spacing_between_points * 2.0,
                 );
+                let draw_area_size = tile_size * egui::Vec2::new(grid_w as f32, grid_h as f32);
 
                 let (response, painter) = ui.allocate_painter(
                     draw_area_size,
                     egui::Sense::click().union(egui::Sense::hover()),
                 );
 
-                let chan_x_draw_offset = response.rect.min;
-                let chan_y_draw_offset = response.rect.min + (draw_area_size / 2.0);
-                let sb_draw_offset = response.rect.min + egui::vec2(draw_area_size.x / 2.0, 0.0);
-                let lb_draw_offset = response.rect.min + egui::vec2(0.0, draw_area_size.y / 2.0);
-
                 let chan_wire_stroke = spacing_between_points / 5.0;
 
-                // Draw the chan_x channels
-                for chan_x_ptc in 0..crr_sb.chan_x_width {
-                    let left_conn_pt = Self::get_ptc_loc(
-                        chan_x_ptc,
-                        spacing_between_points,
-                        CRRSwitchDir::Left,
-                        crr_sb.chan_x_width,
-                    );
-                    painter.line_segment(
-                        [
-                            left_conn_pt + chan_x_draw_offset.to_vec2(),
-                            left_conn_pt + sb_draw_offset.to_vec2(),
-                        ],
-                        egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
-                    );
-                }
+                let tile_draw_area =
+                    egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), tile_size);
 
-                // Draw the chan_y channels
-                for chan_y_ptc in 0..crr_sb.chan_y_width {
-                    let left_conn_pt = Self::get_ptc_loc(
-                        chan_y_ptc,
-                        spacing_between_points,
-                        CRRSwitchDir::Bottom,
-                        crr_sb.chan_y_width,
-                    );
-                    painter.line_segment(
-                        [
-                            left_conn_pt + chan_y_draw_offset.to_vec2(),
-                            left_conn_pt + sb_draw_offset.to_vec2(),
-                        ],
-                        egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
-                    );
-                }
+                let offset = response.rect.min;
 
-                // Draw the connection points to the channels
-                let all_sides = [
-                    CRRSwitchDir::Left,
-                    CRRSwitchDir::Right,
-                    CRRSwitchDir::Top,
-                    CRRSwitchDir::Bottom,
-                ];
-                for side in all_sides {
-                    let chan_w = match side {
-                        CRRSwitchDir::Left | CRRSwitchDir::Right => crr_sb.chan_x_width,
-                        CRRSwitchDir::Top | CRRSwitchDir::Bottom => crr_sb.chan_y_width,
+                let sub_tile_size = tile_draw_area.size() / 2.0;
+                let chan_x_rect = egui::Rect::from_min_size(tile_draw_area.min, sub_tile_size);
+                let chan_y_rect =
+                    egui::Rect::from_min_size(tile_draw_area.min + sub_tile_size, sub_tile_size);
+                let sb_rect = egui::Rect::from_min_size(
+                    tile_draw_area.min + egui::vec2(sub_tile_size.x, 0.0),
+                    sub_tile_size,
+                );
+                let lb_area_rect = egui::Rect::from_min_size(
+                    tile_draw_area.min + egui::vec2(0.0, sub_tile_size.y),
+                    sub_tile_size,
+                );
+
+                // Build the tiles to render.
+                let mut render_tile_lookup = HashMap::new();
+                let mut tile_object_lookup = HashMap::new();
+                for tile in &arch.tiles {
+                    let sub_tile_lb_size = lb_area_rect.size() * 0.8;
+                    let tile_min = lb_area_rect.min + (lb_area_rect.size() * 0.1);
+                    let tile_max = tile_min
+                        + (tile_draw_area.size()
+                            * egui::vec2((tile.width - 1) as f32, (tile.height - 1) as f32))
+                        + sub_tile_lb_size;
+                    let tile_lb_rect = egui::Rect::from_min_max(tile_min, tile_max);
+
+                    let tile_lb_color = match tile_colors.get(&tile.name) {
+                        Some(c) => *c,
+                        None => color_scheme::grid_cb_color(false),
                     };
-                    for chan_ptc in 0..chan_w {
-                        let conn_pt =
-                            Self::get_ptc_loc(chan_ptc, spacing_between_points, side, chan_w);
-                        painter.circle(
-                            conn_pt + sb_draw_offset.to_vec2(),
-                            2.5,
-                            egui::Color32::BLACK,
-                            egui::Stroke::new(0.5, egui::Color32::BLACK),
-                        );
-                    }
+                    let logic_block_renderer =
+                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color);
+                    render_tile_lookup.insert(tile.name.clone(), logic_block_renderer);
+
+                    tile_object_lookup.insert(tile.name.clone(), tile);
                 }
 
-                // Draw the segment connections (i.e. the hardened connections along the segment).
-                for chan_x_lane in &crr_sb.chan_x_lanes {
-                    for i in 0..(chan_x_lane.segment_len - 1) {
-                        let left_source_ptc_num = chan_x_lane.starting_track_num + (i * 2);
-                        let right_source_ptc_num = left_source_ptc_num + 1;
-                        let right_sink_ptc_num = chan_x_lane.starting_track_num + ((i + 1) * 2);
-                        let left_sink_ptc_num = right_sink_ptc_num + 1;
-
-                        let left_source_loc = Self::get_ptc_loc(
-                            left_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Left,
-                            crr_sb.chan_x_width,
-                        );
-                        let left_sink_loc = Self::get_ptc_loc(
-                            left_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Left,
-                            crr_sb.chan_x_width,
-                        );
-                        let right_source_loc = Self::get_ptc_loc(
-                            right_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Right,
-                            crr_sb.chan_x_width,
-                        );
-                        let right_sink_loc = Self::get_ptc_loc(
-                            right_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Right,
-                            crr_sb.chan_x_width,
-                        );
-
-                        painter.line_segment(
-                            [
-                                left_source_loc + sb_draw_offset.to_vec2(),
-                                right_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                        painter.line_segment(
-                            [
-                                right_source_loc + sb_draw_offset.to_vec2(),
-                                left_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                    }
-                }
-                for chan_y_lane in &crr_sb.chan_y_lanes {
-                    for i in 0..(chan_y_lane.segment_len - 1) {
-                        let top_source_ptc_num = chan_y_lane.starting_track_num + (i * 2);
-                        let bottom_source_ptc_num = top_source_ptc_num + 1;
-                        let bottom_sink_ptc_num = chan_y_lane.starting_track_num + ((i + 1) * 2);
-                        let top_sink_ptc_num = bottom_sink_ptc_num + 1;
-
-                        let top_source_loc = Self::get_ptc_loc(
-                            top_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Top,
-                            crr_sb.chan_y_width,
-                        );
-                        let top_sink_loc = Self::get_ptc_loc(
-                            top_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Top,
-                            crr_sb.chan_y_width,
-                        );
-                        let bottom_source_loc = Self::get_ptc_loc(
-                            bottom_source_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Bottom,
-                            crr_sb.chan_y_width,
-                        );
-                        let bottom_sink_loc = Self::get_ptc_loc(
-                            bottom_sink_ptc_num,
-                            spacing_between_points,
-                            CRRSwitchDir::Bottom,
-                            crr_sb.chan_y_width,
-                        );
-
-                        painter.line_segment(
-                            [
-                                top_source_loc + sb_draw_offset.to_vec2(),
-                                bottom_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                        painter.line_segment(
-                            [
-                                bottom_source_loc + sb_draw_offset.to_vec2(),
-                                top_sink_loc + sb_draw_offset.to_vec2(),
-                            ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
-                        );
-                    }
-                }
-
-                // Draw all edges between points (i.e. switch edges).
-                // TODO: Add button to disable showing these.
-                for edge in &crr_sb_info.edges {
-                    let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
-                    let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
-
-                    let src_node_loc =
-                        Self::get_source_node_loc(src_node, spacing_between_points, crr_sb);
-                    let sink_node_loc =
-                        Self::get_sink_node_loc(sink_node, spacing_between_points, crr_sb);
-
-                    painter.line_segment(
-                        [
-                            src_node_loc + sb_draw_offset.to_vec2(),
-                            sink_node_loc + sb_draw_offset.to_vec2(),
-                        ],
-                        egui::Stroke::new(1.0, egui::Color32::BLACK),
+                // Build the routing connections which are the same for each CRR tile.
+                let mut channel_wires_lookup = HashMap::new();
+                let mut segment_conns_lookup = HashMap::new();
+                let mut switch_conns_lookup = HashMap::new();
+                for csv_file_name in self
+                    .crr_view_state
+                    .sb_maps
+                    .as_ref()
+                    .unwrap()
+                    .get_unique_file_names()
+                {
+                    let (crr_sb_info, crr_sb) = &self.crr_view_state.switch_blocks[csv_file_name];
+                    let mut channel_wires = build_chan_x_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &chan_x_rect,
+                        &sb_rect.size(),
                     );
+                    channel_wires.append(&mut build_chan_y_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &chan_y_rect,
+                        &sb_rect.size(),
+                    ));
+                    channel_wires_lookup.insert(csv_file_name.clone(), channel_wires);
+
+                    let segment_connections = build_segment_connection_shapes(
+                        crr_sb,
+                        spacing_between_points,
+                        chan_wire_stroke,
+                        &sb_rect,
+                    );
+                    segment_conns_lookup.insert(csv_file_name.clone(), segment_connections);
+
+                    let switch_connections = build_switch_connection_shapes(
+                        crr_sb,
+                        crr_sb_info,
+                        spacing_between_points,
+                        &sb_rect,
+                    );
+                    switch_conns_lookup.insert(csv_file_name.clone(), switch_connections);
                 }
 
-                // Draw the logic block. For now, its just a rectangle.
-                let lb_rect = egui::Rect::from_center_size(
-                    ((draw_area_size / 4.0) + lb_draw_offset.to_vec2()).to_pos2(),
-                    (draw_area_size / 2.0) / 1.25,
-                );
-                let lb_color = color_scheme::grid_lb_color(false);
-                // Draw filled square
-                painter.rect_filled(
-                    lb_rect, 0.0, // No rounding for sharp corners
-                    lb_color,
-                );
-                // Draw outline
-                painter.rect_stroke(
-                    lb_rect,
-                    egui::CornerRadius::ZERO,
-                    egui::Stroke::new(2.0, block_style::darken_color(lb_color, 0.5)),
-                    egui::epaint::StrokeKind::Inside,
-                );
+                // Get the visible tiles in the grid, this will only
+                // draw the tiles currently visible.
+                let clip_rect = painter.clip_rect();
+                let max_tile_width = arch
+                    .tiles
+                    .iter()
+                    .map(|t| t.width as usize)
+                    .max()
+                    .unwrap_or(1);
+                let max_tile_height = arch
+                    .tiles
+                    .iter()
+                    .map(|t| t.height as usize)
+                    .max()
+                    .unwrap_or(1);
+
+                let screen_col_min = ((clip_rect.min.x - offset.x) / tile_size.x)
+                    .floor()
+                    .max(0.0) as usize;
+                let screen_col_max = (((clip_rect.max.x - offset.x) / tile_size.x).ceil().max(0.0)
+                    as usize)
+                    .min(grid_w);
+
+                // j is flipped: screen_row = grid_h - j - 1, so larger j = smaller screen_row (higher on screen).
+                // BlockAnchor tiles with height > 1 draw above the anchor row by (height - 1) rows,
+                // so extend j_min downward by max_tile_height - 1 to avoid missing them.
+                // Similarly, BlockAnchor tiles with width > 1 draw rightward from the anchor column,
+                // so extend i_min leftward by max_tile_width - 1 to avoid missing them.
+                let screen_row_min = ((clip_rect.min.y - offset.y) / tile_size.y)
+                    .floor()
+                    .max(0.0) as usize;
+                let screen_row_max = (((clip_rect.max.y - offset.y) / tile_size.y).ceil().max(0.0)
+                    as usize)
+                    .min(grid_h);
+
+                let visible_i_min = screen_col_min
+                    .saturating_sub(max_tile_width - 1)
+                    .min(grid_w);
+                let visible_i_max = screen_col_max;
+                let visible_j_min = grid_h.saturating_sub(screen_row_max + max_tile_height - 1);
+                let visible_j_max = grid_h.saturating_sub(screen_row_min).min(grid_h);
+
+                for i in visible_i_min..visible_i_max {
+                    for j in visible_j_min..visible_j_max {
+                        let tile_offset = offset
+                            + egui::Vec2::new(
+                                tile_size.x * i as f32,
+                                tile_size.y * (grid_h - j - 1) as f32,
+                            );
+                        let lb_render_tile_info = match grid.get(j, i, 0) {
+                            Some(GridCell::BlockAnchor {
+                                pb_type,
+                                width: _,
+                                height,
+                            }) => {
+                                let lb_render_tile = &render_tile_lookup[pb_type];
+                                let mut lb_shapes = lb_render_tile.lb_shapes.clone();
+                                let tile_relative_offset =
+                                    egui::vec2(0.0, -tile_size.y * (height - 1) as f32);
+                                let tile_final_offset = tile_offset + tile_relative_offset;
+                                for shape in &mut lb_shapes {
+                                    shape.translate(tile_final_offset.to_vec2());
+                                }
+                                painter.extend(lb_shapes);
+
+                                Some((
+                                    lb_render_tile,
+                                    tile_object_lookup[pb_type],
+                                    tile_relative_offset,
+                                ))
+                            }
+                            Some(GridCell::BlockOccupied {
+                                pb_type,
+                                anchor_row,
+                                anchor_col: _,
+                            }) => {
+                                let tile = tile_object_lookup[pb_type];
+                                let dh = usize::abs_diff(*anchor_row, j) as i32;
+                                let tile_relative_offset =
+                                    egui::vec2(0.0, -tile_size.y * (tile.height - dh - 1) as f32);
+                                Some((&render_tile_lookup[pb_type], tile, tile_relative_offset))
+                            }
+                            _ => None,
+                        };
+                        if let Some(SBMapTemplate::File { file_name }) = self
+                            .crr_view_state
+                            .sb_maps
+                            .as_ref()
+                            .unwrap()
+                            .get_sb_template(i, j)
+                        {
+                            let mut channel_wire_shapes = channel_wires_lookup[file_name].clone();
+                            for shape in &mut channel_wire_shapes {
+                                shape.translate(tile_offset.to_vec2());
+                            }
+                            painter.extend(channel_wire_shapes);
+
+                            if self.crr_view_state.show_segment_connections {
+                                let mut segment_conn_shapes =
+                                    segment_conns_lookup[file_name].clone();
+                                for shape in &mut segment_conn_shapes {
+                                    shape.translate(tile_offset.to_vec2());
+                                }
+                                painter.extend(segment_conn_shapes);
+                            }
+
+                            if self.crr_view_state.show_switch_connections {
+                                let mut switch_conn_shapes = switch_conns_lookup[file_name].clone();
+                                for shape in &mut switch_conn_shapes {
+                                    shape.translate(tile_offset.to_vec2());
+                                }
+                                painter.extend(switch_conn_shapes);
+                            }
+
+                            if self.crr_view_state.show_lb_pin_connections
+                                && let Some((lb_render_tile, tile, tile_relative_offset)) =
+                                    lb_render_tile_info
+                            {
+                                let (crr_sb_info, crr_sb) =
+                                    &self.crr_view_state.switch_blocks[file_name];
+                                let mut lb_connection_shapes = build_lb_connection_shapes(
+                                    &tile.pin_mapper,
+                                    crr_sb,
+                                    crr_sb_info,
+                                    spacing_between_points,
+                                    lb_render_tile,
+                                    &tile_relative_offset,
+                                    &sb_rect,
+                                );
+                                for shape in &mut lb_connection_shapes {
+                                    shape.translate(tile_offset.to_vec2());
+                                }
+                                painter.extend(lb_connection_shapes);
+
+                                if painter.clip_rect().size().max_elem()
+                                    < (tile_draw_area.size().max_elem() * 2.0)
+                                {
+                                    // If we are zoomed in close enough, render the tile pins.
+                                    let mut pin_shapes = lb_render_tile.pin_shapes.clone();
+                                    for shape in &mut pin_shapes {
+                                        shape.translate(tile_offset.to_vec2());
+                                    }
+                                    painter.extend(pin_shapes);
+
+                                    // When hovering over a pin, print the name of the pin.
+                                    for (pin_index, pin_locations) in
+                                        lb_render_tile.pin_locations.iter().enumerate()
+                                    {
+                                        let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
+                                        for pin_location in pin_locations {
+                                            let hit_rect = egui::Rect::from_center_size(
+                                                tile_offset + *pin_location,
+                                                egui::Vec2::ONE * lb_render_tile.pin_radius * 3.0,
+                                            );
+                                            let pin_hit_response =
+                                                ui.put(hit_rect, egui::Label::new(""));
+                                            pin_hit_response.on_hover_ui(|ui| {
+                                                ui.label(pin_name);
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                    }
+                }
             });
     }
 }
@@ -448,6 +620,9 @@ fn get_crr_switch_block(
     let mut top_lane_num_to_segment = HashMap::new();
     let mut bottom_lane_num_to_segment = HashMap::new();
     for sink_node in &crr_sb_info.sink_nodes {
+        if sink_node.dir == CRRSwitchDir::IPIN {
+            continue;
+        }
         if sink_node.lane_num == 0 {
             return Err("Invalid lane num of 0 found.");
         }
@@ -465,6 +640,7 @@ fn get_crr_switch_block(
             CRRSwitchDir::Bottom => {
                 bottom_lane_num_to_segment.insert(lane_num, &sink_node.segment_type);
             }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {}
         }
     }
 
@@ -516,6 +692,9 @@ fn get_crr_switch_block(
     // Validate the source nodes to ensure that they are consistent with the sink nodes.
     // This prevents crashes in the code later.
     for source_node in &crr_sb_info.source_nodes {
+        if source_node.dir == CRRSwitchDir::OPIN {
+            continue;
+        }
         if source_node.lane_num == 0 {
             return Err("Found a source node with lane num 0.");
         }
@@ -533,11 +712,20 @@ fn get_crr_switch_block(
                 }
                 &chan_y_lanes[source_node_lane_id]
             }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {
+                return Err("Source node has unexpected direction IPIN/OPIN.");
+            }
         };
         if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
             return Err("Found a source node in a lane with the wrong segment type.");
         }
-        if source_node.tap_num == 0 || source_node.tap_num > source_node_lane.segment_len {
+        let tap_num = match &source_node.source_pin {
+            CRRSwitchSourcePin::Tap { tap_num } => *tap_num,
+            CRRSwitchSourcePin::Pin { .. } => {
+                return Err("Source lane nodes must use tap metadata.");
+            }
+        };
+        if tap_num == 0 || tap_num > source_node_lane.segment_len {
             return Err("Found a source node with an invalid tap number.");
         }
     }
@@ -548,4 +736,360 @@ fn get_crr_switch_block(
         chan_x_width: curr_chan_x_track_num,
         chan_y_width: curr_chan_y_track_num,
     })
+}
+
+fn get_source_node_loc(
+    source_node: &CRRSwitchSourceNodeInfo,
+    spacing_between_points: f32,
+    crr_sb: &CRRSwitchBlock,
+    sb_size: &egui::Vec2,
+) -> egui::Pos2 {
+    let lane_num = source_node.lane_num.saturating_sub(1);
+    let tap_num = match source_node.source_pin {
+        CRRSwitchSourcePin::Tap { tap_num } => tap_num,
+        _ => 1,
+    };
+    let ptc_offset = (tap_num - 1) * 2;
+    let ptc_num = match source_node.dir {
+        // TODO: Verify that the lane is allowed.
+        CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
+        CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1,
+        CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
+        CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
+        CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0,
+    };
+    get_ptc_loc(ptc_num, spacing_between_points, source_node.dir, sb_size)
+}
+
+fn get_sink_node_loc(
+    sink_node: &CRRSwitchSinkNodeInfo,
+    spacing_between_points: f32,
+    crr_sb: &CRRSwitchBlock,
+    sb_size: &egui::Vec2,
+) -> egui::Pos2 {
+    let lane_num = sink_node.lane_num.saturating_sub(1);
+    let ptc_offset = 0;
+    let ptc_num = match sink_node.dir {
+        // TODO: Verify that the lane is allowed.
+        CRRSwitchDir::Left => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset + 1,
+        CRRSwitchDir::Right => crr_sb.chan_x_lanes[lane_num].starting_track_num + ptc_offset,
+        CRRSwitchDir::Top => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset + 1,
+        CRRSwitchDir::Bottom => crr_sb.chan_y_lanes[lane_num].starting_track_num + ptc_offset,
+        CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0,
+    };
+    get_ptc_loc(ptc_num, spacing_between_points, sink_node.dir, sb_size)
+}
+
+fn get_ptc_loc(
+    ptc_track_num: usize,
+    spacing_between_points: f32,
+    side: CRRSwitchDir,
+    sb_size: &egui::Vec2,
+) -> egui::Pos2 {
+    egui::Pos2::new(
+        match side {
+            CRRSwitchDir::Left => 0.0,
+            CRRSwitchDir::Right => sb_size.x,
+            CRRSwitchDir::Top | CRRSwitchDir::Bottom => {
+                (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
+            }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
+        },
+        match side {
+            CRRSwitchDir::Top => 0.0,
+            CRRSwitchDir::Bottom => sb_size.y,
+            CRRSwitchDir::Left | CRRSwitchDir::Right => {
+                (ptc_track_num as f32 * spacing_between_points) + (spacing_between_points / 2.0)
+            }
+            CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => 0.0,
+        },
+    )
+}
+
+fn build_chan_x_shapes(
+    crr_sb: &CRRSwitchBlock,
+    spacing_between_points: f32,
+    chan_wire_stroke: f32,
+    chan_x_rect: &egui::Rect,
+    sb_size: &egui::Vec2,
+) -> Vec<egui::Shape> {
+    let mut chan_x_shapes: Vec<egui::Shape> = Vec::with_capacity(crr_sb.chan_x_width);
+    for chan_x_ptc in 0..crr_sb.chan_x_width {
+        let left_conn_pt = get_ptc_loc(
+            chan_x_ptc,
+            spacing_between_points,
+            CRRSwitchDir::Left,
+            sb_size,
+        );
+        chan_x_shapes.push(egui::Shape::line_segment(
+            [
+                left_conn_pt + chan_x_rect.left_top().to_vec2(),
+                left_conn_pt + chan_x_rect.right_top().to_vec2(),
+            ],
+            egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+        ));
+    }
+
+    chan_x_shapes
+}
+
+fn build_chan_y_shapes(
+    crr_sb: &CRRSwitchBlock,
+    spacing_between_points: f32,
+    chan_wire_stroke: f32,
+    chan_y_rect: &egui::Rect,
+    sb_size: &egui::Vec2,
+) -> Vec<egui::Shape> {
+    let mut chan_y_shapes: Vec<egui::Shape> = Vec::with_capacity(crr_sb.chan_y_width);
+    for chan_y_ptc in 0..crr_sb.chan_y_width {
+        let left_conn_pt = get_ptc_loc(
+            chan_y_ptc,
+            spacing_between_points,
+            CRRSwitchDir::Top,
+            sb_size,
+        );
+        chan_y_shapes.push(egui::Shape::line_segment(
+            [
+                left_conn_pt + chan_y_rect.left_top().to_vec2(),
+                left_conn_pt + chan_y_rect.left_bottom().to_vec2(),
+            ],
+            egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+        ));
+    }
+
+    chan_y_shapes
+}
+
+fn build_segment_connection_shapes(
+    crr_sb: &CRRSwitchBlock,
+    spacing_between_points: f32,
+    chan_wire_stroke: f32,
+    sb_rect: &egui::Rect,
+) -> Vec<egui::Shape> {
+    let mut segment_connection_shapes: Vec<egui::Shape> = Vec::new();
+    for chan_x_lane in &crr_sb.chan_x_lanes {
+        for i in 0..(chan_x_lane.segment_len - 1) {
+            let left_source_ptc_num = chan_x_lane.starting_track_num + (i * 2);
+            let right_source_ptc_num = left_source_ptc_num + 1;
+            let right_sink_ptc_num = chan_x_lane.starting_track_num + ((i + 1) * 2);
+            let left_sink_ptc_num = right_sink_ptc_num + 1;
+
+            let left_source_loc = get_ptc_loc(
+                left_source_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Left,
+                &sb_rect.size(),
+            );
+            let left_sink_loc = get_ptc_loc(
+                left_sink_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Left,
+                &sb_rect.size(),
+            );
+            let right_source_loc = get_ptc_loc(
+                right_source_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Right,
+                &sb_rect.size(),
+            );
+            let right_sink_loc = get_ptc_loc(
+                right_sink_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Right,
+                &sb_rect.size(),
+            );
+
+            segment_connection_shapes.push(egui::Shape::line_segment(
+                [
+                    left_source_loc + sb_rect.min.to_vec2(),
+                    right_sink_loc + sb_rect.min.to_vec2(),
+                ],
+                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            ));
+            segment_connection_shapes.push(egui::Shape::line_segment(
+                [
+                    right_source_loc + sb_rect.min.to_vec2(),
+                    left_sink_loc + sb_rect.min.to_vec2(),
+                ],
+                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            ));
+        }
+    }
+    for chan_y_lane in &crr_sb.chan_y_lanes {
+        for i in 0..(chan_y_lane.segment_len - 1) {
+            let top_source_ptc_num = chan_y_lane.starting_track_num + (i * 2);
+            let bottom_source_ptc_num = top_source_ptc_num + 1;
+            let bottom_sink_ptc_num = chan_y_lane.starting_track_num + ((i + 1) * 2);
+            let top_sink_ptc_num = bottom_sink_ptc_num + 1;
+
+            let top_source_loc = get_ptc_loc(
+                top_source_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Top,
+                &sb_rect.size(),
+            );
+            let top_sink_loc = get_ptc_loc(
+                top_sink_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Top,
+                &sb_rect.size(),
+            );
+            let bottom_source_loc = get_ptc_loc(
+                bottom_source_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Bottom,
+                &sb_rect.size(),
+            );
+            let bottom_sink_loc = get_ptc_loc(
+                bottom_sink_ptc_num,
+                spacing_between_points,
+                CRRSwitchDir::Bottom,
+                &sb_rect.size(),
+            );
+
+            segment_connection_shapes.push(egui::Shape::line_segment(
+                [
+                    top_source_loc + sb_rect.min.to_vec2(),
+                    bottom_sink_loc + sb_rect.min.to_vec2(),
+                ],
+                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            ));
+            segment_connection_shapes.push(egui::Shape::line_segment(
+                [
+                    bottom_source_loc + sb_rect.min.to_vec2(),
+                    top_sink_loc + sb_rect.min.to_vec2(),
+                ],
+                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            ));
+        }
+    }
+
+    segment_connection_shapes
+}
+
+fn build_switch_connection_shapes(
+    crr_sb: &CRRSwitchBlock,
+    crr_sb_info: &CRRSwitchBlockDeserialized,
+    spacing_between_points: f32,
+    sb_rect: &egui::Rect,
+) -> Vec<egui::Shape> {
+    let mut switch_connection_shapes: Vec<egui::Shape> = Vec::new();
+    for edge in &crr_sb_info.edges {
+        let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
+        let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
+
+        // Skip the IPIN/OPINs for now.
+        if src_node.dir == CRRSwitchDir::OPIN || sink_node.dir == CRRSwitchDir::IPIN {
+            continue;
+        }
+
+        let src_node_loc =
+            get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size());
+        let sink_node_loc =
+            get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size());
+
+        switch_connection_shapes.push(egui::Shape::line_segment(
+            [
+                src_node_loc + sb_rect.min.to_vec2(),
+                sink_node_loc + sb_rect.min.to_vec2(),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::BLACK),
+        ));
+    }
+
+    switch_connection_shapes
+}
+
+fn build_lb_connection_shapes(
+    pin_mapper: &TilePinMapper,
+    crr_sb: &CRRSwitchBlock,
+    crr_sb_info: &CRRSwitchBlockDeserialized,
+    spacing_between_points: f32,
+    logic_block_renderer: &TileRenderer,
+    tile_relative_offset: &egui::Vec2,
+    sb_rect: &egui::Rect,
+) -> Vec<egui::Shape> {
+    let mut lb_connection_shapes: Vec<egui::Shape> = Vec::new();
+
+    // Draw flylines from pins to their connections.
+    for edge in &crr_sb_info.edges {
+        let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
+        let sink_node = &crr_sb_info.sink_nodes[edge.sink_node_id];
+
+        // Skip non IPIN/OPINs now.
+        if src_node.dir != CRRSwitchDir::OPIN && sink_node.dir != CRRSwitchDir::IPIN {
+            continue;
+        }
+
+        let src_node_locs = if src_node.dir == CRRSwitchDir::OPIN {
+            // TODO: Clean this up.
+            if let CRRSwitchSourcePin::Pin { pin_name } = &src_node.source_pin {
+                let pin_indices = pin_mapper.parse_pin_name(pin_name);
+                let pin_indices = match pin_indices {
+                    Ok(idx) => idx,
+                    Err(_e) => {
+                        // println!("{e}");
+                        continue;
+                    }
+                };
+                let mut pin_locs = Vec::new();
+                for pin_index in pin_indices {
+                    for pin_loc in &logic_block_renderer.pin_locations[pin_index] {
+                        pin_locs.push(*pin_loc + *tile_relative_offset);
+                    }
+                }
+                pin_locs
+            } else {
+                continue;
+            }
+        } else {
+            vec![
+                (get_source_node_loc(src_node, spacing_between_points, crr_sb, &sb_rect.size())
+                    + sb_rect.min.to_vec2())
+                .to_vec2();
+                1
+            ]
+        };
+
+        let sink_node_locs = if sink_node.dir == CRRSwitchDir::IPIN {
+            // TODO: Clean this up.
+            if let Some(pin_name) = &sink_node.target_pin {
+                let pin_indices = pin_mapper.parse_pin_name(pin_name);
+                let pin_indices = match pin_indices {
+                    Ok(idx) => idx,
+                    Err(_e) => {
+                        // println!("{e}");
+                        continue;
+                    }
+                };
+                let mut pin_locs = Vec::new();
+                for pin_index in pin_indices {
+                    for pin_loc in &logic_block_renderer.pin_locations[pin_index] {
+                        pin_locs.push(*pin_loc + *tile_relative_offset);
+                    }
+                }
+                pin_locs
+            } else {
+                continue;
+            }
+        } else {
+            vec![
+                (get_sink_node_loc(sink_node, spacing_between_points, crr_sb, &sb_rect.size())
+                    + sb_rect.min.to_vec2())
+                .to_vec2();
+                1
+            ]
+        };
+
+        for src_node_loc in src_node_locs {
+            for sink_node_loc in &sink_node_locs {
+                lb_connection_shapes.push(egui::Shape::line_segment(
+                    [src_node_loc.to_pos2(), sink_node_loc.to_pos2()],
+                    egui::Stroke::new(1.0, egui::Color32::BLACK),
+                ));
+            }
+        }
+    }
+
+    lb_connection_shapes
 }

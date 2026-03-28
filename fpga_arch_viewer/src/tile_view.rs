@@ -1,12 +1,25 @@
+use egui::ScrollArea;
 use fpga_arch_parser::FPGAArch;
 
+use std::collections::HashMap;
+
 use crate::{
-    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree, viewer::ViewMode,
+    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree,
+    tile_rendering::tile_renderer::build_render_tile, viewer::ViewMode,
 };
 
-#[derive(Default)]
 pub struct TileView {
     pub selected_tile_name: Option<String>,
+    pub tile_zoom: f32,
+}
+
+impl Default for TileView {
+    fn default() -> Self {
+        Self {
+            selected_tile_name: None,
+            tile_zoom: 1.0,
+        }
+    }
 }
 
 impl TileView {
@@ -15,6 +28,7 @@ impl TileView {
         arch: &FPGAArch,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
+        tile_colors: &HashMap<String, egui::Color32>,
         ctx: &egui::Context,
     ) {
         egui::SidePanel::right("tile_view_controls")
@@ -24,7 +38,13 @@ impl TileView {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, complex_block_view_state, next_view_mode, ui);
+            self.render_central_panel(
+                arch,
+                complex_block_view_state,
+                next_view_mode,
+                tile_colors,
+                ui,
+            );
         });
     }
 
@@ -73,12 +93,20 @@ impl TileView {
         arch: &FPGAArch,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
+        tile_colors: &HashMap<String, egui::Color32>,
         ui: &mut egui::Ui,
     ) {
         match &self.selected_tile_name {
             Some(tile_name) => {
                 if let Some(tile) = arch.tiles.iter().find(|t| t.name == *tile_name) {
-                    self.render_tile(tile, complex_block_view_state, next_view_mode, arch, ui);
+                    self.render_tile(
+                        tile,
+                        complex_block_view_state,
+                        next_view_mode,
+                        tile_colors,
+                        arch,
+                        ui,
+                    );
                 } else if common_ui::render_centered_message(
                     ui,
                     "Tile not found",
@@ -106,15 +134,86 @@ impl TileView {
         tile: &fpga_arch_parser::Tile,
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
+        tile_colors: &HashMap<String, egui::Color32>,
         arch: &FPGAArch,
         ui: &mut egui::Ui,
     ) {
+        // Fixed tile visualization panel at the top
+        ui.heading(format!("Tile: {}", tile.name));
+        ui.add_space(5.0);
+
+        // Handle zoom input (Cmd + scroll wheel or pinch gesture)
+        let input = ui.input(|i| {
+            let scroll_delta = i.raw_scroll_delta.y;
+            let zoom_modifier = i.modifiers.command;
+            (scroll_delta, zoom_modifier)
+        });
+        let (scroll_delta, zoom_modifier) = input;
+        if zoom_modifier && scroll_delta != 0.0 {
+            if scroll_delta > 0.0 {
+                self.tile_zoom *= 1.1;
+            } else {
+                self.tile_zoom /= 1.1;
+            }
+        }
+        // Check for pinch gesture (trackpad zoom on macOS)
+        let zoom_delta = ui.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            self.tile_zoom *= zoom_delta;
+        }
+
+        // Fixed region for tile shape and pins visualization
+        ui.allocate_ui(egui::vec2(ui.available_width(), 300.0), |ui| {
+            ScrollArea::both()
+                .id_salt("tile_visualization_scroll")
+                .show(ui, |ui| {
+                    let tile_size =
+                        egui::vec2(250.0 * tile.width as f32, 250.0 * tile.height as f32)
+                            * self.tile_zoom;
+                    let painter_size = egui::vec2(
+                        (tile_size.x * 1.05).max(ui.available_width()),
+                        (tile_size.y * 1.05).max(ui.available_height()),
+                    );
+                    let (response, painter) = ui.allocate_painter(
+                        painter_size,
+                        egui::Sense::click().union(egui::Sense::hover()),
+                    );
+                    let tile_bounding_box =
+                        egui::Rect::from_center_size(response.rect.center(), tile_size);
+                    let color = tile_colors
+                        .get(&tile.name)
+                        .copied()
+                        .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
+                    let tile_renderer = build_render_tile(tile, &tile_bounding_box, &color);
+                    painter.extend(tile_renderer.lb_shapes);
+                    painter.extend(tile_renderer.pin_shapes);
+
+                    // When hovering over a pin, print the name of the pin.
+                    for (pin_index, pin_locations) in tile_renderer.pin_locations.iter().enumerate()
+                    {
+                        let pin_name = &tile.pin_mapper.pin_name_lookup[pin_index];
+                        for pin_location in pin_locations {
+                            let hit_rect = egui::Rect::from_center_size(
+                                pin_location.to_pos2(),
+                                egui::Vec2::ONE * tile_renderer.pin_radius * 3.0,
+                            );
+                            let pin_hit_response = ui.put(hit_rect, egui::Label::new(""));
+                            pin_hit_response.on_hover_ui(|ui| {
+                                ui.label(pin_name);
+                            });
+                        }
+                    }
+                });
+        });
+
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        // Scrollable details section below the visualization
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                ui.heading(format!("Tile: {}", tile.name));
-                ui.add_space(10.0);
-
                 // Tile Info Section
                 ui.group(|ui| {
                     ui.heading("Tile Information");
@@ -239,14 +338,16 @@ impl TileView {
                 ui.add_space(10.0);
 
                 // Hierarchy Tree Section
-                ui.group(|ui| {
-                    ui.heading("Hierarchy Tree");
-                    ui.separator();
-                    egui::ScrollArea::both()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
-                        });
+                ui.allocate_ui(egui::vec2(ui.available_width(), 450.0), |ui| {
+                    ui.group(|ui| {
+                        ui.heading("Hierarchy Tree");
+                        ui.separator();
+                        egui::ScrollArea::both()
+                            .max_height(ui.available_height())
+                            .show(ui, |ui| {
+                                intra_hierarchy_tree::render_hierarchy_tree(ui, arch, tile);
+                            });
+                    });
                 });
             });
     }

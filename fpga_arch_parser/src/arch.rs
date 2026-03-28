@@ -1,3 +1,5 @@
+use crate::tile_pin_mapper::TilePinMapper;
+
 pub struct ModelPort {
     pub name: String,
     pub is_clock: bool,
@@ -94,6 +96,7 @@ pub struct SubTileFC {
     pub fc_overrides: Vec<SubTileFCOverride>,
 }
 
+#[derive(Clone)]
 pub enum PinSide {
     Left,
     Right,
@@ -103,8 +106,8 @@ pub enum PinSide {
 
 pub struct PinLoc {
     pub side: PinSide,
-    pub xoffset: i32,
-    pub yoffset: i32,
+    pub xoffset: usize,
+    pub yoffset: usize,
     pub pin_strings: Vec<String>,
 }
 
@@ -166,6 +169,7 @@ pub struct Tile {
     pub height: i32,
     pub area: Option<f32>,
     pub switchblock_locations: Option<SwitchBlockLocations>,
+    pub pin_mapper: TilePinMapper,
 }
 
 // TODO: pb_type and priority is better served as a trait.

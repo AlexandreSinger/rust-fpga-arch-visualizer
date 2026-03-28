@@ -22,10 +22,12 @@ mod parse_segment_list;
 mod parse_switch_list;
 mod parse_tiles;
 mod parse_timing;
+mod tile_pin_mapper;
 mod verify_noc;
 
 pub use crate::arch::*;
 pub use crate::parse_error::FPGAArchParseError;
+pub use crate::tile_pin_mapper::*;
 
 use crate::parse_complex_block_list::parse_complex_block_list;
 use crate::parse_custom_switch_blocks::parse_switchblocklist;

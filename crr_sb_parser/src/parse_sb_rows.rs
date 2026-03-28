@@ -3,10 +3,29 @@ use std::fs::File;
 use csv::{StringRecord, StringRecordsIter};
 
 use crate::{
-    CRRSBParseError,
+    CRRSBParseError, CRRSwitchDir, CRRSwitchSourcePin,
     crr_sb_des::{CRRSwitchConnection, CRRSwitchConnectionDelay, CRRSwitchSourceNodeInfo},
     parse_common::{parse_crr_lane_num, parse_crr_switch_dir, parse_crr_tap_num},
 };
+
+fn parse_source_pin(
+    source_pin_str: &str,
+    dir: CRRSwitchDir,
+) -> Result<CRRSwitchSourcePin, CRRSBParseError> {
+    match dir {
+        CRRSwitchDir::OPIN => Ok(CRRSwitchSourcePin::Pin {
+            pin_name: source_pin_str.to_string(),
+        }),
+        CRRSwitchDir::IPIN => Err(CRRSBParseError::SBHeaderCellParseError(
+            "Source node cannot have IPIN dir.".to_string(),
+        )),
+        CRRSwitchDir::Left | CRRSwitchDir::Right | CRRSwitchDir::Bottom | CRRSwitchDir::Top => {
+            Ok(CRRSwitchSourcePin::Tap {
+                tap_num: parse_crr_tap_num(source_pin_str)?,
+            })
+        }
+    }
+}
 
 fn parse_source_info(row: &StringRecord) -> Result<CRRSwitchSourceNodeInfo, CRRSBParseError> {
     if row.len() < 4 {
@@ -16,11 +35,13 @@ fn parse_source_info(row: &StringRecord) -> Result<CRRSwitchSourceNodeInfo, CRRS
         )));
     }
 
+    let dir = parse_crr_switch_dir(row[0].trim())?;
+
     Ok(CRRSwitchSourceNodeInfo {
-        dir: parse_crr_switch_dir(row[0].trim())?,
+        dir,
         segment_type: row[1].trim().to_string(),
         lane_num: parse_crr_lane_num(row[2].trim())?,
-        tap_num: parse_crr_tap_num(row[3].trim())?,
+        source_pin: parse_source_pin(row[3].trim(), dir)?,
     })
 }
 

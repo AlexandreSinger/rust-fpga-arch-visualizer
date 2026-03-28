@@ -7,6 +7,7 @@ mod color_scheme;
 mod common_ui;
 mod complex_block_view;
 mod crr_sb_view;
+mod crr_view;
 mod grid;
 mod grid_renderer;
 mod grid_view;
@@ -17,6 +18,7 @@ mod primitive_view;
 mod samples;
 mod settings;
 mod summary_view;
+mod tile_rendering;
 mod tile_view;
 mod viewer;
 

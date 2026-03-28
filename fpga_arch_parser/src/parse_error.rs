@@ -13,4 +13,5 @@ pub enum FPGAArchParseError {
     UnexpectedEndTag(String, TextPosition),
     AttributeParseError(String, TextPosition),
     UnexpectedEndOfDocument(String),
+    PinParsingError(String),
 }

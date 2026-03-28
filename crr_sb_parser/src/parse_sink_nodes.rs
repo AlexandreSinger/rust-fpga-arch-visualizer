@@ -39,6 +39,7 @@ pub fn parse_sink_nodes(
     let segment_type_row = parse_header_row(csv_records, "Segment type")?;
     let fan_in_row = parse_header_row(csv_records, "Fan-in")?;
     let lane_num_row = parse_header_row(csv_records, "lane-num")?;
+    let target_pin_row = parse_header_row(csv_records, "Target pin")?;
 
     // Check that all rows have the same length. This protects the code below
     // from throwing a panic.
@@ -46,6 +47,7 @@ pub fn parse_sink_nodes(
     if segment_type_row.len() != num_cols
         || fan_in_row.len() != num_cols
         || lane_num_row.len() != num_cols
+        || target_pin_row.len() != num_cols
     {
         return Err(CRRSBParseError::SBHeaderCellParseError(
             "Header rows have inconsistent column counts.".to_string(),
@@ -59,14 +61,20 @@ pub fn parse_sink_nodes(
         ));
     }
     for i in 0..4 {
-        if !dir_row[i].trim().is_empty()
-            || !segment_type_row[i].trim().is_empty()
-            || !fan_in_row[i].trim().is_empty()
-            || !lane_num_row[i].trim().is_empty()
+        let dir_val = dir_row[i].trim();
+        let segment_val = segment_type_row[i].trim();
+        let fan_in_val = fan_in_row[i].trim();
+        let lane_num_val = lane_num_row[i].trim();
+        let target_pin_val = target_pin_row[i].trim();
+        if !dir_val.is_empty()
+            || !segment_val.is_empty()
+            || !fan_in_val.is_empty()
+            || !lane_num_val.is_empty()
+            || !target_pin_val.is_empty()
         {
-            return Err(CRRSBParseError::SBHeaderCellParseError(
-                "The first 4 cells of the header rows are expected to be empty.".to_string(),
-            ));
+            return Err(CRRSBParseError::SBHeaderCellParseError(format!(
+                "The first 4 cells of the header rows are expected to be empty. Found a column: |{dir_val};{segment_val};{fan_in_val};{lane_num_val};{target_pin_val}|."
+            )));
         }
     }
 
@@ -77,6 +85,10 @@ pub fn parse_sink_nodes(
             segment_type: segment_type_row[i].trim().to_string(),
             fan_in: parse_fan_in_cell(fan_in_row[i].trim())?,
             lane_num: parse_crr_lane_num(lane_num_row[i].trim())?,
+            target_pin: match target_pin_row[i].trim() {
+                "" => None,
+                s => Some(s.to_string()),
+            },
         });
     }
 

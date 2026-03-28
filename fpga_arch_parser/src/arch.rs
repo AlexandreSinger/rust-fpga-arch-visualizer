@@ -1,4 +1,4 @@
-use crate::tile_pin_mapper::TilePinMapper;
+use crate::{complex_block_graph::ComplexBlockGraph, tile_pin_mapper::TilePinMapper};
 
 pub struct ModelPort {
     pub name: String,
@@ -607,6 +607,7 @@ pub struct PBMode {
     pub metadata: Option<Vec<Metadata>>,
 }
 
+#[derive(Clone)]
 pub enum PBTypeClass {
     None,
     Lut,
@@ -658,5 +659,6 @@ pub struct FPGAArch {
     pub custom_switch_blocks: Vec<CustomSwitchBlock>,
     pub direct_list: Vec<GlobalDirect>,
     pub complex_block_list: Vec<PBType>,
+    pub complex_block_graphs: Vec<ComplexBlockGraph>,
     pub noc: Option<NoCInfo>,
 }

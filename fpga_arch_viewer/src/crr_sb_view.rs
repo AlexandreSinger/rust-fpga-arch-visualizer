@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
 use crr_sb_parser::{
@@ -9,11 +8,13 @@ use fpga_arch_parser::{FPGAArch, Layout, TilePinMapper};
 
 use crate::{
     color_scheme,
-    crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps, parse_sb_maps_yaml_from_string},
+    crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps},
     grid::{DeviceGrid, GridCell},
     grid_view::get_layout_name,
     tile_rendering::tile_renderer::{TileRenderer, build_render_tile},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::crr_view::parse_sb_maps_yaml::parse_sb_maps_yaml_from_string;
 
 pub struct CRRViewState {
     show_segment_connections: bool,
@@ -116,7 +117,7 @@ impl CRRSBView {
                 .insert(unique_file.clone(), (crr_sb_info, crr_sb));
         }
         self.crr_view_state.selected_dir =
-            Some(dir_path.into_os_string().into_string().expect("AHHHH!"));
+            Some(dir_path.into_os_string().to_string_lossy().into_owned());
     }
 
     pub fn render(
@@ -712,7 +713,7 @@ fn get_crr_switch_block(
                 &chan_y_lanes[source_node_lane_id]
             }
             CRRSwitchDir::IPIN | CRRSwitchDir::OPIN => {
-                panic!("TODO: Handle this.")
+                return Err("Source node has unexpected direction IPIN/OPIN.");
             }
         };
         if source_node_lane.segment_len != get_segment_len(&source_node.segment_type)? {
@@ -741,8 +742,7 @@ fn get_source_node_loc(
     crr_sb: &CRRSwitchBlock,
     sb_size: &egui::Vec2,
 ) -> egui::Pos2 {
-    // TODO: Catch for underflow!
-    let lane_num = source_node.lane_num - 1;
+    let lane_num = source_node.lane_num.saturating_sub(1);
     let tap_num = match source_node.source_pin {
         CRRSwitchSourcePin::Tap { tap_num } => tap_num,
         _ => 1,
@@ -765,8 +765,7 @@ fn get_sink_node_loc(
     crr_sb: &CRRSwitchBlock,
     sb_size: &egui::Vec2,
 ) -> egui::Pos2 {
-    // TODO: Catch for underflow!
-    let lane_num = sink_node.lane_num - 1;
+    let lane_num = sink_node.lane_num.saturating_sub(1);
     let ptc_offset = 0;
     let ptc_num = match sink_node.dir {
         // TODO: Verify that the lane is allowed.

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use yaml_rust::YamlLoader;
+use yaml_rust2::YamlLoader;
 
 pub struct SBMaps {
     patterns: Vec<SBMapPattern>,
@@ -124,13 +124,13 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
             };
             let pattern = parse_sb_pattern(sb_pattern_string)?;
             let sb_template = match value {
-                yaml_rust::Yaml::String(str) => {
+                yaml_rust2::Yaml::String(str) => {
                     unique_file_names.insert(str.clone());
                     SBMapTemplate::File {
                         file_name: str.clone(),
                     }
                 }
-                yaml_rust::Yaml::Null => SBMapTemplate::Null,
+                yaml_rust2::Yaml::Null => SBMapTemplate::Null,
                 _ => return Err("SB template expected to be a string or null.".to_string()),
             };
             patterns.push(SBMapPattern {

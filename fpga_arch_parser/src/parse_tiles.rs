@@ -1306,6 +1306,12 @@ fn parse_tile<R: BufRead>(
     // If the width or height is not provided, they are assumed to be 1.
     let width = width.unwrap_or(1);
     let height = height.unwrap_or(1);
+    if width <= 0 || height <= 0 {
+        return Err(FPGAArchParseError::AttributeParseError(
+            format!("Tile dimensions must be positive: width={}, height={}", width, height),
+            parser.position(),
+        ));
+    }
 
     let mut ports: Vec<Port> = Vec::new();
     let mut sub_tiles: Vec<SubTile> = Vec::new();

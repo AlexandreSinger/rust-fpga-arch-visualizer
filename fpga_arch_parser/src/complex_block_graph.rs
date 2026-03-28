@@ -75,10 +75,10 @@ pub struct ComplexBlockNet {
 pub struct ComplexBlockGraph {
     pub root_complex_block_node: ComplexBlockNodeId,
 
-    complex_block_nodes: Vec<ComplexBlockNode>,
-    complex_block_modes: Vec<ComplexBlockMode>,
-    complex_block_ports: Vec<ComplexBlockPort>,
-    complex_block_pins: Vec<ComplexBlockPin>,
+    pub complex_block_nodes: Vec<ComplexBlockNode>,
+    pub complex_block_modes: Vec<ComplexBlockMode>,
+    pub complex_block_ports: Vec<ComplexBlockPort>,
+    pub complex_block_pins: Vec<ComplexBlockPin>,
 }
 
 pub fn build_complex_block_graph(root_pb_type: &PBType) -> Result<ComplexBlockGraph, FPGAArchParseError> {

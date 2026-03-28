@@ -1308,7 +1308,10 @@ fn parse_tile<R: BufRead>(
     let height = height.unwrap_or(1);
     if width <= 0 || height <= 0 {
         return Err(FPGAArchParseError::AttributeParseError(
-            format!("Tile dimensions must be positive: width={}, height={}", width, height),
+            format!(
+                "Tile dimensions must be positive: width={}, height={}",
+                width, height
+            ),
             parser.position(),
         ));
     }

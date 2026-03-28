@@ -6,6 +6,8 @@ use crr_sb_parser::{
 };
 use fpga_arch_parser::{FPGAArch, Layout, TilePinMapper};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::crr_view::parse_sb_maps_yaml::parse_sb_maps_yaml_from_string;
 use crate::{
     color_scheme,
     crr_view::parse_sb_maps_yaml::{SBMapTemplate, SBMaps},
@@ -13,8 +15,6 @@ use crate::{
     grid_view::get_layout_name,
     tile_rendering::tile_renderer::{TileRenderer, build_render_tile},
 };
-#[cfg(not(target_arch = "wasm32"))]
-use crate::crr_view::parse_sb_maps_yaml::parse_sb_maps_yaml_from_string;
 
 pub struct CRRViewState {
     show_segment_connections: bool,

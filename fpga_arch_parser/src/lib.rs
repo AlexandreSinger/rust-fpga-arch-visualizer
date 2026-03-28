@@ -29,9 +29,9 @@ mod verify_noc;
 pub use crate::arch::*;
 use crate::complex_block_graph::build_complex_block_graph;
 pub use crate::complex_block_graph::{
-    ComplexBlockGraph, ComplexBlockModeId, ComplexBlockMode, ComplexBlockNet,
-    ComplexBlockNodeId, ComplexBlockNode, ComplexBlockPortId, ComplexBlockPort,
-    ComplexBlockPinId, ComplexBlockPin, ComplexBlockPrimitiveInfo,
+    ComplexBlockGraph, ComplexBlockMode, ComplexBlockModeId, ComplexBlockNet, ComplexBlockNode,
+    ComplexBlockNodeId, ComplexBlockPin, ComplexBlockPinId, ComplexBlockPort, ComplexBlockPortId,
+    ComplexBlockPrimitiveInfo,
 };
 pub use crate::parse_error::FPGAArchParseError;
 pub use crate::tile_pin_mapper::*;

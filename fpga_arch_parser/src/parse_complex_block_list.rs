@@ -283,10 +283,12 @@ fn parse_interconnect<R: BufRead>(
         "direct" => InterconnectType::Direct,
         "mux" => InterconnectType::Mux,
         "complete" => InterconnectType::Complete,
-        _ => return Err(FPGAArchParseError::InvalidTag(
-            format!("Unknown interconnect tag: {name}"),
-            parser.position(),
-        )),
+        _ => {
+            return Err(FPGAArchParseError::InvalidTag(
+                format!("Unknown interconnect tag: {name}"),
+                parser.position(),
+            ));
+        }
     };
 
     Ok(Interconnect {

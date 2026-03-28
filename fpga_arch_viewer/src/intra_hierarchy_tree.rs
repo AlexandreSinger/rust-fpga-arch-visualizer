@@ -40,8 +40,12 @@ fn render_interconnects(ui: &mut egui::Ui, interconnects: &[fpga_arch_parser::In
             fpga_arch_parser::InterconnectType::Mux => "Mux",
             fpga_arch_parser::InterconnectType::Complete => "Complete",
         };
-        let (name, input, output, pack_patterns) =
-            (&inter.name, &inter.input, &inter.output, &inter.pack_patterns);
+        let (name, input, output, pack_patterns) = (
+            &inter.name,
+            &inter.input,
+            &inter.output,
+            &inter.pack_patterns,
+        );
         ui.horizontal(|ui| {
             ui.label(format!("{}: {} ({} -> {})", kind, name, input, output));
             if !pack_patterns.is_empty() {

@@ -509,10 +509,12 @@ fn measure_pb_type(
     let max_pins = total_input_pins.max(total_output_pins) as f32;
     let min_port_height = (max_pins + 1.0) * (MIN_PIN_SPACING * zoom);
 
-    let has_complete_interconnect = pb_type
-        .interconnects
-        .iter()
-        .any(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Complete));
+    let has_complete_interconnect = pb_type.interconnects.iter().any(|i| {
+        matches!(
+            i.interconnect_type,
+            fpga_arch_parser::InterconnectType::Complete
+        )
+    });
 
     let is_clock_complete = pb_type
         .interconnects
@@ -723,7 +725,10 @@ fn is_clock_complete_interconnect(
     current_pb: &PBType,
     children: &[PBType],
 ) -> bool {
-    if matches!(interconnect.interconnect_type, fpga_arch_parser::InterconnectType::Complete) {
+    if matches!(
+        interconnect.interconnect_type,
+        fpga_arch_parser::InterconnectType::Complete
+    ) {
         // Expand port lists to get individual port references
         let raw_inputs = expand_port_list(&interconnect.input);
         let raw_outputs = expand_port_list(&interconnect.output);
@@ -912,10 +917,12 @@ fn draw_pb_type(
     let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
-    let has_complete_interconnect = pb_type
-        .interconnects
-        .iter()
-        .any(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Complete));
+    let has_complete_interconnect = pb_type.interconnects.iter().any(|i| {
+        matches!(
+            i.interconnect_type,
+            fpga_arch_parser::InterconnectType::Complete
+        )
+    });
     let _is_clock_complete = pb_type
         .interconnects
         .iter()

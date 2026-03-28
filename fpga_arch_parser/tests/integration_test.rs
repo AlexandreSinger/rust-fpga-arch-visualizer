@@ -1,11 +1,10 @@
 use std::path::{PathBuf, absolute};
 
 use fpga_arch_parser::{
-    ChanWDist, ComplexBlockGraph, ComplexBlockModeId, ComplexBlockNode, ComplexBlockNodeId,
-    ComplexBlockPort, ComplexBlockPortId, CustomSwitchBlockLocation, CustomSwitchBlockType,
-    FPGAArchParseError, GridLocation, Layout, PBTypeClass, Port, SBType, SegmentType,
-    SubTileIOFC, SubTilePinLocations, SwitchBlockLocationType, SwitchBlockLocationsPattern,
-    SwitchBufSize, SwitchType, TileSitePinMapping,
+    ChanWDist, CustomSwitchBlockLocation, CustomSwitchBlockType, FPGAArchParseError, GridLocation,
+    Layout, PBTypeClass, Port, SBType, SegmentType, SubTileIOFC, SubTilePinLocations,
+    SwitchBlockLocationType, SwitchBlockLocationsPattern, SwitchBufSize, SwitchType,
+    TileSitePinMapping,
 };
 
 #[test]
@@ -764,7 +763,10 @@ fn test_k4_n4_90nm_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
         assert_eq!(lut4.clock_ports.len(), 0);
         assert_eq!(g.complex_block_ports[lut4.input_ports[0]].pins.len(), 4);
         assert_eq!(g.complex_block_ports[lut4.output_ports[0]].pins.len(), 1);
-        let lut4_info = lut4.primitive_info.as_ref().expect("lut4 must have primitive_info");
+        let lut4_info = lut4
+            .primitive_info
+            .as_ref()
+            .expect("lut4 must have primitive_info");
         assert_eq!(lut4_info.blif_model, ".names");
         assert!(matches!(lut4_info.class, PBTypeClass::Lut));
 
@@ -777,7 +779,10 @@ fn test_k4_n4_90nm_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
         assert_eq!(g.complex_block_ports[ff.input_ports[0]].pins.len(), 1);
         assert_eq!(g.complex_block_ports[ff.output_ports[0]].pins.len(), 1);
         assert_eq!(g.complex_block_ports[ff.clock_ports[0]].pins.len(), 1);
-        let ff_info = ff.primitive_info.as_ref().expect("ff must have primitive_info");
+        let ff_info = ff
+            .primitive_info
+            .as_ref()
+            .expect("ff must have primitive_info");
         assert_eq!(ff_info.blif_model, ".latch");
         assert!(matches!(ff_info.class, PBTypeClass::FlipFlop));
 
@@ -818,11 +823,17 @@ fn test_k4_n4_90nm_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
     ));
     assert_eq!(crossbar.input_ports.len(), 2);
     // input_0 mirrors clb.I (10 pins), input_1 mirrors fle[3:0].out (4 pins).
-    assert_eq!(g.complex_block_ports[crossbar.input_ports[0]].pins.len(), 10);
+    assert_eq!(
+        g.complex_block_ports[crossbar.input_ports[0]].pins.len(),
+        10
+    );
     assert_eq!(g.complex_block_ports[crossbar.input_ports[1]].pins.len(), 4);
     // output mirrors fle[3:0].in (4 fle × 4 pins = 16 pins).
     assert_eq!(crossbar.output_ports.len(), 1);
-    assert_eq!(g.complex_block_ports[crossbar.output_ports[0]].pins.len(), 16);
+    assert_eq!(
+        g.complex_block_ports[crossbar.output_ports[0]].pins.len(),
+        16
+    );
 
     // clks: complete, 1 input group (clb.clk), output fle[3:0].clk.
     let clks = &g.complex_block_nodes[clb_mode.children_complex_blocks[5]];
@@ -846,7 +857,10 @@ fn test_k4_n4_90nm_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
     assert_eq!(clbouts1.input_ports.len(), 1);
     assert_eq!(g.complex_block_ports[clbouts1.input_ports[0]].pins.len(), 4);
     assert_eq!(clbouts1.output_ports.len(), 1);
-    assert_eq!(g.complex_block_ports[clbouts1.output_ports[0]].pins.len(), 4);
+    assert_eq!(
+        g.complex_block_ports[clbouts1.output_ports[0]].pins.len(),
+        4
+    );
 
     // --- Net counts ---
     // crossbar: 10 + 4 input-side nets + 16 output-side nets = 30.

@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
@@ -81,7 +80,9 @@ pub struct ComplexBlockGraph {
     pub complex_block_pins: Vec<ComplexBlockPin>,
 }
 
-pub fn build_complex_block_graph(root_pb_type: &PBType) -> Result<ComplexBlockGraph, FPGAArchParseError> {
+pub fn build_complex_block_graph(
+    root_pb_type: &PBType,
+) -> Result<ComplexBlockGraph, FPGAArchParseError> {
     // Traverse the pb-type heirarchy using a child-first-order traversal, building the children complex blocks first
     // and then constructing their parents.
     let mut nodes: Vec<ComplexBlockNode> = Vec::new();
@@ -89,7 +90,14 @@ pub fn build_complex_block_graph(root_pb_type: &PBType) -> Result<ComplexBlockGr
     let mut ports: Vec<ComplexBlockPort> = Vec::new();
     let mut pins: Vec<ComplexBlockPin> = Vec::new();
 
-    let root_id = add_pb_type_recursive(root_pb_type, None, &mut nodes, &mut modes, &mut ports, &mut pins)?;
+    let root_id = add_pb_type_recursive(
+        root_pb_type,
+        None,
+        &mut nodes,
+        &mut modes,
+        &mut ports,
+        &mut pins,
+    )?;
 
     Ok(ComplexBlockGraph {
         root_complex_block_node: root_id,
@@ -123,48 +131,69 @@ fn add_pb_type_recursive(
     // Build ports and pins for this node.
     for port in &pb_type.ports {
         let (port_name, num_pins) = match port {
-            Port::Input(p)  => (p.name.clone(), p.num_pins),
+            Port::Input(p) => (p.name.clone(), p.num_pins),
             Port::Output(p) => (p.name.clone(), p.num_pins),
-            Port::Clock(p)  => (p.name.clone(), p.num_pins),
+            Port::Clock(p) => (p.name.clone(), p.num_pins),
         };
         let port_id = ComplexBlockPortId(ports.len());
-        let pin_ids: Vec<ComplexBlockPinId> = (0..num_pins as usize).map(|_| {
-            let pin_id = ComplexBlockPinId(pins.len());
-            pins.push(ComplexBlockPin { parent_port: port_id });
-            pin_id
-        }).collect();
-        ports.push(ComplexBlockPort { name: port_name, parent_complex_block: node_id, pins: pin_ids });
+        let pin_ids: Vec<ComplexBlockPinId> = (0..num_pins as usize)
+            .map(|_| {
+                let pin_id = ComplexBlockPinId(pins.len());
+                pins.push(ComplexBlockPin {
+                    parent_port: port_id,
+                });
+                pin_id
+            })
+            .collect();
+        ports.push(ComplexBlockPort {
+            name: port_name,
+            parent_complex_block: node_id,
+            pins: pin_ids,
+        });
         match port {
-            Port::Input(_)  => nodes[node_id].input_ports.push(port_id),
+            Port::Input(_) => nodes[node_id].input_ports.push(port_id),
             Port::Output(_) => nodes[node_id].output_ports.push(port_id),
-            Port::Clock(_)  => nodes[node_id].clock_ports.push(port_id),
+            Port::Clock(_) => nodes[node_id].clock_ports.push(port_id),
         }
     }
 
     // Collect (mode_id, child pb_types, interconnects) so we can build modes child-first.
     // A pb_type has either explicit modes or direct pb_type children (implicit default mode).
-    let mode_sources: Vec<(ComplexBlockModeId, &[PBType], &[Interconnect])> = if !pb_type.modes.is_empty() {
-        pb_type.modes.iter().map(|mode| {
+    let mode_sources: Vec<(ComplexBlockModeId, &[PBType], &[Interconnect])> =
+        if !pb_type.modes.is_empty() {
+            pb_type
+                .modes
+                .iter()
+                .map(|mode| {
+                    let mode_id = ComplexBlockModeId(modes.len());
+                    modes.push(ComplexBlockMode {
+                        parent_complex_block: node_id,
+                        children_complex_blocks: Vec::new(),
+                        interconnect: Vec::new(),
+                    });
+                    (
+                        mode_id,
+                        mode.pb_types.as_slice(),
+                        mode.interconnects.as_slice(),
+                    )
+                })
+                .collect()
+        } else if !pb_type.pb_types.is_empty() {
+            // Implicit single default mode for pb_types with direct children but no named modes.
             let mode_id = ComplexBlockModeId(modes.len());
             modes.push(ComplexBlockMode {
                 parent_complex_block: node_id,
                 children_complex_blocks: Vec::new(),
                 interconnect: Vec::new(),
             });
-            (mode_id, mode.pb_types.as_slice(), mode.interconnects.as_slice())
-        }).collect()
-    } else if !pb_type.pb_types.is_empty() {
-        // Implicit single default mode for pb_types with direct children but no named modes.
-        let mode_id = ComplexBlockModeId(modes.len());
-        modes.push(ComplexBlockMode {
-            parent_complex_block: node_id,
-            children_complex_blocks: Vec::new(),
-            interconnect: Vec::new(),
-        });
-        vec![(mode_id, pb_type.pb_types.as_slice(), pb_type.interconnects.as_slice())]
-    } else {
-        Vec::new()
-    };
+            vec![(
+                mode_id,
+                pb_type.pb_types.as_slice(),
+                pb_type.interconnects.as_slice(),
+            )]
+        } else {
+            Vec::new()
+        };
 
     // Recurse into children and fill in each mode's children list.
     // Each child pb_type is instantiated num_pb times, producing independent nodes.
@@ -173,9 +202,13 @@ fn add_pb_type_recursive(
         let mut children_by_name: HashMap<String, Vec<ComplexBlockNodeId>> = HashMap::new();
         for child in children {
             for _ in 0..child.num_pb as usize {
-                let child_id = add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins)?;
+                let child_id =
+                    add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins)?;
                 child_ids.push(child_id);
-                children_by_name.entry(child.name.clone()).or_default().push(child_id);
+                children_by_name
+                    .entry(child.name.clone())
+                    .or_default()
+                    .push(child_id);
             }
         }
         let mut mode_nets: Vec<ComplexBlockNet> = Vec::new();
@@ -198,12 +231,14 @@ fn add_pb_type_recursive(
         nodes[node_id].modes.push(mode_id);
     }
 
-    nodes[node_id].primitive_info = pb_type.blif_model.as_ref().map(|blif_model| {
-        ComplexBlockPrimitiveInfo {
-            blif_model: blif_model.clone(),
-            class: pb_type.class.clone(),
-        }
-    });
+    nodes[node_id].primitive_info =
+        pb_type
+            .blif_model
+            .as_ref()
+            .map(|blif_model| ComplexBlockPrimitiveInfo {
+                blif_model: blif_model.clone(),
+                class: pb_type.class.clone(),
+            });
 
     Ok(node_id)
 }
@@ -230,8 +265,15 @@ fn parse_name_with_range(s: &str) -> (&str, Option<(usize, usize)>) {
     }
 }
 
+type PortRef<'a> = (
+    &'a str,
+    Option<(usize, usize)>,
+    &'a str,
+    Option<(usize, usize)>,
+);
+
 // Parses "block[range].port[range]" into (block_name, inst_range, port_name, bit_range).
-fn parse_port_ref(s: &str) -> (&str, Option<(usize, usize)>, &str, Option<(usize, usize)>) {
+fn parse_port_ref(s: &str) -> PortRef<'_> {
     let dot = s.find('.').unwrap_or(s.len());
     let (block_name, inst_range) = parse_name_with_range(&s[..dot]);
     let (port_name, bit_range) = if dot < s.len() {
@@ -265,10 +307,12 @@ fn resolve_pins_for_ref(
         vec![parent_node_id]
     } else {
         match children_by_name.get(block_name) {
-            None => return Err(FPGAArchParseError::PinParsingError(format!(
-                "Unknown block '{}' in interconnect reference '{}'",
-                block_name, ref_str
-            ))),
+            None => {
+                return Err(FPGAArchParseError::PinParsingError(format!(
+                    "Unknown block '{}' in interconnect reference '{}'",
+                    block_name, ref_str
+                )));
+            }
             Some(instances) => match inst_range {
                 None => instances.clone(),
                 Some((a, b)) => {
@@ -278,13 +322,21 @@ fn resolve_pins_for_ref(
                     if hi >= instances.len() {
                         return Err(FPGAArchParseError::PinParsingError(format!(
                             "Instance index {} out of range for block '{}' (has {} instance(s)) in reference '{}'",
-                            hi, block_name, instances.len(), ref_str
+                            hi,
+                            block_name,
+                            instances.len(),
+                            ref_str
                         )));
                     }
                     if a >= b {
-                        (lo..=hi).rev().filter_map(|i| instances.get(i).copied()).collect()
+                        (lo..=hi)
+                            .rev()
+                            .filter_map(|i| instances.get(i).copied())
+                            .collect()
                     } else {
-                        (lo..=hi).filter_map(|i| instances.get(i).copied()).collect()
+                        (lo..=hi)
+                            .filter_map(|i| instances.get(i).copied())
+                            .collect()
                     }
                 }
             },
@@ -296,15 +348,19 @@ fn resolve_pins_for_ref(
     let mut result = Vec::new();
     for nid in node_ids {
         let node = &nodes[nid.0];
-        let port_id = node.input_ports.iter()
+        let port_id = node
+            .input_ports
+            .iter()
             .chain(node.output_ports.iter())
             .chain(node.clock_ports.iter())
             .find(|&&pid| ports[pid.0].name == port_name)
             .copied();
-        let pid = port_id.ok_or_else(|| FPGAArchParseError::PinParsingError(format!(
-            "Port '{}' not found on block '{}' in reference '{}'",
-            port_name, block_name, ref_str
-        )))?;
+        let pid = port_id.ok_or_else(|| {
+            FPGAArchParseError::PinParsingError(format!(
+                "Port '{}' not found on block '{}' in reference '{}'",
+                port_name, block_name, ref_str
+            ))
+        })?;
         let port_pins = &ports[pid.0].pins;
         match bit_range {
             None => result.extend_from_slice(port_pins),
@@ -314,17 +370,17 @@ fn resolve_pins_for_ref(
                 if hi >= port_pins.len() {
                     return Err(FPGAArchParseError::PinParsingError(format!(
                         "Bit index {} out of range for port '{}' on block '{}' (has {} pin(s)) in reference '{}'",
-                        hi, port_name, block_name, port_pins.len(), ref_str
+                        hi,
+                        port_name,
+                        block_name,
+                        port_pins.len(),
+                        ref_str
                     )));
                 }
                 if a >= b {
-                    for i in (lo..=hi).rev() {
-                        result.push(port_pins[i]);
-                    }
+                    result.extend(port_pins[lo..=hi].iter().rev().copied());
                 } else {
-                    for i in lo..=hi {
-                        result.push(port_pins[i]);
-                    }
+                    result.extend_from_slice(&port_pins[lo..=hi]);
                 }
             }
         }
@@ -343,8 +399,8 @@ fn build_interconnect_node_and_nets(
     pins: &mut Vec<ComplexBlockPin>,
 ) -> Result<(ComplexBlockNodeId, Vec<ComplexBlockNet>), FPGAArchParseError> {
     let class = match interconnect.interconnect_type {
-        InterconnectType::Direct   => PBTypeClass::InterconnectDirect,
-        InterconnectType::Mux      => PBTypeClass::InterconnectMux,
+        InterconnectType::Direct => PBTypeClass::InterconnectDirect,
+        InterconnectType::Mux => PBTypeClass::InterconnectMux,
         InterconnectType::Complete => PBTypeClass::InterconnectComplete,
     };
 
@@ -355,13 +411,23 @@ fn build_interconnect_node_and_nets(
     let mut input_pin_groups: Vec<Vec<ComplexBlockPinId>> = Vec::new();
     for &group in &input_groups {
         input_pin_groups.push(resolve_pins_for_ref(
-            group, parent_pb_name, parent_node_id, children_by_name, nodes, ports,
+            group,
+            parent_pb_name,
+            parent_node_id,
+            children_by_name,
+            nodes,
+            ports,
         )?);
     }
     let mut output_pins: Vec<ComplexBlockPinId> = Vec::new();
     for token in interconnect.output.split_whitespace() {
         output_pins.extend(resolve_pins_for_ref(
-            token, parent_pb_name, parent_node_id, children_by_name, nodes, ports,
+            token,
+            parent_pb_name,
+            parent_node_id,
+            children_by_name,
+            nodes,
+            ports,
         )?);
     }
 
@@ -387,16 +453,24 @@ fn build_interconnect_node_and_nets(
         let mut port_pin_ids = Vec::new();
         for source_pin in source_pins {
             let inter_pin = ComplexBlockPinId(pins.len());
-            pins.push(ComplexBlockPin { parent_port: port_id });
+            pins.push(ComplexBlockPin {
+                parent_port: port_id,
+            });
             port_pin_ids.push(inter_pin);
-            nets.push(ComplexBlockNet { pins: vec![source_pin, inter_pin] });
+            nets.push(ComplexBlockNet {
+                pins: vec![source_pin, inter_pin],
+            });
         }
         let port_name = if num_input_groups == 1 {
             "input".to_string()
         } else {
             format!("input_{}", group_idx)
         };
-        ports.push(ComplexBlockPort { name: port_name, parent_complex_block: node_id, pins: port_pin_ids });
+        ports.push(ComplexBlockPort {
+            name: port_name,
+            parent_complex_block: node_id,
+            pins: port_pin_ids,
+        });
         input_port_ids.push(port_id);
     }
 
@@ -405,9 +479,13 @@ fn build_interconnect_node_and_nets(
     let mut output_pin_ids = Vec::new();
     for sink_pin in output_pins {
         let inter_pin = ComplexBlockPinId(pins.len());
-        pins.push(ComplexBlockPin { parent_port: output_port_id });
+        pins.push(ComplexBlockPin {
+            parent_port: output_port_id,
+        });
         output_pin_ids.push(inter_pin);
-        nets.push(ComplexBlockNet { pins: vec![inter_pin, sink_pin] });
+        nets.push(ComplexBlockNet {
+            pins: vec![inter_pin, sink_pin],
+        });
     }
     ports.push(ComplexBlockPort {
         name: "output".to_string(),

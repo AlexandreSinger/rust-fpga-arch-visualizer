@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+#[cfg(not(target_arch = "wasm32"))]
 use yaml_rust2::YamlLoader;
 
 pub struct SBMaps {
@@ -8,6 +9,7 @@ pub struct SBMaps {
     unique_file_names: HashSet<String>,
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[derive(Debug, PartialEq)]
 pub enum SBPatternVal {
     Constant {
@@ -29,6 +31,7 @@ pub struct SBPattern {
     y_pattern: SBPatternVal,
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[derive(Debug, PartialEq)]
 pub enum SBMapTemplate {
     File { file_name: String },
@@ -84,6 +87,7 @@ fn check_for_val_pattern_match(pattern: &SBPatternVal, v: usize) -> bool {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, String> {
     let docs = YamlLoader::load_from_str(sb_maps_str);
     let docs = match docs {
@@ -148,6 +152,7 @@ pub fn parse_sb_maps_yaml_from_string(sb_maps_str: &str) -> Result<SBMaps, Strin
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_sb_pattern(sb_pattern_string: &str) -> Result<SBPattern, String> {
     if !sb_pattern_string.starts_with("SB_") {
         return Err(format!(
@@ -181,6 +186,7 @@ fn parse_sb_pattern(sb_pattern_string: &str) -> Result<SBPattern, String> {
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
     // If this looks like a wildcard, it is a wildcard.
     // TODO: Talk to Amin about the raw wildcard being supported.
@@ -253,7 +259,7 @@ fn parse_sb_pattern_val(pattern_str: &str) -> Result<SBPatternVal, String> {
     Err(format!("Could not parse SB pattern: {}", pattern_str))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

@@ -683,6 +683,151 @@ fn mesh_noc_topology() -> Result<(), FPGAArchParseError> {
 }
 
 #[test]
+fn test_k6_n10_sparse_crossbar_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
+    let input_xml_relative = PathBuf::from("tests/k6_N10_sparse_crossbar_40nm.xml");
+    let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");
+    let res = fpga_arch_parser::parse(&input_xml)?;
+
+    assert_eq!(res.complex_block_graphs.len(), 2);
+    let g = &res.complex_block_graphs[1];
+
+    // --- Root: clb ---
+    let root_id = g.root_complex_block_node;
+    let root = &g.complex_block_nodes[root_id];
+    assert_eq!(root.name, "clb");
+    assert!(root.parent_mode.is_none());
+    assert!(root.primitive_info.is_none());
+
+    // Ports: I0[7], I1[7], I2[7], I3[7], I4[7], I5[5], O[10], clk[1].
+    assert_eq!(root.input_ports.len(), 6);
+    assert_eq!(root.output_ports.len(), 1);
+    assert_eq!(root.clock_ports.len(), 1);
+    let input_pin_counts = [7usize, 7, 7, 7, 7, 5];
+    let input_names = ["I0", "I1", "I2", "I3", "I4", "I5"];
+    for (idx, (expected_name, expected_pins)) in
+        input_names.iter().zip(input_pin_counts.iter()).enumerate()
+    {
+        let port = &g.complex_block_ports[root.input_ports[idx]];
+        assert_eq!(port.name, *expected_name);
+        assert_eq!(port.pins.len(), *expected_pins);
+    }
+    let port_o = &g.complex_block_ports[root.output_ports[0]];
+    assert_eq!(port_o.name, "O");
+    assert_eq!(port_o.pins.len(), 10);
+    let port_clk = &g.complex_block_ports[root.clock_ports[0]];
+    assert_eq!(port_clk.name, "clk");
+    assert_eq!(port_clk.pins.len(), 1);
+
+    // clb has one implicit mode.
+    assert_eq!(root.modes.len(), 1);
+    let clb_mode = &g.complex_block_modes[root.modes[0]];
+
+    // Mode children: 10 fle instances + 9 interconnects.
+    assert_eq!(clb_mode.children_complex_blocks.len(), 19);
+
+    // --- fle instances [0..9] ---
+    for i in 0..10 {
+        let fle = &g.complex_block_nodes[clb_mode.children_complex_blocks[i]];
+        assert_eq!(fle.name, "fle");
+        assert_eq!(fle.input_ports.len(), 1);
+        assert_eq!(fle.output_ports.len(), 1);
+        assert_eq!(fle.clock_ports.len(), 1);
+        assert_eq!(g.complex_block_ports[fle.input_ports[0]].pins.len(), 6);
+        assert_eq!(g.complex_block_ports[fle.output_ports[0]].pins.len(), 1);
+        assert_eq!(g.complex_block_ports[fle.clock_ports[0]].pins.len(), 1);
+
+        // fle has one explicit mode: n1_lut6.
+        assert_eq!(fle.modes.len(), 1);
+        let fle_mode = &g.complex_block_modes[fle.modes[0]];
+
+        // 1 ble6 + 3 direct interconnects.
+        assert_eq!(fle_mode.children_complex_blocks.len(), 4);
+
+        let ble6 = &g.complex_block_nodes[fle_mode.children_complex_blocks[0]];
+        assert_eq!(ble6.name, "ble6");
+        assert_eq!(ble6.modes.len(), 1);
+        let ble6_mode = &g.complex_block_modes[ble6.modes[0]];
+
+        // lut6 + ff + 4 interconnects (direct1..3, mux1).
+        assert_eq!(ble6_mode.children_complex_blocks.len(), 6);
+
+        let lut6 = &g.complex_block_nodes[ble6_mode.children_complex_blocks[0]];
+        assert_eq!(lut6.name, "lut6");
+        assert_eq!(g.complex_block_ports[lut6.input_ports[0]].pins.len(), 6);
+        let lut6_info = lut6.primitive_info.as_ref().expect("lut6 must have primitive_info");
+        assert_eq!(lut6_info.blif_model, ".names");
+        assert!(matches!(lut6_info.class, PBTypeClass::Lut));
+
+        let ff = &g.complex_block_nodes[ble6_mode.children_complex_blocks[1]];
+        assert_eq!(ff.name, "ff");
+        let ff_info = ff.primitive_info.as_ref().expect("ff must have primitive_info");
+        assert_eq!(ff_info.blif_model, ".latch");
+        assert!(matches!(ff_info.class, PBTypeClass::FlipFlop));
+    }
+
+    // --- clb-level interconnects (children [10..18]) ---
+    // crossbar: complete, 1 input group = fle[9:0].out (10 pins), output = fle[9:0].in (60 pins).
+    let crossbar = &g.complex_block_nodes[clb_mode.children_complex_blocks[10]];
+    assert_eq!(crossbar.name, "crossbar");
+    assert!(matches!(
+        crossbar.primitive_info.as_ref().unwrap().class,
+        PBTypeClass::InterconnectComplete
+    ));
+    assert_eq!(crossbar.input_ports.len(), 1);
+    assert_eq!(g.complex_block_ports[crossbar.input_ports[0]].pins.len(), 10);
+    assert_eq!(crossbar.output_ports.len(), 1);
+    assert_eq!(g.complex_block_ports[crossbar.output_ports[0]].pins.len(), 60);
+
+    // pin0_mux..pin4_mux: each driven by a 7-pin CLB input, fanning out to bit [x:x] of fle[9:0].in (10 pins).
+    let pin_mux_names = ["pin0_mux", "pin1_mux", "pin2_mux", "pin3_mux", "pin4_mux"];
+    for (offset, name) in pin_mux_names.iter().enumerate() {
+        let mux = &g.complex_block_nodes[clb_mode.children_complex_blocks[11 + offset]];
+        assert_eq!(mux.name, *name);
+        assert!(matches!(
+            mux.primitive_info.as_ref().unwrap().class,
+            PBTypeClass::InterconnectComplete
+        ));
+        assert_eq!(mux.input_ports.len(), 1);
+        assert_eq!(g.complex_block_ports[mux.input_ports[0]].pins.len(), 7);
+        assert_eq!(mux.output_ports.len(), 1);
+        assert_eq!(g.complex_block_ports[mux.output_ports[0]].pins.len(), 10);
+    }
+
+    // pin5_mux: driven by I5 which has 5 pins (not 7), same 10-pin output.
+    let pin5_mux = &g.complex_block_nodes[clb_mode.children_complex_blocks[16]];
+    assert_eq!(pin5_mux.name, "pin5_mux");
+    assert_eq!(g.complex_block_ports[pin5_mux.input_ports[0]].pins.len(), 5);
+    assert_eq!(g.complex_block_ports[pin5_mux.output_ports[0]].pins.len(), 10);
+
+    // clks: complete, 1 input pin (clb.clk), 10 output pins (fle[9:0].clk).
+    let clks = &g.complex_block_nodes[clb_mode.children_complex_blocks[17]];
+    assert_eq!(clks.name, "clks");
+    assert_eq!(g.complex_block_ports[clks.input_ports[0]].pins.len(), 1);
+    assert_eq!(g.complex_block_ports[clks.output_ports[0]].pins.len(), 10);
+
+    // clbouts1: direct, 10 input pins (fle[9:0].out), 10 output pins (clb.O).
+    let clbouts1 = &g.complex_block_nodes[clb_mode.children_complex_blocks[18]];
+    assert_eq!(clbouts1.name, "clbouts1");
+    assert!(matches!(
+        clbouts1.primitive_info.as_ref().unwrap().class,
+        PBTypeClass::InterconnectDirect
+    ));
+    assert_eq!(g.complex_block_ports[clbouts1.input_ports[0]].pins.len(), 10);
+    assert_eq!(g.complex_block_ports[clbouts1.output_ports[0]].pins.len(), 10);
+
+    // --- Net count ---
+    // crossbar:   10 input-side + 60 output-side = 70
+    // pin0..4_mux: 5 × (7 + 10)                 = 85
+    // pin5_mux:    5 + 10                        = 15
+    // clks:        1 + 10                        = 11
+    // clbouts1:   10 + 10                        = 20
+    // Total: 201
+    assert_eq!(clb_mode.interconnect.len(), 201);
+
+    Ok(())
+}
+
+#[test]
 fn test_k4_n4_90nm_clb_complex_block_graph() -> Result<(), FPGAArchParseError> {
     let input_xml_relative = PathBuf::from("tests/k4_N4_90nm.xml");
     let input_xml = absolute(&input_xml_relative).expect("Failed to get absolute path");

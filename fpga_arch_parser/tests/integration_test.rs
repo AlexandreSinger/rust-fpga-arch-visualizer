@@ -754,13 +754,19 @@ fn test_k6_n10_sparse_crossbar_clb_complex_block_graph() -> Result<(), FPGAArchP
         let lut6 = &g.complex_block_nodes[ble6_mode.children_complex_blocks[0]];
         assert_eq!(lut6.name, "lut6");
         assert_eq!(g.complex_block_ports[lut6.input_ports[0]].pins.len(), 6);
-        let lut6_info = lut6.primitive_info.as_ref().expect("lut6 must have primitive_info");
+        let lut6_info = lut6
+            .primitive_info
+            .as_ref()
+            .expect("lut6 must have primitive_info");
         assert_eq!(lut6_info.blif_model, ".names");
         assert!(matches!(lut6_info.class, PBTypeClass::Lut));
 
         let ff = &g.complex_block_nodes[ble6_mode.children_complex_blocks[1]];
         assert_eq!(ff.name, "ff");
-        let ff_info = ff.primitive_info.as_ref().expect("ff must have primitive_info");
+        let ff_info = ff
+            .primitive_info
+            .as_ref()
+            .expect("ff must have primitive_info");
         assert_eq!(ff_info.blif_model, ".latch");
         assert!(matches!(ff_info.class, PBTypeClass::FlipFlop));
     }
@@ -774,9 +780,15 @@ fn test_k6_n10_sparse_crossbar_clb_complex_block_graph() -> Result<(), FPGAArchP
         PBTypeClass::InterconnectComplete
     ));
     assert_eq!(crossbar.input_ports.len(), 1);
-    assert_eq!(g.complex_block_ports[crossbar.input_ports[0]].pins.len(), 10);
+    assert_eq!(
+        g.complex_block_ports[crossbar.input_ports[0]].pins.len(),
+        10
+    );
     assert_eq!(crossbar.output_ports.len(), 1);
-    assert_eq!(g.complex_block_ports[crossbar.output_ports[0]].pins.len(), 60);
+    assert_eq!(
+        g.complex_block_ports[crossbar.output_ports[0]].pins.len(),
+        60
+    );
 
     // pin0_mux..pin4_mux: each driven by a 7-pin CLB input, fanning out to bit [x:x] of fle[9:0].in (10 pins).
     let pin_mux_names = ["pin0_mux", "pin1_mux", "pin2_mux", "pin3_mux", "pin4_mux"];
@@ -797,7 +809,10 @@ fn test_k6_n10_sparse_crossbar_clb_complex_block_graph() -> Result<(), FPGAArchP
     let pin5_mux = &g.complex_block_nodes[clb_mode.children_complex_blocks[16]];
     assert_eq!(pin5_mux.name, "pin5_mux");
     assert_eq!(g.complex_block_ports[pin5_mux.input_ports[0]].pins.len(), 5);
-    assert_eq!(g.complex_block_ports[pin5_mux.output_ports[0]].pins.len(), 10);
+    assert_eq!(
+        g.complex_block_ports[pin5_mux.output_ports[0]].pins.len(),
+        10
+    );
 
     // clks: complete, 1 input pin (clb.clk), 10 output pins (fle[9:0].clk).
     let clks = &g.complex_block_nodes[clb_mode.children_complex_blocks[17]];
@@ -812,8 +827,14 @@ fn test_k6_n10_sparse_crossbar_clb_complex_block_graph() -> Result<(), FPGAArchP
         clbouts1.primitive_info.as_ref().unwrap().class,
         PBTypeClass::InterconnectDirect
     ));
-    assert_eq!(g.complex_block_ports[clbouts1.input_ports[0]].pins.len(), 10);
-    assert_eq!(g.complex_block_ports[clbouts1.output_ports[0]].pins.len(), 10);
+    assert_eq!(
+        g.complex_block_ports[clbouts1.input_ports[0]].pins.len(),
+        10
+    );
+    assert_eq!(
+        g.complex_block_ports[clbouts1.output_ports[0]].pins.len(),
+        10
+    );
 
     // --- Net count ---
     // crossbar:   10 input-side + 60 output-side = 70

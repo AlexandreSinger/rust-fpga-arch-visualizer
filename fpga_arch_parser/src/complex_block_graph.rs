@@ -121,9 +121,6 @@ fn add_pb_type_recursive(
     });
 
     // Build ports and pins for this node.
-    let mut input_port_ids: Vec<ComplexBlockPortId> = Vec::new();
-    let mut output_port_ids: Vec<ComplexBlockPortId> = Vec::new();
-    let mut clock_port_ids: Vec<ComplexBlockPortId> = Vec::new();
     for port in &pb_type.ports {
         let (port_name, num_pins) = match port {
             Port::Input(p)  => (p.name.clone(), p.num_pins),
@@ -138,16 +135,11 @@ fn add_pb_type_recursive(
         }).collect();
         ports.push(ComplexBlockPort { name: port_name, parent_complex_block: node_id, pins: pin_ids });
         match port {
-            Port::Input(_)  => input_port_ids.push(port_id),
-            Port::Output(_) => output_port_ids.push(port_id),
-            Port::Clock(_)  => clock_port_ids.push(port_id),
+            Port::Input(_)  => nodes[node_id].input_ports.push(port_id),
+            Port::Output(_) => nodes[node_id].output_ports.push(port_id),
+            Port::Clock(_)  => nodes[node_id].clock_ports.push(port_id),
         }
     }
-
-    // Write ports back to the node now so interconnect pin resolution can find them.
-    nodes[node_id].input_ports = input_port_ids.clone();
-    nodes[node_id].output_ports = output_port_ids.clone();
-    nodes[node_id].clock_ports = clock_port_ids.clone();
 
     // Collect (mode_id, child pb_types, interconnects) so we can build modes child-first.
     // A pb_type has either explicit modes or direct pb_type children (implicit default mode).
@@ -176,7 +168,6 @@ fn add_pb_type_recursive(
 
     // Recurse into children and fill in each mode's children list.
     // Each child pb_type is instantiated num_pb times, producing independent nodes.
-    let mut mode_ids: Vec<ComplexBlockModeId> = Vec::new();
     for (mode_id, children, interconnects) in mode_sources {
         let mut child_ids: Vec<ComplexBlockNodeId> = Vec::new();
         let mut children_by_name: HashMap<String, Vec<ComplexBlockNodeId>> = HashMap::new();
@@ -204,10 +195,9 @@ fn add_pb_type_recursive(
         }
         modes[mode_id].children_complex_blocks = child_ids;
         modes[mode_id].interconnect = mode_nets;
-        mode_ids.push(mode_id);
+        nodes[node_id].modes.push(mode_id);
     }
 
-    nodes[node_id].modes = mode_ids;
     nodes[node_id].primitive_info = pb_type.blif_model.as_ref().map(|blif_model| {
         ComplexBlockPrimitiveInfo {
             blif_model: blif_model.clone(),

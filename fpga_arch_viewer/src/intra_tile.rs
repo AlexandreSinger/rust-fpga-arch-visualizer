@@ -281,7 +281,7 @@ enum PortType {
 }
 
 /// Counts pins of a specific type in a PBType.
-fn count_pins(pb_type: &PBType, port_type: PortType) -> i32 {
+fn count_pins(pb_type: &PBType, port_type: PortType) -> usize {
     pb_type
         .ports
         .iter()

@@ -137,7 +137,7 @@ fn add_pb_type_recursive(
             Port::Clock(p) => (p.name.clone(), p.num_pins),
         };
         let port_id = ComplexBlockPortId(ports.len());
-        let pin_ids: Vec<ComplexBlockPinId> = (0..num_pins as usize)
+        let pin_ids: Vec<ComplexBlockPinId> = (0..num_pins)
             .map(|_| {
                 let pin_id = ComplexBlockPinId(pins.len());
                 pins.push(ComplexBlockPin {

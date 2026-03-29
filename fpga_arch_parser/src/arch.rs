@@ -42,7 +42,7 @@ pub enum PortClass {
 
 pub struct InputPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub is_non_clock_global: bool,
     pub port_class: PortClass,
@@ -50,14 +50,14 @@ pub struct InputPort {
 
 pub struct OutputPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub port_class: PortClass,
 }
 
 pub struct ClockPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub port_class: PortClass,
 }

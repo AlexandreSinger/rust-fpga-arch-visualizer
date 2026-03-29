@@ -37,6 +37,7 @@ impl_vec_index!(ComplexBlockPinId, ComplexBlockPin);
 impl_vec_index!(ComplexBlockModeId, ComplexBlockMode);
 
 pub struct ComplexBlockMode {
+    pub name: String,
     pub parent_complex_block: ComplexBlockNodeId,
     pub children_complex_blocks: Vec<ComplexBlockNodeId>,
     pub interconnect: Vec<ComplexBlockNet>,
@@ -167,6 +168,7 @@ fn add_pb_type_recursive(
                 .map(|mode| {
                     let mode_id = ComplexBlockModeId(modes.len());
                     modes.push(ComplexBlockMode {
+                        name: mode.name.clone(),
                         parent_complex_block: node_id,
                         children_complex_blocks: Vec::new(),
                         interconnect: Vec::new(),
@@ -182,6 +184,7 @@ fn add_pb_type_recursive(
             // Implicit single default mode for pb_types with direct children but no named modes.
             let mode_id = ComplexBlockModeId(modes.len());
             modes.push(ComplexBlockMode {
+                name: pb_type.name.clone(),
                 parent_complex_block: node_id,
                 children_complex_blocks: Vec::new(),
                 interconnect: Vec::new(),

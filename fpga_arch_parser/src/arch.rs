@@ -600,7 +600,7 @@ pub enum PBTypeClass {
 
 pub struct PBType {
     pub name: String,
-    pub num_pb: i32,
+    pub num_pb: usize,
     pub blif_model: Option<String>,
     pub class: PBTypeClass,
     pub ports: Vec<Port>,

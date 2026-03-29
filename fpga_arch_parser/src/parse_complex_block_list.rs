@@ -486,7 +486,7 @@ fn parse_pb_type<R: BufRead>(
     assert!(name.to_string() == "pb_type");
 
     let mut pb_type_name: Option<String> = None;
-    let mut num_pb: Option<i32> = None;
+    let mut num_pb: Option<usize> = None;
     let mut blif_model: Option<String> = None;
     let mut class: Option<PBTypeClass> = None;
 

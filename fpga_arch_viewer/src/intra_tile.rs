@@ -237,7 +237,7 @@ pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_
 
     for child_pb in children {
         for i in 0..child_pb.num_pb {
-            let instance_name = generate_child_instance_name(child_pb, i as usize);
+            let instance_name = generate_child_instance_name(child_pb, i);
             let child_path = format!("{}.{}", instance_path, instance_name);
             expand_all_blocks(state, child_pb, &child_path);
         }
@@ -449,12 +449,12 @@ fn measure_pb_type(
 
             for child_pb in children {
                 let num = child_pb.num_pb as f32;
-                let gaps = std::cmp::max(child_pb.num_pb - 1, 0) as f32;
+                let gaps = child_pb.num_pb.saturating_sub(1) as f32;
 
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
 
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
+                    let child_instance_name = generate_child_instance_name(child_pb, i);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -478,11 +478,11 @@ fn measure_pb_type(
 
             for child_pb in children {
                 let num = child_pb.num_pb as f32;
-                let gaps = std::cmp::max(child_pb.num_pb - 1, 0) as f32;
+                let gaps = child_pb.num_pb.saturating_sub(1) as f32;
 
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
+                    let child_instance_name = generate_child_instance_name(child_pb, i);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -1101,7 +1101,7 @@ fn draw_pb_type(
         for child_pb in children {
             let mut max_col_width: f32 = 0.0;
             for i in 0..child_pb.num_pb {
-                let instance_name = generate_child_instance_name(child_pb, i as usize);
+                let instance_name = generate_child_instance_name(child_pb, i);
                 let child_path = format!("{}.{}", instance_path, instance_name);
 
                 let child_single_size = measure_pb_type(child_pb, state, &child_path);

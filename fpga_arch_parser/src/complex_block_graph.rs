@@ -204,7 +204,7 @@ fn add_pb_type_recursive(
         let mut child_ids: Vec<ComplexBlockNodeId> = Vec::new();
         let mut children_by_name: HashMap<String, Vec<ComplexBlockNodeId>> = HashMap::new();
         for child in children {
-            for _ in 0..child.num_pb as usize {
+            for _ in 0..child.num_pb {
                 let child_id =
                     add_pb_type_recursive(child, Some(mode_id), nodes, modes, ports, pins)?;
                 child_ids.push(child_id);

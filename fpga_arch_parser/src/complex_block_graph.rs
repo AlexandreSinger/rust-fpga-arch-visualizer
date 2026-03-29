@@ -246,9 +246,11 @@ fn add_pb_type_recursive(
     Ok(node_id)
 }
 
+type NameWithRange<'a> = (&'a str, Option<(usize, usize)>);
+
 // Parses "name", "name[idx]", or "name[high:low]" into (name, range).
 // The range preserves order: (3, 1) means high-to-low, (1, 3) means low-to-high.
-fn parse_name_with_range(s: &str) -> Result<(&str, Option<(usize, usize)>), FPGAArchParseError> {
+fn parse_name_with_range(s: &str) -> Result<NameWithRange<'_>, FPGAArchParseError> {
     match s.find('[') {
         None => Ok((s, None)),
         Some(open) => {
@@ -296,8 +298,8 @@ type PortRef<'a> = (
 // Parses "block[range].port[range]" into (block_name, inst_range, port_name, bit_range).
 fn parse_port_ref(s: &str) -> Result<PortRef<'_>, FPGAArchParseError> {
     let dot = s.find('.').unwrap_or(s.len());
-    let (block_name, inst_range) = parse_name_with_range(&s[..dot])?;
-    let (port_name, bit_range) = if dot < s.len() {
+    let (block_name, inst_range): NameWithRange<'_> = parse_name_with_range(&s[..dot])?;
+    let (port_name, bit_range): NameWithRange<'_> = if dot < s.len() {
         parse_name_with_range(&s[dot + 1..])?
     } else {
         ("", None)

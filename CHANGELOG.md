@@ -1,3 +1,11 @@
+## [v0.3.6] - 2026-03-29
+
+### Added
+- Basic NoC parsing and visualization support added.
+- CRR view has been improved for the native build.
+- FPS counter added to the top-right corner for debugging.
+- Improved complex block graph parsing support.
+
 ## [v0.3.5] - 2026-03-22
 
 ### Added

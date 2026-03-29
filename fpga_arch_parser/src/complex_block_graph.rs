@@ -248,22 +248,40 @@ fn add_pb_type_recursive(
 
 // Parses "name", "name[idx]", or "name[high:low]" into (name, range).
 // The range preserves order: (3, 1) means high-to-low, (1, 3) means low-to-high.
-fn parse_name_with_range(s: &str) -> (&str, Option<(usize, usize)>) {
+fn parse_name_with_range(s: &str) -> Result<(&str, Option<(usize, usize)>), FPGAArchParseError> {
     match s.find('[') {
-        None => (s, None),
+        None => Ok((s, None)),
         Some(open) => {
             let name = &s[..open];
             let close = s.find(']').unwrap_or(s.len());
             let inner = &s[open + 1..close];
             let range = if let Some(colon) = inner.find(':') {
-                let a: usize = inner[..colon].trim().parse().unwrap_or(0);
-                let b: usize = inner[colon + 1..].trim().parse().unwrap_or(0);
+                let a: usize = inner[..colon].trim().parse().map_err(|_| {
+                    FPGAArchParseError::PinParsingError(format!(
+                        "Failed to parse index '{}' in range expression '[{}]'",
+                        inner[..colon].trim(),
+                        inner
+                    ))
+                })?;
+                let b: usize = inner[colon + 1..].trim().parse().map_err(|_| {
+                    FPGAArchParseError::PinParsingError(format!(
+                        "Failed to parse index '{}' in range expression '[{}]'",
+                        inner[colon + 1..].trim(),
+                        inner
+                    ))
+                })?;
                 (a, b)
             } else {
-                let a: usize = inner.trim().parse().unwrap_or(0);
+                let a: usize = inner.trim().parse().map_err(|_| {
+                    FPGAArchParseError::PinParsingError(format!(
+                        "Failed to parse index '{}' in '[{}]'",
+                        inner.trim(),
+                        inner
+                    ))
+                })?;
                 (a, a)
             };
-            (name, Some(range))
+            Ok((name, Some(range)))
         }
     }
 }
@@ -276,15 +294,15 @@ type PortRef<'a> = (
 );
 
 // Parses "block[range].port[range]" into (block_name, inst_range, port_name, bit_range).
-fn parse_port_ref(s: &str) -> PortRef<'_> {
+fn parse_port_ref(s: &str) -> Result<PortRef<'_>, FPGAArchParseError> {
     let dot = s.find('.').unwrap_or(s.len());
-    let (block_name, inst_range) = parse_name_with_range(&s[..dot]);
+    let (block_name, inst_range) = parse_name_with_range(&s[..dot])?;
     let (port_name, bit_range) = if dot < s.len() {
-        parse_name_with_range(&s[dot + 1..])
+        parse_name_with_range(&s[dot + 1..])?
     } else {
         ("", None)
     };
-    (block_name, inst_range, port_name, bit_range)
+    Ok((block_name, inst_range, port_name, bit_range))
 }
 
 // Resolves a single port-reference token to the ComplexBlockPinIds it names.
@@ -297,7 +315,7 @@ fn resolve_pins_for_ref(
     nodes: &[ComplexBlockNode],
     ports: &[ComplexBlockPort],
 ) -> Result<Vec<ComplexBlockPinId>, FPGAArchParseError> {
-    let (block_name, inst_range, port_name, bit_range) = parse_port_ref(ref_str);
+    let (block_name, inst_range, port_name, bit_range) = parse_port_ref(ref_str)?;
     if port_name.is_empty() {
         return Err(FPGAArchParseError::PinParsingError(format!(
             "No port name in reference '{}' (missing '.')",
@@ -331,7 +349,7 @@ fn resolve_pins_for_ref(
                             ref_str
                         )));
                     }
-                    if a >= b {
+                    if a > b {
                         (lo..=hi)
                             .rev()
                             .filter_map(|i| instances.get(i).copied())
@@ -380,7 +398,7 @@ fn resolve_pins_for_ref(
                         ref_str
                     )));
                 }
-                if a >= b {
+                if a > b {
                     result.extend(port_pins[lo..=hi].iter().rev().copied());
                 } else {
                     result.extend_from_slice(&port_pins[lo..=hi]);

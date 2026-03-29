@@ -13,6 +13,9 @@ self.addEventListener('install', function (e) {
             return cache.addAll(filesToCache);
         })
     );
+    /* Skip waiting so the new service worker activates immediately on update,
+       rather than waiting for all existing tabs to be closed first. */
+    self.skipWaiting();
 });
 
 self.addEventListener('activate', function (e) {

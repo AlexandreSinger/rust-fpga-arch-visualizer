@@ -24,7 +24,7 @@ yaml-rust2 = "0.11.0"
 
 # Native-exclusive dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.11.9"
+env_logger = "0.11.10"
 
 # Web-exclusive dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]

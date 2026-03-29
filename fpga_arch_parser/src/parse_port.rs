@@ -70,7 +70,7 @@ pub fn parse_port<R: BufRead>(
     parser: &mut EventReader<R>,
 ) -> Result<Port, FPGAArchParseError> {
     let mut port_name: Option<String> = None;
-    let mut num_pins: Option<i32> = None;
+    let mut num_pins: Option<usize> = None;
     let mut equivalent: Option<PinEquivalence> = None;
     let mut is_non_clock_global: Option<bool> = None;
     let mut port_class: Option<PortClass> = None;

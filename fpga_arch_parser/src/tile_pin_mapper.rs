@@ -119,7 +119,6 @@ pub fn build_tile_pin_mapper(
                     Port::Output(output_port) => (&output_port.name, output_port.num_pins),
                     Port::Clock(clock_port) => (&clock_port.name, clock_port.num_pins),
                 };
-                let num_pins = num_pins as usize;
                 let mut pin_indices = Vec::new();
                 for pin_index in num_pins_in_tile..num_pins_in_tile + num_pins {
                     pin_indices.push(pin_index);
@@ -347,7 +346,7 @@ fn get_pins_in_pin_loc(
         };
         let port_bus = match port_bus_slice {
             Some(bus_slice) => parse_bus(bus_slice)?,
-            None => 0..=(num_port_pins - 1),
+            None => 0..=(num_port_pins as i32 - 1),
         };
 
         // Get the pins.
@@ -360,7 +359,7 @@ fn get_pins_in_pin_loc(
             let sub_tile_pin_index_lookup =
                 &pin_index_lookup[sub_tile_name][sub_tile_cap_index as usize][port_name];
             for bit in port_bus.clone() {
-                if bit < 0 || bit >= num_port_pins {
+                if bit < 0 || bit >= num_port_pins as i32 {
                     return Err(FPGAArchParseError::PinParsingError(
                         "Invalid port bit position.".to_string(),
                     ));

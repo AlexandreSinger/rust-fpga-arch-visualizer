@@ -8,6 +8,7 @@ use xml::name::OwnedName;
 use xml::reader::{EventReader, XmlEvent};
 
 mod arch;
+mod complex_block_graph;
 mod parse_complex_block_list;
 mod parse_custom_switch_blocks;
 mod parse_device;
@@ -26,6 +27,12 @@ mod tile_pin_mapper;
 mod verify_noc;
 
 pub use crate::arch::*;
+use crate::complex_block_graph::build_complex_block_graph;
+pub use crate::complex_block_graph::{
+    ComplexBlockGraph, ComplexBlockMode, ComplexBlockModeId, ComplexBlockNet, ComplexBlockNode,
+    ComplexBlockNodeId, ComplexBlockPin, ComplexBlockPinId, ComplexBlockPort, ComplexBlockPortId,
+    ComplexBlockPrimitiveInfo,
+};
 pub use crate::parse_error::FPGAArchParseError;
 pub use crate::tile_pin_mapper::*;
 
@@ -291,6 +298,11 @@ fn parse_architecture<R: BufRead>(
         verify_noc(noc_info, &tiles, parser.position())?;
     }
 
+    let mut complex_block_graphs = Vec::with_capacity(complex_block_list.len());
+    for root_pb_type in &complex_block_list {
+        complex_block_graphs.push(build_complex_block_graph(root_pb_type)?);
+    }
+
     Ok(FPGAArch {
         models,
         tiles,
@@ -301,6 +313,7 @@ fn parse_architecture<R: BufRead>(
         custom_switch_blocks,
         direct_list,
         complex_block_list,
+        complex_block_graphs,
         noc,
     })
 }

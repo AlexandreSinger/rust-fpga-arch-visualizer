@@ -1,4 +1,4 @@
-use crate::tile_pin_mapper::TilePinMapper;
+use crate::{complex_block_graph::ComplexBlockGraph, tile_pin_mapper::TilePinMapper};
 
 pub struct ModelPort {
     pub name: String,
@@ -42,7 +42,7 @@ pub enum PortClass {
 
 pub struct InputPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub is_non_clock_global: bool,
     pub port_class: PortClass,
@@ -50,14 +50,14 @@ pub struct InputPort {
 
 pub struct OutputPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub port_class: PortClass,
 }
 
 pub struct ClockPort {
     pub name: String,
-    pub num_pins: i32,
+    pub num_pins: usize,
     pub equivalent: PinEquivalence,
     pub port_class: PortClass,
 }
@@ -564,40 +564,20 @@ pub struct PackPattern {
     pub out_port: String,
 }
 
-pub struct CompleteInterconnect {
+pub enum InterconnectType {
+    Complete,
+    Direct,
+    Mux,
+}
+
+pub struct Interconnect {
     pub name: String,
     pub input: String,
     pub output: String,
-    // FIXME: The documentation needs to be updated. The documentation says there
-    //        may be a single pack pattern; however, an interconnect may have many
-    //        pack patterns.
+    pub interconnect_type: InterconnectType,
     pub pack_patterns: Vec<PackPattern>,
     pub delays: Vec<DelayInfo>,
     pub metadata: Option<Vec<Metadata>>,
-}
-
-pub struct DirectInterconnect {
-    pub name: String,
-    pub input: String,
-    pub output: String,
-    pub pack_patterns: Vec<PackPattern>,
-    pub delays: Vec<DelayInfo>,
-    pub metadata: Option<Vec<Metadata>>,
-}
-
-pub struct MuxInterconnect {
-    pub name: String,
-    pub input: String,
-    pub output: String,
-    pub pack_patterns: Vec<PackPattern>,
-    pub delays: Vec<DelayInfo>,
-    pub metadata: Option<Vec<Metadata>>,
-}
-
-pub enum Interconnect {
-    Complete(CompleteInterconnect),
-    Direct(DirectInterconnect),
-    Mux(MuxInterconnect),
 }
 
 pub struct PBMode {
@@ -607,16 +587,20 @@ pub struct PBMode {
     pub metadata: Option<Vec<Metadata>>,
 }
 
+#[derive(Clone)]
 pub enum PBTypeClass {
     None,
     Lut,
     FlipFlop,
     Memory,
+    InterconnectDirect,
+    InterconnectMux,
+    InterconnectComplete,
 }
 
 pub struct PBType {
     pub name: String,
-    pub num_pb: i32,
+    pub num_pb: usize,
     pub blif_model: Option<String>,
     pub class: PBTypeClass,
     pub ports: Vec<Port>,
@@ -658,5 +642,6 @@ pub struct FPGAArch {
     pub custom_switch_blocks: Vec<CustomSwitchBlock>,
     pub direct_list: Vec<GlobalDirect>,
     pub complex_block_list: Vec<PBType>,
+    pub complex_block_graphs: Vec<ComplexBlockGraph>,
     pub noc: Option<NoCInfo>,
 }

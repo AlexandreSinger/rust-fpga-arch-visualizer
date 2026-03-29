@@ -191,7 +191,7 @@ fn draw_pins_on_side(
 
 struct PinInfo<'a> {
     name: &'a str,
-    index: i32,
+    index: usize,
 }
 
 //-----------------------------------------------------------

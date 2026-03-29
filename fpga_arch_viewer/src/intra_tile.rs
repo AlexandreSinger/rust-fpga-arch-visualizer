@@ -237,7 +237,7 @@ pub fn expand_all_blocks(state: &mut IntraTileState, pb_type: &PBType, instance_
 
     for child_pb in children {
         for i in 0..child_pb.num_pb {
-            let instance_name = generate_child_instance_name(child_pb, i as usize);
+            let instance_name = generate_child_instance_name(child_pb, i);
             let child_path = format!("{}.{}", instance_path, instance_name);
             expand_all_blocks(state, child_pb, &child_path);
         }
@@ -281,7 +281,7 @@ enum PortType {
 }
 
 /// Counts pins of a specific type in a PBType.
-fn count_pins(pb_type: &PBType, port_type: PortType) -> i32 {
+fn count_pins(pb_type: &PBType, port_type: PortType) -> usize {
     pb_type
         .ports
         .iter()
@@ -449,12 +449,12 @@ fn measure_pb_type(
 
             for child_pb in children {
                 let num = child_pb.num_pb as f32;
-                let gaps = std::cmp::max(child_pb.num_pb - 1, 0) as f32;
+                let gaps = child_pb.num_pb.saturating_sub(1) as f32;
 
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
 
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
+                    let child_instance_name = generate_child_instance_name(child_pb, i);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -478,11 +478,11 @@ fn measure_pb_type(
 
             for child_pb in children {
                 let num = child_pb.num_pb as f32;
-                let gaps = std::cmp::max(child_pb.num_pb - 1, 0) as f32;
+                let gaps = child_pb.num_pb.saturating_sub(1) as f32;
 
                 let mut max_instance_size = egui::vec2(0.0, 0.0);
                 for i in 0..child_pb.num_pb {
-                    let child_instance_name = generate_child_instance_name(child_pb, i as usize);
+                    let child_instance_name = generate_child_instance_name(child_pb, i);
                     let child_path = format!("{}.{}", instance_path, child_instance_name);
                     let s = measure_pb_type(child_pb, state, &child_path);
                     max_instance_size = max_instance_size.max(s);
@@ -509,10 +509,12 @@ fn measure_pb_type(
     let max_pins = total_input_pins.max(total_output_pins) as f32;
     let min_port_height = (max_pins + 1.0) * (MIN_PIN_SPACING * zoom);
 
-    let has_complete_interconnect = pb_type
-        .interconnects
-        .iter()
-        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+    let has_complete_interconnect = pb_type.interconnects.iter().any(|i| {
+        matches!(
+            i.interconnect_type,
+            fpga_arch_parser::InterconnectType::Complete
+        )
+    });
 
     let is_clock_complete = pb_type
         .interconnects
@@ -521,7 +523,7 @@ fn measure_pb_type(
 
     let mux_count = get_interconnects_for_mode(pb_type, mode_index)
         .iter()
-        .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+        .filter(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Mux))
         .count();
     let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
         MUX_GUTTER * zoom
@@ -723,10 +725,13 @@ fn is_clock_complete_interconnect(
     current_pb: &PBType,
     children: &[PBType],
 ) -> bool {
-    if let fpga_arch_parser::Interconnect::Complete(c) = interconnect {
+    if matches!(
+        interconnect.interconnect_type,
+        fpga_arch_parser::InterconnectType::Complete
+    ) {
         // Expand port lists to get individual port references
-        let raw_inputs = expand_port_list(&c.input);
-        let raw_outputs = expand_port_list(&c.output);
+        let raw_inputs = expand_port_list(&interconnect.input);
+        let raw_outputs = expand_port_list(&interconnect.output);
 
         // Check if all input ports are clock ports
         let all_inputs_clock = raw_inputs
@@ -912,10 +917,12 @@ fn draw_pb_type(
     let children = get_children_for_mode(pb_type, mode_index);
 
     let has_children = !children.is_empty();
-    let has_complete_interconnect = pb_type
-        .interconnects
-        .iter()
-        .any(|i| matches!(i, fpga_arch_parser::Interconnect::Complete(_)));
+    let has_complete_interconnect = pb_type.interconnects.iter().any(|i| {
+        matches!(
+            i.interconnect_type,
+            fpga_arch_parser::InterconnectType::Complete
+        )
+    });
     let _is_clock_complete = pb_type
         .interconnects
         .iter()
@@ -987,7 +994,10 @@ fn draw_pb_type(
         PBTypeClass::Memory => {
             intra_block_drawing::draw_memory(painter, rect, pb_type, state, ui, dark_mode)
         }
-        PBTypeClass::None => {
+        PBTypeClass::None
+        | PBTypeClass::InterconnectDirect
+        | PBTypeClass::InterconnectMux
+        | PBTypeClass::InterconnectComplete => {
             if pb_type.blif_model.is_some() {
                 intra_block_drawing::draw_blif_block(painter, rect, pb_type, state, ui, dark_mode)
             } else {
@@ -1074,7 +1084,7 @@ fn draw_pb_type(
 
         let mux_count = get_interconnects_for_mode(pb_type, mode_index)
             .iter()
-            .filter(|i| matches!(i, fpga_arch_parser::Interconnect::Mux(_)))
+            .filter(|i| matches!(i.interconnect_type, fpga_arch_parser::InterconnectType::Mux))
             .count();
         let mux_gutter = if mux_count >= MUX_GUTTER_MIN_MUXES {
             MUX_GUTTER * zoom
@@ -1091,7 +1101,7 @@ fn draw_pb_type(
         for child_pb in children {
             let mut max_col_width: f32 = 0.0;
             for i in 0..child_pb.num_pb {
-                let instance_name = generate_child_instance_name(child_pb, i as usize);
+                let instance_name = generate_child_instance_name(child_pb, i);
                 let child_path = format!("{}.{}", instance_path, instance_name);
 
                 let child_single_size = measure_pb_type(child_pb, state, &child_path);
@@ -1131,10 +1141,10 @@ fn draw_pb_type(
         let interconnects = get_interconnects_for_mode(pb_type, mode_index);
 
         for inter in interconnects {
-            match inter {
-                fpga_arch_parser::Interconnect::Direct(d) => {
-                    let raw_sources = expand_port_list(&d.input);
-                    let raw_sinks = expand_port_list(&d.output);
+            match inter.interconnect_type {
+                fpga_arch_parser::InterconnectType::Direct => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let mut sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let mut sinks =
@@ -1203,9 +1213,9 @@ fn draw_pb_type(
                         }
                     }
                 }
-                fpga_arch_parser::Interconnect::Mux(m) => {
-                    let raw_sources = expand_port_list(&m.input);
-                    let raw_sinks = expand_port_list(&m.output);
+                fpga_arch_parser::InterconnectType::Mux => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let sinks =
@@ -1226,9 +1236,9 @@ fn draw_pb_type(
                         dark_mode,
                     );
                 }
-                fpga_arch_parser::Interconnect::Complete(c) => {
-                    let raw_sources = expand_port_list(&c.input);
-                    let raw_sinks = expand_port_list(&c.output);
+                fpga_arch_parser::InterconnectType::Complete => {
+                    let raw_sources = expand_port_list(&inter.input);
+                    let raw_sinks = expand_port_list(&inter.output);
                     let sources =
                         resolve_bus_list(&raw_sources, &pb_type.name, &my_ports, &children_ports);
                     let sinks =

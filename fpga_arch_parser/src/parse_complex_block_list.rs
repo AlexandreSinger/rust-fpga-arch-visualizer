@@ -279,36 +279,27 @@ fn parse_interconnect<R: BufRead>(
         }
     }
 
-    match name.to_string().as_ref() {
-        "direct" => Ok(Interconnect::Direct(DirectInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        "mux" => Ok(Interconnect::Mux(MuxInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        "complete" => Ok(Interconnect::Complete(CompleteInterconnect {
-            name: inter_name,
-            input,
-            output,
-            pack_patterns,
-            delays,
-            metadata,
-        })),
-        _ => Err(FPGAArchParseError::InvalidTag(
-            format!("Unknown interconnect tag: {name}"),
-            parser.position(),
-        )),
-    }
+    let interconnect_type = match name.to_string().as_ref() {
+        "direct" => InterconnectType::Direct,
+        "mux" => InterconnectType::Mux,
+        "complete" => InterconnectType::Complete,
+        _ => {
+            return Err(FPGAArchParseError::InvalidTag(
+                format!("Unknown interconnect tag: {name}"),
+                parser.position(),
+            ));
+        }
+    };
+
+    Ok(Interconnect {
+        name: inter_name,
+        input,
+        output,
+        interconnect_type,
+        pack_patterns,
+        delays,
+        metadata,
+    })
 }
 
 fn parse_interconnects<R: BufRead>(
@@ -495,7 +486,7 @@ fn parse_pb_type<R: BufRead>(
     assert!(name.to_string() == "pb_type");
 
     let mut pb_type_name: Option<String> = None;
-    let mut num_pb: Option<i32> = None;
+    let mut num_pb: Option<usize> = None;
     let mut blif_model: Option<String> = None;
     let mut class: Option<PBTypeClass> = None;
 

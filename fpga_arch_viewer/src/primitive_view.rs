@@ -130,7 +130,7 @@ impl<'a> DelayLookup<'a> {
     }
 
     /// Look up the pin count for a named port in the pb_type's port list.
-    fn port_num_pins(&self, name: &str) -> Option<i32> {
+    fn port_num_pins(&self, name: &str) -> Option<usize> {
         self.pb_type.ports.iter().find_map(|p| {
             let (port_name, num_pins) = match p {
                 Port::Input(ip) => (ip.name.as_str(), ip.num_pins),
@@ -313,12 +313,12 @@ impl<'a> DelayLookup<'a> {
 /// Returns a warning string if multiple per-pin constraints were found but fewer than expected,
 /// or `None` if the count is satisfactory. A single found value is never warned (treated as a
 /// scalar constraint covering all pins).
-fn partial_warning(label: &str, found: usize, expected: Option<i32>) -> Option<String> {
+fn partial_warning(label: &str, found: usize, expected: Option<usize>) -> Option<String> {
     if let Some(exp) = expected
         && found > 1
-        && found < exp as usize
+        && found < exp
     {
-        let missing = exp as usize - found;
+        let missing = exp - found;
         return Some(format!("⚠ {missing} of {exp} pins have no {label}"));
     }
     None
@@ -332,7 +332,7 @@ fn partial_warning(label: &str, found: usize, expected: Option<i32>) -> Option<S
 /// - N diff  → `"<label> = 60.00 – 80.00 ps  (N pins)"`
 ///
 /// Appends a partial-annotation warning line when `found > 1` and `found < expected`.
-fn format_scalar_pins(label: &str, values: &[f32], expected: Option<i32>) -> String {
+fn format_scalar_pins(label: &str, values: &[f32], expected: Option<usize>) -> String {
     if values.is_empty() {
         return format!("{label} = ⚠ MISSING");
     }
@@ -360,7 +360,7 @@ fn format_scalar_pins(label: &str, values: &[f32], expected: Option<i32>) -> Str
 /// Format a collection of `(min, max)` clock-to-Q pin pairs under `label`.
 ///
 /// Follows the same compact / range / partial-warning rules as `format_scalar_pins`.
-fn format_ctq_pins(label: &str, pairs: &[(f32, f32)], expected: Option<i32>) -> String {
+fn format_ctq_pins(label: &str, pairs: &[(f32, f32)], expected: Option<usize>) -> String {
     if pairs.is_empty() {
         return format!("{label} = ⚠ MISSING");
     }
@@ -434,7 +434,7 @@ fn build_setup_hold_annotation(
 }
 
 /// Format a one-line port description: `"y  (40 pins)"` or just `"y"`.
-fn port_header(name: &str, num_pins: Option<i32>) -> String {
+fn port_header(name: &str, num_pins: Option<usize>) -> String {
     match num_pins {
         Some(n) => format!("{name}  ({n} pins)"),
         None => name.to_string(),

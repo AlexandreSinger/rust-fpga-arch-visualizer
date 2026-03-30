@@ -5,6 +5,7 @@
 mod block_style;
 mod color_scheme;
 mod common_ui;
+mod complex_block_rendering;
 mod complex_block_view;
 mod crr_sb_view;
 mod crr_view;

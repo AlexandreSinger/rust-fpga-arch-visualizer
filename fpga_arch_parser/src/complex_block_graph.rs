@@ -81,6 +81,20 @@ pub struct ComplexBlockGraph {
     pub complex_block_pins: Vec<ComplexBlockPin>,
 }
 
+impl ComplexBlockGraph {
+    pub fn num_complex_blocks(&self) -> usize {
+        self.complex_block_nodes.len()
+    }
+
+    pub fn num_ports(&self) -> usize {
+        self.complex_block_ports.len()
+    }
+
+    pub fn num_pins(&self) -> usize {
+        self.complex_block_pins.len()
+    }
+}
+
 pub fn build_complex_block_graph(
     root_pb_type: &PBType,
 ) -> Result<ComplexBlockGraph, FPGAArchParseError> {

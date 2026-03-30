@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
 use crate::{FPGAArchParseError, Interconnect, InterconnectType, PBType, PBTypeClass, Port};
@@ -14,6 +15,54 @@ pub struct ComplexBlockPinId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComplexBlockModeId(usize);
+
+/// Trait for strong ID types that can index into a [`StrongIdVec`].
+pub trait StrongId {
+    fn index(self) -> usize;
+}
+
+macro_rules! impl_strong_id {
+    ($id:ty) => {
+        impl StrongId for $id {
+            fn index(self) -> usize {
+                self.0
+            }
+        }
+    };
+}
+
+impl_strong_id!(ComplexBlockNodeId);
+impl_strong_id!(ComplexBlockPortId);
+impl_strong_id!(ComplexBlockPinId);
+impl_strong_id!(ComplexBlockModeId);
+
+/// A `Vec<T>` that can only be indexed by a specific strong ID type `Id`.
+pub struct StrongIdVec<Id, T> {
+    data: Vec<T>,
+    _phantom: PhantomData<fn(Id)>,
+}
+
+impl<Id: StrongId, T> StrongIdVec<Id, T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self {
+            data,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<Id: StrongId, T> Index<Id> for StrongIdVec<Id, T> {
+    type Output = T;
+    fn index(&self, id: Id) -> &T {
+        &self.data[id.index()]
+    }
+}
+
+impl<Id: StrongId, T> IndexMut<Id> for StrongIdVec<Id, T> {
+    fn index_mut(&mut self, id: Id) -> &mut T {
+        &mut self.data[id.index()]
+    }
+}
 
 macro_rules! impl_vec_index {
     ($id:ty, $item:ty) => {

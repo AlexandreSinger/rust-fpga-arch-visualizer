@@ -31,7 +31,7 @@ use crate::complex_block_graph::build_complex_block_graph;
 pub use crate::complex_block_graph::{
     ComplexBlockGraph, ComplexBlockMode, ComplexBlockModeId, ComplexBlockNet, ComplexBlockNode,
     ComplexBlockNodeId, ComplexBlockPin, ComplexBlockPinId, ComplexBlockPort, ComplexBlockPortId,
-    ComplexBlockPrimitiveInfo,
+    ComplexBlockPrimitiveInfo, StrongId, StrongIdVec,
 };
 pub use crate::parse_error::FPGAArchParseError;
 pub use crate::tile_pin_mapper::*;

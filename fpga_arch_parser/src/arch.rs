@@ -593,6 +593,7 @@ pub enum PBTypeClass {
     Lut,
     FlipFlop,
     Memory,
+    // FIXME: Directs should not be a class. They are just nets.
     InterconnectDirect,
     InterconnectMux,
     InterconnectComplete,

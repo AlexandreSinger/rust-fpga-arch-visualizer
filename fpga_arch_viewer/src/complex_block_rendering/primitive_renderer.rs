@@ -3,6 +3,7 @@ use fpga_arch_parser::{ComplexBlockGraph, ComplexBlockNode, ComplexBlockNodeId, 
 use crate::{color_scheme, complex_block_rendering::complex_block_render_state::ComplexBlockRenderState};
 
 const MIN_BLOCK_SIZE: egui::Vec2 = egui::vec2(80.0, 120.0);
+const PORT_RECT_SIZE: egui::Vec2 = egui::vec2(6.0, 6.0);
 
 // TODO: Move this into a utils method.
 fn count_num_visible_io(
@@ -237,6 +238,63 @@ fn render_mux_interconnect(
     shapes
 }
 
+fn render_port(
+    port_pos: &egui::Pos2,
+    state: &ComplexBlockRenderState,
+) -> Vec<egui::Shape> {
+    let zoom = state.zoom;
+    // TODO: Add highlighting logic.
+
+    // TODO: This may change based on highlighting, if its IO, or if its clock.
+    let port_color = color_scheme::PIN_COLOR;
+
+    let port_rect = egui::Rect::from_center_size(*port_pos, PORT_RECT_SIZE);
+    vec![egui::Shape::rect_filled(port_rect, egui::CornerRadius::ZERO, port_color)]
+}
+
+fn render_pin(
+    pin_pos: &egui::Pos2,
+    state: &ComplexBlockRenderState,
+) -> Vec<egui::Shape> {
+
+    // TODO: Currently ports and pins look the same. This may change later.
+    render_port(pin_pos, state)
+}
+
+fn render_io_on_line(
+    line_start: egui::Pos2,
+    line_end: egui::Pos2,
+    ports: &Vec<ComplexBlockPortId>,
+    complex_block_graph: &ComplexBlockGraph,
+    state: &mut ComplexBlockRenderState,
+) -> Vec<egui::Shape> {
+    let line_len = (line_end - line_start).length();
+    let line_dir = (line_end - line_start).normalized();
+    let num_io_points = count_num_visible_io(ports, complex_block_graph, state);
+    let point_spacing = line_len / (num_io_points + 2) as f32;
+
+    let mut shapes = Vec::new();
+    let mut io_pos_idx = 1;
+    for port_id in ports {
+        if state.is_port_collapsed[*port_id] {
+            let io_pos = line_start + (line_dir * point_spacing * io_pos_idx as f32);
+            shapes.extend(render_port(&io_pos, state));
+            state.port_locations[*port_id] = io_pos;
+            io_pos_idx += 1;
+        } else {
+            let port = &complex_block_graph.complex_block_ports[*port_id];
+            for pin_id in &port.pins {
+                let io_pos = line_start + (line_dir * point_spacing * io_pos_idx as f32);
+                shapes.extend(render_pin(&io_pos, state));
+                state.pin_locations[*pin_id] = io_pos;
+                io_pos_idx += 1;
+            }
+        }
+    }
+
+    shapes
+}
+
 pub fn render_primitive(
     complex_block_id: ComplexBlockNodeId,
     primitive_info: &ComplexBlockPrimitiveInfo,
@@ -254,7 +312,7 @@ pub fn render_primitive(
     let block_rect = egui::Rect::from_min_size(offset, block_size);
 
     // Render the block.
-    let primitive_shapes = match primitive_info.class {
+    let mut primitive_shapes = match primitive_info.class {
         PBTypeClass::Lut => render_lut(block_rect, &complex_block.name, state, egui_ctx),
         PBTypeClass::FlipFlop => render_ff(block_rect, &complex_block.name, state, egui_ctx),
         PBTypeClass::Memory => render_ram(block_rect, &complex_block.name, state, egui_ctx),
@@ -266,6 +324,30 @@ pub fn render_primitive(
     };
 
     // Render the io.
+    // Inputs on the left.
+    primitive_shapes.extend(render_io_on_line(
+        block_rect.left_top(),
+        block_rect.left_bottom(),
+        &complex_block.input_ports,
+        complex_block_graph,
+        state,
+    ));
+    // Outputs on the right.
+    primitive_shapes.extend(render_io_on_line(
+        block_rect.right_top(),
+        block_rect.right_bottom(),
+        &complex_block.output_ports,
+        complex_block_graph,
+        state,
+    ));
+    // Clocks on the bottom.
+    primitive_shapes.extend(render_io_on_line(
+        block_rect.left_bottom(),
+        block_rect.right_bottom(),
+        &complex_block.clock_ports,
+        complex_block_graph,
+        state,
+    ));
 
     primitive_shapes
 }

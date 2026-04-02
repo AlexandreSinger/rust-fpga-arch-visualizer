@@ -1,9 +1,8 @@
+use egui::response;
 use fpga_arch_parser::FPGAArch;
 
 use crate::{
-    common_ui,
-    intra_tile::{self, IntraTileState},
-    viewer::ViewMode,
+    common_ui, complex_block_rendering::{complex_block_render_state::create_complex_block_render_state, complex_block_renderer::render_complex_block}, intra_tile::{self, IntraTileState}, viewer::ViewMode
 };
 
 pub struct ComplexBlockViewState {
@@ -63,19 +62,37 @@ impl ComplexBlockView {
         ui: &mut egui::Ui,
     ) {
         if let Some(pb_type_name) = &self.complex_block_view_state.selected_complex_block_name {
-            if let Some(root_pb) = arch
-                .complex_block_list
+            if let Some(complex_block_graph) = arch
+                .complex_block_graphs
                 .iter()
-                .find(|b| b.name == *pb_type_name)
-            {
-                intra_tile::render_intra_tile_view(
-                    ui,
-                    root_pb,
-                    &mut self.complex_block_view_state.intra_tile_state,
-                    self.complex_block_view_state.all_blocks_expanded,
-                    self.complex_block_view_state.draw_intra_interconnects,
-                    dark_mode,
-                );
+                .find(|b| b.complex_block_nodes[b.root_complex_block_node].name == *pb_type_name) {
+                
+                egui::ScrollArea::both()
+                    .id_salt("intra_tile_canvas")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let mut state = create_complex_block_render_state(complex_block_graph, false, 1.0, 10.0);
+                        let mut root_pb_type_info = render_complex_block(complex_block_graph.root_complex_block_node, complex_block_graph, &mut state, ui.ctx());
+                        let (response, painter) = ui.allocate_painter(root_pb_type_info.1, egui::Sense::hover());
+                        for shape in &mut root_pb_type_info.0 {
+                            shape.translate(response.rect.min.to_vec2());
+                        }
+                        painter.extend(root_pb_type_info.0);
+                    });
+            // }
+            // if let Some(root_pb) = arch
+            //     .complex_block_list
+            //     .iter()
+            //     .find(|b| b.name == *pb_type_name)
+            // {
+            //     intra_tile::render_intra_tile_view(
+            //         ui,
+            //         root_pb,
+            //         &mut self.complex_block_view_state.intra_tile_state,
+            //         self.complex_block_view_state.all_blocks_expanded,
+            //         self.complex_block_view_state.draw_intra_interconnects,
+            //         dark_mode,
+            //     );
             } else if common_ui::render_centered_message(
                 ui,
                 "Complex block not found",

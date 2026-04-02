@@ -302,7 +302,7 @@ pub fn render_primitive(
     complex_block_graph: &ComplexBlockGraph,
     state: &mut ComplexBlockRenderState,
     egui_ctx: &egui::Context,
-) -> Vec<egui::Shape> {
+) -> (Vec<egui::Shape>, egui::Vec2) {
     let complex_block = &complex_block_graph.complex_block_nodes[complex_block_id];
 
     // Get the shape of the primitive.
@@ -349,5 +349,5 @@ pub fn render_primitive(
         state,
     ));
 
-    primitive_shapes
+    (primitive_shapes, block_size)
 }

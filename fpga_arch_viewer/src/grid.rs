@@ -557,10 +557,8 @@ fn eval_expr_recursive(expr: &str) -> Option<usize> {
                 {
                     return if ch == '*' {
                         Some(l * r)
-                    } else if r > 0 {
-                        Some(l / r)
                     } else {
-                        None
+                        l.checked_div(r)
                     };
                 }
             }

@@ -63,9 +63,9 @@ cargo build --release
 3. The **Summary view** opens, which gives an overall summary of the architecture; click **view tile grid** to see the **Device tile grid**. Hover over tiles for details; click a tile to drill into its **intra-tile view**.
 4. In the intra-tile view, expand or collapse blocks, switch modes, and toggle interconnect overlays using the right-hand panel.
 
-<img src="./docs/images/user-guide-inter-view.png" />
+<img src="./docs/images/user-guide-inter-view.png" alt="Device grid view showing tile grid and navigation controls" />
 
-<img src="./docs/images/user-guide-intra-view.png" />
+<img src="./docs/images/user-guide-intra-view.png" alt="Intra-tile view showing hierarchy, mode selection, and interconnect overlays" />
 
 The **back arrow** in the left navigation bar returns to the previous view.
 

@@ -827,7 +827,7 @@ fn parse_layers<R: BufRead>(
     // Sort the layers in increasing order of die id.
     // This is just for convenience. Downstream should not care about the order
     // layers are in the original XML file.
-    layers.sort_by(|a, b| a.die.cmp(&b.die));
+    layers.sort_by_key(|a| a.die);
 
     // Verify the layers
     // This verifies that each layer has a die ID from 0 to num_layers - 1.

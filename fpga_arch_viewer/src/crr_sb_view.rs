@@ -45,6 +45,7 @@ impl Default for CRRViewState {
 pub struct CRRSBView {
     zoom_factor: f32,
     last_error: Option<String>,
+    side_panel_collapsed: bool,
 
     crr_view_state: CRRViewState,
 }
@@ -54,6 +55,7 @@ impl Default for CRRSBView {
         Self {
             zoom_factor: 1.0,
             last_error: None,
+            side_panel_collapsed: false,
             crr_view_state: CRRViewState::default(),
         }
     }
@@ -126,18 +128,38 @@ impl CRRSBView {
         tile_colors: &HashMap<String, egui::Color32>,
         ctx: &egui::Context,
     ) {
-        egui::SidePanel::right("crr_view_controls")
-            .default_width(250.0)
-            .show(ctx, |ui| {
-                self.render_side_panel(arch, ui);
-            });
+        if self.side_panel_collapsed {
+            egui::SidePanel::right("crr_view_controls")
+                .exact_width(24.0)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        if ui.button("◀").clicked() {
+                            self.side_panel_collapsed = false;
+                        }
+                    });
+                });
+        } else {
+            egui::SidePanel::right("crr_view_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    self.render_side_panel(arch, ui);
+                });
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(arch, tile_colors, ui);
         });
     }
 
     fn render_side_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
-        ui.heading("CRR View");
+        ui.horizontal(|ui| {
+            ui.heading("CRR View");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("▶").clicked() {
+                    self.side_panel_collapsed = true;
+                }
+            });
+        });
         ui.add_space(10.0);
         ui.separator();
         ui.add_space(10.0);

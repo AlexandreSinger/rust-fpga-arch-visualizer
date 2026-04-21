@@ -11,6 +11,7 @@ pub struct ComplexBlockViewState {
     pub intra_tile_state: IntraTileState,
     pub all_blocks_expanded: bool,
     pub draw_intra_interconnects: bool,
+    pub side_panel_collapsed: bool,
 }
 
 pub struct ComplexBlockView {
@@ -25,6 +26,7 @@ impl Default for ComplexBlockView {
                 intra_tile_state: IntraTileState::default(),
                 all_blocks_expanded: false,
                 draw_intra_interconnects: true,
+                side_panel_collapsed: false,
             },
         }
     }
@@ -101,6 +103,7 @@ impl ComplexBlockView {
             &mut self.complex_block_view_state.all_blocks_expanded,
             &mut self.complex_block_view_state.draw_intra_interconnects,
             &mut self.complex_block_view_state.selected_complex_block_name,
+            &mut self.complex_block_view_state.side_panel_collapsed,
         );
         if should_expand_all {
             self.apply_expand_all_state(arch);
@@ -134,13 +137,35 @@ fn render_intra_tile_controls_panel(
     all_blocks_expanded: &mut bool,
     draw_intra_interconnects: &mut bool,
     selected_complex_block_name: &mut Option<String>,
+    side_panel_collapsed: &mut bool,
 ) -> bool {
     let mut expand_all = false;
+
+    if *side_panel_collapsed {
+        egui::SidePanel::right("complex_block_controls")
+            .exact_width(24.0)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    if ui.button("◀").clicked() {
+                        *side_panel_collapsed = false;
+                    }
+                });
+            });
+        return expand_all;
+    }
 
     egui::SidePanel::right("complex_block_controls")
         .default_width(250.0)
         .show(ctx, |ui| {
-            ui.heading("Complex Block View");
+            ui.horizontal(|ui| {
+                ui.heading("Complex Block View");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("▶").clicked() {
+                        *side_panel_collapsed = true;
+                    }
+                });
+            });
             ui.add_space(10.0);
 
             // Expand All toggle

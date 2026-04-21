@@ -631,6 +631,7 @@ pub struct PrimitiveView {
     fit_zoom: f32,
     /// Tracks which model was rendered last frame; used to detect external model changes.
     last_rendered_model_name: Option<String>,
+    side_panel_collapsed: bool,
 }
 
 impl Default for PrimitiveView {
@@ -645,6 +646,7 @@ impl Default for PrimitiveView {
             zoom: None,
             fit_zoom: 1.0,
             last_rendered_model_name: None,
+            side_panel_collapsed: false,
         }
     }
 }
@@ -662,11 +664,24 @@ impl PrimitiveView {
             .map(|name| find_pb_types_for_model(arch, name))
             .unwrap_or_default();
 
-        egui::SidePanel::right("primitive_view_controls")
-            .default_width(250.0)
-            .show(ctx, |ui| {
-                self.render_side_panel(arch, &pb_type_matches, ui);
-            });
+        if self.side_panel_collapsed {
+            egui::SidePanel::right("primitive_view_controls")
+                .exact_width(24.0)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        if ui.button("◀").clicked() {
+                            self.side_panel_collapsed = false;
+                        }
+                    });
+                });
+        } else {
+            egui::SidePanel::right("primitive_view_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    self.render_side_panel(arch, &pb_type_matches, ui);
+                });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(arch, &pb_type_matches, ui);
@@ -679,7 +694,14 @@ impl PrimitiveView {
         pb_type_matches: &[PBTypeMatch<'_>],
         ui: &mut egui::Ui,
     ) {
-        ui.heading("Primitive View");
+        ui.horizontal(|ui| {
+            ui.heading("Primitive View");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("▶").clicked() {
+                    self.side_panel_collapsed = true;
+                }
+            });
+        });
 
         ui.add_space(10.0);
         ui.separator();

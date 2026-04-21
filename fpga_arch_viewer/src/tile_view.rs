@@ -11,6 +11,7 @@ use crate::{
 pub struct TileView {
     pub selected_tile_name: Option<String>,
     pub tile_zoom: f32,
+    pub side_panel_collapsed: bool,
 }
 
 impl Default for TileView {
@@ -18,6 +19,7 @@ impl Default for TileView {
         Self {
             selected_tile_name: None,
             tile_zoom: 1.0,
+            side_panel_collapsed: false,
         }
     }
 }
@@ -31,11 +33,24 @@ impl TileView {
         tile_colors: &HashMap<String, egui::Color32>,
         ctx: &egui::Context,
     ) {
-        egui::SidePanel::right("tile_view_controls")
-            .default_width(250.0)
-            .show(ctx, |ui| {
-                self.render_side_panel(arch, ui);
-            });
+        if self.side_panel_collapsed {
+            egui::SidePanel::right("tile_view_controls")
+                .exact_width(24.0)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        if ui.button("◀").clicked() {
+                            self.side_panel_collapsed = false;
+                        }
+                    });
+                });
+        } else {
+            egui::SidePanel::right("tile_view_controls")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    self.render_side_panel(arch, ui);
+                });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(
@@ -49,7 +64,14 @@ impl TileView {
     }
 
     fn render_side_panel(&mut self, arch: &FPGAArch, ui: &mut egui::Ui) {
-        ui.heading("Tile View");
+        ui.horizontal(|ui| {
+            ui.heading("Tile View");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("▶").clicked() {
+                    self.side_panel_collapsed = true;
+                }
+            });
+        });
 
         ui.add_space(10.0);
         ui.separator();

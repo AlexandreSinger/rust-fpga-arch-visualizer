@@ -24,6 +24,8 @@ pub struct GridState {
     pub last_available_size: egui::Vec2,
 
     pub show_noc: bool,
+
+    pub side_panel_collapsed: bool,
 }
 
 impl Default for GridState {
@@ -40,6 +42,7 @@ impl Default for GridState {
             zoom_changed: false,
             last_available_size: egui::Vec2::ZERO,
             show_noc: false,
+            side_panel_collapsed: false,
         }
     }
 }
@@ -245,10 +248,31 @@ fn render_grid_controls_panel(
 ) -> bool {
     let mut grid_changed = false;
 
+    if state.side_panel_collapsed {
+        egui::SidePanel::right("grid_controls")
+            .exact_width(24.0)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    if ui.button("◀").clicked() {
+                        state.side_panel_collapsed = false;
+                    }
+                });
+            });
+        return grid_changed;
+    }
+
     egui::SidePanel::right("grid_controls")
         .default_width(250.0)
         .show(ctx, |ui| {
-            ui.heading("Grid Settings");
+            ui.horizontal(|ui| {
+                ui.heading("Grid Settings");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("▶").clicked() {
+                        state.side_panel_collapsed = true;
+                    }
+                });
+            });
             ui.add_space(10.0);
 
             // Layout selection dropdown

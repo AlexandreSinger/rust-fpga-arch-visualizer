@@ -463,6 +463,7 @@ fn render_grid_controls_panel(
         let sorted_counts: Vec<_> = tile_counts.into_iter().collect();
 
         let table = egui_extras::TableBuilder::new(ui)
+            .vscroll(false)
             .striped(true)
             .column(egui_extras::Column::auto().at_least(100.0))
             .column(egui_extras::Column::auto().at_least(50.0))

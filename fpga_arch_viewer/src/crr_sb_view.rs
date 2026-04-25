@@ -129,7 +129,11 @@ impl CRRSBView {
         egui::SidePanel::right("crr_view_controls")
             .default_width(250.0)
             .show(ctx, |ui| {
-                self.render_side_panel(arch, ui);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        self.render_side_panel(arch, ui);
+                    });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_central_panel(arch, tile_colors, ui);

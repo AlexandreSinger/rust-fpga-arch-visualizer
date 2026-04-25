@@ -95,16 +95,24 @@ impl ComplexBlockView {
     }
 
     fn render_side_panel(&mut self, arch: &FPGAArch, ctx: &egui::Context) {
-        let should_expand_all = render_intra_tile_controls_panel(
-            ctx,
-            arch,
-            &mut self.complex_block_view_state.all_blocks_expanded,
-            &mut self.complex_block_view_state.draw_intra_interconnects,
-            &mut self.complex_block_view_state.selected_complex_block_name,
-        );
-        if should_expand_all {
-            self.apply_expand_all_state(arch);
-        }
+        egui::SidePanel::right("complex_block_controls")
+            .default_width(250.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let should_expand_all = render_intra_tile_controls_panel(
+                            ui,
+                            arch,
+                            &mut self.complex_block_view_state.all_blocks_expanded,
+                            &mut self.complex_block_view_state.draw_intra_interconnects,
+                            &mut self.complex_block_view_state.selected_complex_block_name,
+                        );
+                        if should_expand_all {
+                            self.apply_expand_all_state(arch);
+                        }
+                    });
+            });
     }
 
     fn apply_expand_all_state(&mut self, arch: &FPGAArch) {
@@ -129,7 +137,7 @@ impl ComplexBlockView {
 
 /// Renders the intra-tile view controls panel on the right side
 fn render_intra_tile_controls_panel(
-    ctx: &egui::Context,
+    ui: &mut egui::Ui,
     arch: &FPGAArch,
     all_blocks_expanded: &mut bool,
     draw_intra_interconnects: &mut bool,
@@ -137,66 +145,60 @@ fn render_intra_tile_controls_panel(
 ) -> bool {
     let mut expand_all = false;
 
-    egui::SidePanel::right("complex_block_controls")
-        .default_width(250.0)
-        .show(ctx, |ui| {
-            ui.heading("Complex Block View");
-            ui.add_space(10.0);
+    ui.heading("Complex Block View");
+    ui.add_space(10.0);
 
-            // Expand All toggle
-            let mut expand_all_toggle_val = *all_blocks_expanded;
-            if ui
-                .checkbox(&mut expand_all_toggle_val, "Expand All")
-                .changed()
-            {
-                *all_blocks_expanded = expand_all_toggle_val;
-                expand_all = true;
-            }
+    // Expand All toggle
+    let mut expand_all_toggle_val = *all_blocks_expanded;
+    if ui
+        .checkbox(&mut expand_all_toggle_val, "Expand All")
+        .changed()
+    {
+        *all_blocks_expanded = expand_all_toggle_val;
+        expand_all = true;
+    }
 
-            // Interconnect toggle
-            ui.checkbox(draw_intra_interconnects, "Draw Interconnects");
+    // Interconnect toggle
+    ui.checkbox(draw_intra_interconnects, "Draw Interconnects");
 
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(10.0);
+    ui.add_space(10.0);
+    ui.separator();
+    ui.add_space(10.0);
 
-            // Tile selector
-            if !arch.complex_block_list.is_empty() {
-                ui.label("Select Complex Block:");
-                ui.add_space(5.0);
+    // Tile selector
+    if !arch.complex_block_list.is_empty() {
+        ui.label("Select Complex Block:");
+        ui.add_space(5.0);
 
-                let mut selected_complex_block_name_str = selected_complex_block_name
-                    .as_deref()
-                    .unwrap_or("")
-                    .to_string();
+        let mut selected_complex_block_name_str = selected_complex_block_name
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
 
-                egui::ComboBox::from_id_salt("complex_block_selector")
-                    .selected_text(if !selected_complex_block_name_str.is_empty() {
-                        selected_complex_block_name_str.as_str()
-                    } else {
-                        "Select a complex block"
-                    })
-                    .show_ui(ui, |ui| {
-                        for pb_type in &arch.complex_block_list {
-                            ui.selectable_value(
-                                &mut selected_complex_block_name_str,
-                                pb_type.name.clone(),
-                                &pb_type.name,
-                            );
-                        }
-                    });
-
-                // If tile selection changed, update state
-                if selected_complex_block_name_str
-                    != selected_complex_block_name.as_deref().unwrap_or("")
-                {
-                    *selected_complex_block_name = Some(selected_complex_block_name_str);
-                    expand_all = true;
-                }
+        egui::ComboBox::from_id_salt("complex_block_selector")
+            .selected_text(if !selected_complex_block_name_str.is_empty() {
+                selected_complex_block_name_str.as_str()
             } else {
-                ui.label("No complex blocks available in architecture");
-            }
-        });
+                "Select a complex block"
+            })
+            .show_ui(ui, |ui| {
+                for pb_type in &arch.complex_block_list {
+                    ui.selectable_value(
+                        &mut selected_complex_block_name_str,
+                        pb_type.name.clone(),
+                        &pb_type.name,
+                    );
+                }
+            });
+
+        // If tile selection changed, update state
+        if selected_complex_block_name_str != selected_complex_block_name.as_deref().unwrap_or("") {
+            *selected_complex_block_name = Some(selected_complex_block_name_str);
+            expand_all = true;
+        }
+    } else {
+        ui.label("No complex blocks available in architecture");
+    }
 
     expand_all
 }

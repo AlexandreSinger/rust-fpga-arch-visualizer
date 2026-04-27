@@ -83,6 +83,11 @@ pub struct FpgaViewer {
     next_view_mode: ViewMode,
 
     fps: f32,
+
+    // Receives the path chosen by the native file dialog, which runs in a
+    // background thread so the UI thread is never blocked.
+    #[cfg(not(target_arch = "wasm32"))]
+    pending_file_dialog: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
 }
 
 fn get_file_line(file_path: &std::path::Path, line_num: u64) -> Option<String> {
@@ -263,6 +268,8 @@ impl FpgaViewer {
             view_mode: ViewMode::Summary,
             next_view_mode: ViewMode::Summary,
             fps: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
+            pending_file_dialog: None,
         }
     }
 
@@ -349,14 +356,17 @@ impl FpgaViewer {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_file_dialog(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("XML Architecture Files", &["xml"])
-            .set_title("Open FPGA Architecture File")
-            .pick_file()
-        {
-            self.load_architecture_file(path);
-        }
+    fn open_file_dialog(&mut self, ctx: egui::Context) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .add_filter("XML Architecture Files", &["xml"])
+                .set_title("Open FPGA Architecture File")
+                .pick_file();
+            let _ = tx.send(path);
+            ctx.request_repaint();
+        });
+        self.pending_file_dialog = Some(rx);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -451,7 +461,7 @@ impl FpgaViewer {
                             .corner_radius(BUTTON_SIZE / 2.0),
                     );
                     if open_button.clicked() {
-                        self.open_file_dialog();
+                        self.open_file_dialog(ctx.clone());
                     }
                     if open_button.hovered() {
                         open_button.on_hover_text("Open architecture file");
@@ -536,7 +546,7 @@ impl FpgaViewer {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open Architecture File...").clicked() {
-                        self.open_file_dialog();
+                        self.open_file_dialog(ctx.clone());
                         ui.close();
                     }
                     ui.menu_button("Open Sample Architecture", |ui| {
@@ -727,6 +737,17 @@ impl eframe::App for FpgaViewer {
                 PENDING_WASM_FILE_LOAD.with(|pending| pending.borrow_mut().take())
             {
                 self.load_architecture_from_bytes(data, file_name);
+            }
+        }
+
+        // Poll for a path from the native file dialog running in a background thread
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(rx) = &self.pending_file_dialog {
+            if let Ok(path_opt) = rx.try_recv() {
+                self.pending_file_dialog = None;
+                if let Some(path) = path_opt {
+                    self.load_architecture_file(path);
+                }
             }
         }
 

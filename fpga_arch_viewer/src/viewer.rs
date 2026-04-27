@@ -357,6 +357,9 @@ impl FpgaViewer {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn open_file_dialog(&mut self, ctx: egui::Context) {
+        if self.pending_file_dialog.is_some() {
+            return;
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()

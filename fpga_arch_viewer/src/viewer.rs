@@ -361,6 +361,9 @@ impl FpgaViewer {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn open_file_dialog(&mut self, ctx: egui::Context) {
+        if self.pending_file_dialog.is_some() {
+            return;
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
@@ -374,7 +377,7 @@ impl FpgaViewer {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn open_file_dialog(&mut self) {
+    fn open_file_dialog(&mut self, _ctx: egui::Context) {
         spawn_local(async {
             let file_handle = AsyncFileDialog::new()
                 .add_filter("XML Architecture Files", &["xml"])
@@ -746,12 +749,12 @@ impl eframe::App for FpgaViewer {
 
         // Poll for a path from the native file dialog running in a background thread
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(rx) = &self.pending_file_dialog {
-            if let Ok(path_opt) = rx.try_recv() {
-                self.pending_file_dialog = None;
-                if let Some(path) = path_opt {
-                    self.load_architecture_file(path);
-                }
+        if let Some(rx) = &self.pending_file_dialog
+            && let Ok(path_opt) = rx.try_recv()
+        {
+            self.pending_file_dialog = None;
+            if let Some(path) = path_opt {
+                self.load_architecture_file(path);
             }
         }
 

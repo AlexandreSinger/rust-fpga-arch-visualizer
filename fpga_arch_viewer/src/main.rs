@@ -38,10 +38,12 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
+    let initial_file = std::env::args().nth(1).map(std::path::PathBuf::from);
+
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new()))),
+        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(initial_file)))),
     )
 }
 
@@ -70,7 +72,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new()))),
+                Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(None)))),
             )
             .await;
 

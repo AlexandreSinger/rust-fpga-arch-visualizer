@@ -58,6 +58,12 @@ cargo build --release
 
 ## Usage
 
+You can optionally pass an architecture file path directly on the command line:
+
+```sh
+fpga_arch_viewer path/to/arch.xml
+```
+
 1. Launch `fpga_arch_viewer`.
 2. Click **File → Open Architecture File** and select a VTR architecture XML file.
 3. The **Summary view** opens, which gives an overall summary of the architecture; click **view tile grid** to see the **Device tile grid**. Hover over tiles for details; click a tile to drill into its **intra-tile view**.

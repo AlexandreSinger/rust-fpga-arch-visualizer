@@ -75,3 +75,12 @@ fn parse_only_flag_without_path_exits_nonzero() {
         .unwrap();
     assert!(!status.success());
 }
+
+#[test]
+fn unknown_flag_exits_nonzero() {
+    let status = Command::new(binary())
+        .arg("--parse_only")
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}

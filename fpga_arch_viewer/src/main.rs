@@ -31,6 +31,11 @@ fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
 
     // --parse-only <file>: parse the architecture file and report errors without opening the GUI.
+    if let Some(unknown) = args.iter().skip(1).find(|a| a.starts_with('-') && *a != "--parse-only") {
+        eprintln!("error: unknown argument: {unknown}");
+        std::process::exit(1);
+    }
+
     if let Some(pos) = args.iter().position(|a| a == "--parse-only") {
         let Some(file_str) = args.get(pos + 1) else {
             eprintln!("error: --parse-only requires a file path");

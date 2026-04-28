@@ -8,6 +8,7 @@ mod common_ui;
 mod complex_block_view;
 mod crr_sb_view;
 mod crr_view;
+mod error_report;
 mod grid;
 mod grid_renderer;
 mod grid_view;
@@ -26,6 +27,31 @@ mod viewer;
 fn main() -> Result<(), eframe::Error> {
     // Log to stderr (if you run with `RUST_LOG=debug`).
     env_logger::init();
+
+    let args: Vec<String> = std::env::args().collect();
+
+    // --parse-only <file>: parse the architecture file and report errors without opening the GUI.
+    if let Some(pos) = args.iter().position(|a| a == "--parse-only") {
+        let Some(file_str) = args.get(pos + 1) else {
+            eprintln!("error: --parse-only requires a file path");
+            std::process::exit(1);
+        };
+        let file_path = std::path::Path::new(file_str);
+        match fpga_arch_parser::parse(file_path) {
+            Ok(_) => {
+                println!("Successfully parsed: {}", file_path.display());
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!(
+                    "Parse error in {}:\n{}",
+                    file_path.display(),
+                    error_report::format_parse_error(&e, Some(file_path))
+                );
+                std::process::exit(1);
+            }
+        }
+    }
 
     // Load the icon data.
     let icon_data =

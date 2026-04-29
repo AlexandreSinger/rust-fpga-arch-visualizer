@@ -21,7 +21,7 @@ fn invalid_arch() -> &'static str {
 #[test]
 fn parse_only_valid_exits_zero() {
     let status = Command::new(binary())
-        .args(["--parse-only", valid_arch()])
+        .args([valid_arch(), "--parse-only"])
         .status()
         .unwrap();
     assert!(status.success());
@@ -30,7 +30,7 @@ fn parse_only_valid_exits_zero() {
 #[test]
 fn parse_only_valid_prints_success() {
     let output = Command::new(binary())
-        .args(["--parse-only", valid_arch()])
+        .args([valid_arch(), "--parse-only"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -41,7 +41,7 @@ fn parse_only_valid_prints_success() {
 #[test]
 fn parse_only_invalid_exits_nonzero() {
     let status = Command::new(binary())
-        .args(["--parse-only", invalid_arch()])
+        .args([invalid_arch(), "--parse-only"])
         .status()
         .unwrap();
     assert!(!status.success());
@@ -50,7 +50,7 @@ fn parse_only_invalid_exits_nonzero() {
 #[test]
 fn parse_only_invalid_reports_error_to_stderr() {
     let output = Command::new(binary())
-        .args(["--parse-only", invalid_arch()])
+        .args([invalid_arch(), "--parse-only"])
         .output()
         .unwrap();
     assert!(!output.status.success());
@@ -61,7 +61,7 @@ fn parse_only_invalid_reports_error_to_stderr() {
 #[test]
 fn parse_only_missing_file_exits_nonzero() {
     let status = Command::new(binary())
-        .args(["--parse-only", "/nonexistent/path/arch.xml"])
+        .args(["/nonexistent/path/arch.xml", "--parse-only"])
         .status()
         .unwrap();
     assert!(!status.success());

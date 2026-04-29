@@ -30,18 +30,24 @@ fn main() -> Result<(), eframe::Error> {
 
     let args: Vec<String> = std::env::args().collect();
 
-    // --parse-only <file>: parse the architecture file and report errors without opening the GUI.
     if let Some(unknown) = args.iter().skip(1).find(|a| a.starts_with('-') && *a != "--parse-only") {
         eprintln!("error: unknown argument: {unknown}");
         std::process::exit(1);
     }
 
-    if let Some(pos) = args.iter().position(|a| a == "--parse-only") {
-        let Some(file_str) = args.get(pos + 1) else {
+    let parse_only = args.iter().any(|a| a == "--parse-only");
+    let initial_file = args
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-'))
+        .map(std::path::PathBuf::from);
+
+    // --parse-only: parse the architecture file and report errors without opening the GUI.
+    if parse_only {
+        let Some(file_path) = initial_file.as_deref() else {
             eprintln!("error: --parse-only requires a file path");
             std::process::exit(1);
         };
-        let file_path = std::path::Path::new(file_str);
         match fpga_arch_parser::parse(file_path) {
             Ok(_) => {
                 println!("Successfully parsed: {}", file_path.display());
@@ -57,12 +63,6 @@ fn main() -> Result<(), eframe::Error> {
             }
         }
     }
-
-    let initial_file = args
-        .iter()
-        .skip(1)
-        .find(|a| !a.starts_with('-'))
-        .map(std::path::PathBuf::from);
 
     // Load the icon data.
     let icon_data =

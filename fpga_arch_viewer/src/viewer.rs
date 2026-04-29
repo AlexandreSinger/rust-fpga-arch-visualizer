@@ -93,8 +93,8 @@ pub struct FpgaViewer {
 
 
 impl FpgaViewer {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(initial_file: Option<std::path::PathBuf>) -> Self {
+        let mut viewer = Self {
             architecture: None,
             viewer_ctx: ViewerContext {
                 show_about: false,
@@ -120,7 +120,11 @@ impl FpgaViewer {
             fps: 0.0,
             #[cfg(not(target_arch = "wasm32"))]
             pending_file_dialog: None,
+        };
+        if let Some(path) = initial_file {
+            viewer.load_architecture_file(path);
         }
+        viewer
     }
 
     fn loaded_arch_filename(&self) -> Option<String> {

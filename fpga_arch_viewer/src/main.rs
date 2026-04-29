@@ -58,6 +58,12 @@ fn main() -> Result<(), eframe::Error> {
         }
     }
 
+    let initial_file = args
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-'))
+        .map(std::path::PathBuf::from);
+
     // Load the icon data.
     let icon_data =
         eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..]);
@@ -72,7 +78,7 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new()))),
+        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(initial_file)))),
     )
 }
 
@@ -101,7 +107,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new()))),
+                Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(None)))),
             )
             .await;
 

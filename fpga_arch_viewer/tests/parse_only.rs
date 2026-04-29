@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_fpga_arch_viewer")
@@ -22,6 +22,7 @@ fn invalid_arch() -> &'static str {
 fn parse_only_valid_exits_zero() {
     let status = Command::new(binary())
         .args([valid_arch(), "--parse-only"])
+        .stderr(Stdio::null())
         .status()
         .unwrap();
     assert!(status.success());
@@ -42,6 +43,7 @@ fn parse_only_valid_prints_success() {
 fn parse_only_invalid_exits_nonzero() {
     let status = Command::new(binary())
         .args([invalid_arch(), "--parse-only"])
+        .stderr(Stdio::null())
         .status()
         .unwrap();
     assert!(!status.success());
@@ -62,6 +64,7 @@ fn parse_only_invalid_reports_error_to_stderr() {
 fn parse_only_missing_file_exits_nonzero() {
     let status = Command::new(binary())
         .args(["/nonexistent/path/arch.xml", "--parse-only"])
+        .stderr(Stdio::null())
         .status()
         .unwrap();
     assert!(!status.success());
@@ -71,6 +74,7 @@ fn parse_only_missing_file_exits_nonzero() {
 fn parse_only_flag_without_path_exits_nonzero() {
     let status = Command::new(binary())
         .arg("--parse-only")
+        .stderr(Stdio::null())
         .status()
         .unwrap();
     assert!(!status.success());
@@ -80,6 +84,7 @@ fn parse_only_flag_without_path_exits_nonzero() {
 fn unknown_flag_exits_nonzero() {
     let status = Command::new(binary())
         .arg("--parse_only")
+        .stderr(Stdio::null())
         .status()
         .unwrap();
     assert!(!status.success());

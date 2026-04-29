@@ -30,7 +30,11 @@ fn main() -> Result<(), eframe::Error> {
 
     let args: Vec<String> = std::env::args().collect();
 
-    if let Some(unknown) = args.iter().skip(1).find(|a| a.starts_with('-') && *a != "--parse-only") {
+    if let Some(unknown) = args
+        .iter()
+        .skip(1)
+        .find(|a| a.starts_with('-') && *a != "--parse-only")
+    {
         eprintln!("error: unknown argument: {unknown}");
         std::process::exit(1);
     }

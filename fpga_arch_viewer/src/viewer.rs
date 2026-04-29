@@ -91,7 +91,6 @@ pub struct FpgaViewer {
     pending_file_dialog: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
 }
 
-
 impl FpgaViewer {
     pub fn new(initial_file: Option<std::path::PathBuf>) -> Self {
         let mut viewer = Self {

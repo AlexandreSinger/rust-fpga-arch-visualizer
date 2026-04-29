@@ -1,0 +1,91 @@
+use std::process::{Command, Stdio};
+
+fn binary() -> &'static str {
+    env!("CARGO_BIN_EXE_fpga_arch_viewer")
+}
+
+fn valid_arch() -> &'static str {
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../fpga_arch_parser/tests/k4_N4_90nm.xml"
+    )
+}
+
+fn invalid_arch() -> &'static str {
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/invalid_arch.xml"
+    )
+}
+
+#[test]
+fn parse_only_valid_exits_zero() {
+    let status = Command::new(binary())
+        .args([valid_arch(), "--parse-only"])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn parse_only_valid_prints_success() {
+    let output = Command::new(binary())
+        .args([valid_arch(), "--parse-only"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Successfully parsed"));
+}
+
+#[test]
+fn parse_only_invalid_exits_nonzero() {
+    let status = Command::new(binary())
+        .args([invalid_arch(), "--parse-only"])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}
+
+#[test]
+fn parse_only_invalid_reports_error_to_stderr() {
+    let output = Command::new(binary())
+        .args([invalid_arch(), "--parse-only"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Parse error"));
+}
+
+#[test]
+fn parse_only_missing_file_exits_nonzero() {
+    let status = Command::new(binary())
+        .args(["/nonexistent/path/arch.xml", "--parse-only"])
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}
+
+#[test]
+fn parse_only_flag_without_path_exits_nonzero() {
+    let status = Command::new(binary())
+        .arg("--parse-only")
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}
+
+#[test]
+fn unknown_flag_exits_nonzero() {
+    let status = Command::new(binary())
+        .arg("--parse_only")
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!status.success());
+}

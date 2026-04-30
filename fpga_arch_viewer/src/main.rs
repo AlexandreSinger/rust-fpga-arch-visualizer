@@ -24,34 +24,30 @@ mod tile_view;
 mod viewer;
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(clap::Parser)]
+#[command(about = "Visualizer for VTR FPGA architecture description files")]
+struct Args {
+    /// Path to the architecture file to open
+    file: Option<std::path::PathBuf>,
+
+    /// Parse the architecture file and report errors without opening the GUI
+    #[arg(long, requires = "file")]
+    parse_only: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
+    use clap::Parser as _;
+
     // Log to stderr (if you run with `RUST_LOG=debug`).
     env_logger::init();
 
-    let args: Vec<String> = std::env::args().collect();
-
-    if let Some(unknown) = args
-        .iter()
-        .skip(1)
-        .find(|a| a.starts_with('-') && *a != "--parse-only")
-    {
-        eprintln!("error: unknown argument: {unknown}");
-        std::process::exit(1);
-    }
-
-    let parse_only = args.iter().any(|a| a == "--parse-only");
-    let initial_file = args
-        .iter()
-        .skip(1)
-        .find(|a| !a.starts_with('-'))
-        .map(std::path::PathBuf::from);
+    let args = Args::parse();
 
     // --parse-only: parse the architecture file and report errors without opening the GUI.
-    if parse_only {
-        let Some(file_path) = initial_file.as_deref() else {
-            eprintln!("error: --parse-only requires a file path");
-            std::process::exit(1);
-        };
+    if args.parse_only {
+        // Safe: clap enforces `file` is present when `--parse-only` is used via `requires = "file"`.
+        let file_path = args.file.as_deref().unwrap();
         match fpga_arch_parser::parse(file_path) {
             Ok(_) => {
                 println!("Successfully parsed: {}", file_path.display());
@@ -79,12 +75,10 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
-    let initial_file = std::env::args().nth(1).map(std::path::PathBuf::from);
-
     eframe::run_native(
         "FPGA Architecture Visualizer",
         options,
-        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(initial_file)))),
+        Box::new(|_cc| Ok(Box::new(viewer::FpgaViewer::new(args.file)))),
     )
 }
 

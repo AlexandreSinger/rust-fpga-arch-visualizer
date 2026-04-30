@@ -22,6 +22,7 @@ fn invalid_arch() -> &'static str {
 fn parse_only_valid_exits_zero() {
     let status = Command::new(binary())
         .args([valid_arch(), "--parse-only"])
+        .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .unwrap();

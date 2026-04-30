@@ -124,6 +124,7 @@ impl CRRSBView {
         &mut self,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ctx: &egui::Context,
     ) {
         egui::SidePanel::right("crr_view_controls")
@@ -136,7 +137,7 @@ impl CRRSBView {
                     });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, tile_colors, ui);
+            self.render_central_panel(arch, tile_colors, dark_mode, ui);
         });
     }
 
@@ -206,6 +207,7 @@ impl CRRSBView {
         &mut self,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         if let Some(error_msg) = &self.last_error {
@@ -240,7 +242,7 @@ impl CRRSBView {
             {
                 let grid =
                     DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
-                self.render_crr_sb(&grid, arch, tile_colors, ui);
+                self.render_crr_sb(&grid, arch, tile_colors, dark_mode, ui);
             }
             // } else if let Some(error_msg) = &self.last_error {
             //     ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
@@ -295,6 +297,7 @@ impl CRRSBView {
         grid: &DeviceGrid,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
@@ -360,10 +363,10 @@ impl CRRSBView {
 
                     let tile_lb_color = match tile_colors.get(&tile.name) {
                         Some(c) => *c,
-                        None => color_scheme::grid_cb_color(false),
+                        None => color_scheme::grid_cb_color(dark_mode),
                     };
                     let logic_block_renderer =
-                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color);
+                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color, dark_mode);
                     render_tile_lookup.insert(tile.name.clone(), logic_block_renderer);
 
                     tile_object_lookup.insert(tile.name.clone(), tile);

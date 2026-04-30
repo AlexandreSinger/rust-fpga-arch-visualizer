@@ -498,6 +498,7 @@ impl FpgaViewer {
                     arch,
                     &mut self.tile_view.selected_tile_name,
                     &mut self.next_view_mode,
+                    self.viewer_ctx.dark_mode,
                     ctx,
                 ),
                 ViewMode::Tile => self.tile_view.render(
@@ -505,6 +506,7 @@ impl FpgaViewer {
                     &mut self.complex_block_view.complex_block_view_state,
                     &mut self.next_view_mode,
                     &self.grid_view.tile_colors,
+                    self.viewer_ctx.dark_mode,
                     ctx,
                 ),
                 ViewMode::ComplexBlock => self.complex_block_view.render(
@@ -516,7 +518,7 @@ impl FpgaViewer {
                 ViewMode::Primitive => self.primitive_view.render(arch, ctx),
                 ViewMode::CRRSwitchBlock => {
                     self.crr_sb_view
-                        .render(arch, &self.grid_view.tile_colors, ctx)
+                        .render(arch, &self.grid_view.tile_colors, self.viewer_ctx.dark_mode, ctx)
                 }
             },
             None => {
@@ -627,6 +629,7 @@ impl eframe::App for FpgaViewer {
         self.viewer_ctx
             .block_styles
             .update_colors(self.viewer_ctx.dark_mode);
+        self.grid_view.update_tile_colors(self.viewer_ctx.dark_mode);
 
         // Update FPS (smoothed with exponential moving average)
         let dt = ctx.input(|i| i.stable_dt);

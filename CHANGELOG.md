@@ -1,3 +1,15 @@
+## [v0.3.7] - 2026-05-01
+
+### Added
+- Added scroll regions to side-bars so they are easier to see on small screens.
+- Added CLI arguments to pre-select an architecture file and run parsing only (without the viewer opening).
+
+### Fixed
+- Fixed caching issue with web builds, so now the cache is always invalidated on new version releases.
+- Fixed potential vulnerability in rand.
+- Fixed the viewer freezing on Linux while loading a file by making file I/O non-blocking.
+- Fixed dark mode in the tile view, the grid view, and the CRR Switch Block view.
+
 ## [v0.3.6] - 2026-03-29
 
 ### Added

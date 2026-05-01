@@ -4,7 +4,7 @@ use fpga_arch_parser::FPGAArch;
 use std::collections::HashMap;
 
 use crate::{
-    common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree,
+    color_scheme, common_ui, complex_block_view::ComplexBlockViewState, intra_hierarchy_tree,
     tile_rendering::tile_renderer::build_render_tile, viewer::ViewMode,
 };
 
@@ -29,6 +29,7 @@ impl TileView {
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ctx: &egui::Context,
     ) {
         egui::SidePanel::right("tile_view_controls")
@@ -47,6 +48,7 @@ impl TileView {
                 complex_block_view_state,
                 next_view_mode,
                 tile_colors,
+                dark_mode,
                 ui,
             );
         });
@@ -98,6 +100,7 @@ impl TileView {
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         match &self.selected_tile_name {
@@ -108,6 +111,7 @@ impl TileView {
                         complex_block_view_state,
                         next_view_mode,
                         tile_colors,
+                        dark_mode,
                         arch,
                         ui,
                     );
@@ -139,6 +143,7 @@ impl TileView {
         complex_block_view_state: &mut ComplexBlockViewState,
         next_view_mode: &mut ViewMode,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         arch: &FPGAArch,
         ui: &mut egui::Ui,
     ) {
@@ -187,8 +192,9 @@ impl TileView {
                     let color = tile_colors
                         .get(&tile.name)
                         .copied()
-                        .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
-                    let tile_renderer = build_render_tile(tile, &tile_bounding_box, &color);
+                        .unwrap_or(color_scheme::grid_lb_color(dark_mode));
+                    let tile_renderer =
+                        build_render_tile(tile, &tile_bounding_box, &color, dark_mode);
                     painter.extend(tile_renderer.lb_shapes);
                     painter.extend(tile_renderer.pin_shapes);
 

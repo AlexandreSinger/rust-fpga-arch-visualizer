@@ -63,8 +63,27 @@ pub fn get_default_color_palette() -> Vec<Color32> {
     ]
 }
 
-pub fn get_tile_color(_tile_name: &str, tile_index: usize) -> Color32 {
-    let palette = get_default_color_palette();
+pub fn get_dark_color_palette() -> Vec<Color32> {
+    vec![
+        Color32::from_rgb(60, 80, 120),  // Dark Blue
+        Color32::from_rgb(80, 80, 80),   // Dark Gray
+        Color32::from_rgb(120, 90, 60),  // Dark Orange
+        Color32::from_rgb(120, 110, 70), // Dark Yellow
+        Color32::from_rgb(60, 100, 65),  // Dark Green
+        Color32::from_rgb(90, 65, 100),  // Dark Purple
+        Color32::from_rgb(120, 65, 65),  // Dark Pink
+        Color32::from_rgb(55, 95, 105),  // Dark Cyan
+        Color32::from_rgb(100, 95, 50),  // Dark Amber
+        Color32::from_rgb(80, 90, 55),   // Dark Lime
+    ]
+}
+
+pub fn get_tile_color(_tile_name: &str, tile_index: usize, dark_mode: bool) -> Color32 {
+    let palette = if dark_mode {
+        get_dark_color_palette()
+    } else {
+        get_default_color_palette()
+    };
     palette[tile_index % palette.len()]
 }
 

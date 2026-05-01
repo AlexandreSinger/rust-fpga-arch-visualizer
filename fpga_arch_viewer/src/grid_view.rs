@@ -89,24 +89,26 @@ pub struct GridView {
 
     // Renderer object in charge of the grid.
     pub grid_renderer: GridRenderer,
+
+    // Sorted tile names for rebuilding colors when dark mode changes.
+    sorted_tile_names: Vec<String>,
+    // Last dark mode value used to build tile_colors; None forces a rebuild.
+    last_dark_mode: Option<bool>,
 }
 
 impl GridView {
     pub fn on_architecture_load(&mut self, arch: &FPGAArch) {
-        // Extract unique tile names from all layouts
+        // Extract and store sorted unique tile names.
         let mut tile_names = std::collections::HashSet::new();
         for tile in &arch.tiles {
             tile_names.insert(tile.name.clone());
         }
+        self.sorted_tile_names = tile_names.into_iter().collect();
+        self.sorted_tile_names.sort();
 
-        // Assign colors to tile types
+        // Force a color rebuild on the next update_tile_colors call.
+        self.last_dark_mode = None;
         self.tile_colors.clear();
-        let mut sorted_tiles: Vec<_> = tile_names.into_iter().collect();
-        sorted_tiles.sort();
-        for (i, tile_name) in sorted_tiles.iter().enumerate() {
-            let color = crate::block_style::get_tile_color(tile_name, i);
-            self.tile_colors.insert(tile_name.clone(), color);
-        }
 
         // Reset layout selection and rebuild grid
         self.grid_state.selected_layout_index = 0;
@@ -114,17 +116,33 @@ impl GridView {
         self.rebuild_grid(arch);
     }
 
+    /// Rebuilds tile_colors for the given dark mode. Called every frame from
+    /// the top-level update so colors stay current regardless of active view.
+    pub fn update_tile_colors(&mut self, dark_mode: bool) {
+        if self.last_dark_mode == Some(dark_mode) {
+            return;
+        }
+        self.last_dark_mode = Some(dark_mode);
+        self.tile_colors.clear();
+        for (i, tile_name) in self.sorted_tile_names.iter().enumerate() {
+            let color = crate::block_style::get_tile_color(tile_name, i, dark_mode);
+            self.tile_colors.insert(tile_name.clone(), color);
+        }
+        self.grid_state.grid_changed = true;
+    }
+
     pub fn render(
         &mut self,
         arch: &FPGAArch,
         selected_tile_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
+        dark_mode: bool,
         ctx: &egui::Context,
     ) {
         self.render_side_panel(arch, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_grid_view(arch, selected_tile_name, next_view_mode, ui);
+            self.render_grid_view(arch, selected_tile_name, next_view_mode, dark_mode, ui);
         });
 
         self.grid_state.zoom_changed = false;
@@ -172,6 +190,7 @@ impl GridView {
         arch: &FPGAArch,
         selected_tile_name: &mut Option<String>,
         next_view_mode: &mut ViewMode,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         // Handle zoom input (Cmd + scroll wheel or pinch gesture)
@@ -204,13 +223,14 @@ impl GridView {
                     grid,
                     &self.tile_colors,
                     self.grid_state.zoom_factor,
+                    dark_mode,
                     ui,
                 );
                 self.grid_state.last_available_size = current_available_size;
             }
             if let Some(clicked_tile) =
                 self.grid_renderer
-                    .render_grid(ui, grid, arch, &self.grid_state)
+                    .render_grid(ui, grid, arch, &self.grid_state, dark_mode)
             {
                 *selected_tile_name = Some(clicked_tile);
                 *next_view_mode = ViewMode::Tile;

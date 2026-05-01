@@ -215,3 +215,16 @@ pub fn grid_cb_color(dark_mode: bool) -> egui::Color32 {
         egui::Color32::from_rgb(0xFF, 0xF3, 0xCC) // #FFF3CC - Light yellow
     }
 }
+
+// ----------------------------------------------------------------------------
+// CRR Switch Block View Colors
+// ----------------------------------------------------------------------------
+
+/// Wire/channel stroke color for the CRR Switch Block view
+pub fn crr_wire_color(dark_mode: bool) -> egui::Color32 {
+    if dark_mode {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::BLACK
+    }
+}

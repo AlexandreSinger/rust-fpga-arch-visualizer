@@ -8,6 +8,7 @@
 use fpga_arch_parser::{PinSide, Tile};
 
 use crate::block_style;
+use crate::color_scheme;
 
 pub struct TileRenderer {
     /// The shapes that make up the logical block.
@@ -30,6 +31,7 @@ pub fn build_render_tile(
     tile: &Tile,
     tile_bounding_box: &egui::Rect,
     color: &egui::Color32,
+    dark_mode: bool,
 ) -> TileRenderer {
     // Build the logic block. For now its just a rectangle the size of the tile.
     let mut lb_shapes: Vec<egui::Shape> = Vec::new();
@@ -148,7 +150,7 @@ pub fn build_render_tile(
             pin_shapes.push(egui::Shape::circle_filled(
                 pin_pos.to_pos2(),
                 pin_radius,
-                egui::Color32::BLACK,
+                color_scheme::theme_text_color(dark_mode),
             ));
         }
     }

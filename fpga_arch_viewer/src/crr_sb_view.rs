@@ -124,6 +124,7 @@ impl CRRSBView {
         &mut self,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ctx: &egui::Context,
     ) {
         egui::SidePanel::right("crr_view_controls")
@@ -136,7 +137,7 @@ impl CRRSBView {
                     });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(arch, tile_colors, ui);
+            self.render_central_panel(arch, tile_colors, dark_mode, ui);
         });
     }
 
@@ -206,6 +207,7 @@ impl CRRSBView {
         &mut self,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         if let Some(error_msg) = &self.last_error {
@@ -240,7 +242,7 @@ impl CRRSBView {
             {
                 let grid =
                     DeviceGrid::from_fixed_layout(arch, self.crr_view_state.selected_layout_index);
-                self.render_crr_sb(&grid, arch, tile_colors, ui);
+                self.render_crr_sb(&grid, arch, tile_colors, dark_mode, ui);
             }
             // } else if let Some(error_msg) = &self.last_error {
             //     ui.colored_label(egui::Color32::RED, format!("Error: {}", error_msg));
@@ -295,6 +297,7 @@ impl CRRSBView {
         grid: &DeviceGrid,
         arch: &FPGAArch,
         tile_colors: &HashMap<String, egui::Color32>,
+        dark_mode: bool,
         ui: &mut egui::Ui,
     ) {
         egui::ScrollArea::both()
@@ -360,10 +363,10 @@ impl CRRSBView {
 
                     let tile_lb_color = match tile_colors.get(&tile.name) {
                         Some(c) => *c,
-                        None => color_scheme::grid_cb_color(false),
+                        None => color_scheme::grid_cb_color(dark_mode),
                     };
                     let logic_block_renderer =
-                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color);
+                        build_render_tile(tile, &tile_lb_rect, &tile_lb_color, dark_mode);
                     render_tile_lookup.insert(tile.name.clone(), logic_block_renderer);
 
                     tile_object_lookup.insert(tile.name.clone(), tile);
@@ -387,6 +390,7 @@ impl CRRSBView {
                         chan_wire_stroke,
                         &chan_x_rect,
                         &sb_rect.size(),
+                        dark_mode,
                     );
                     channel_wires.append(&mut build_chan_y_shapes(
                         crr_sb,
@@ -394,6 +398,7 @@ impl CRRSBView {
                         chan_wire_stroke,
                         &chan_y_rect,
                         &sb_rect.size(),
+                        dark_mode,
                     ));
                     channel_wires_lookup.insert(csv_file_name.clone(), channel_wires);
 
@@ -402,6 +407,7 @@ impl CRRSBView {
                         spacing_between_points,
                         chan_wire_stroke,
                         &sb_rect,
+                        dark_mode,
                     );
                     segment_conns_lookup.insert(csv_file_name.clone(), segment_connections);
 
@@ -410,6 +416,7 @@ impl CRRSBView {
                         crr_sb_info,
                         spacing_between_points,
                         &sb_rect,
+                        dark_mode,
                     );
                     switch_conns_lookup.insert(csv_file_name.clone(), switch_connections);
                 }
@@ -542,6 +549,7 @@ impl CRRSBView {
                                     lb_render_tile,
                                     &tile_relative_offset,
                                     &sb_rect,
+                                    dark_mode,
                                 );
                                 for shape in &mut lb_connection_shapes {
                                     shape.translate(tile_offset.to_vec2());
@@ -816,7 +824,9 @@ fn build_chan_x_shapes(
     chan_wire_stroke: f32,
     chan_x_rect: &egui::Rect,
     sb_size: &egui::Vec2,
+    dark_mode: bool,
 ) -> Vec<egui::Shape> {
+    let wire_color = crate::color_scheme::crr_wire_color(dark_mode);
     let mut chan_x_shapes: Vec<egui::Shape> = Vec::with_capacity(crr_sb.chan_x_width);
     for chan_x_ptc in 0..crr_sb.chan_x_width {
         let left_conn_pt = get_ptc_loc(
@@ -830,7 +840,7 @@ fn build_chan_x_shapes(
                 left_conn_pt + chan_x_rect.left_top().to_vec2(),
                 left_conn_pt + chan_x_rect.right_top().to_vec2(),
             ],
-            egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            egui::Stroke::new(chan_wire_stroke, wire_color),
         ));
     }
 
@@ -843,7 +853,9 @@ fn build_chan_y_shapes(
     chan_wire_stroke: f32,
     chan_y_rect: &egui::Rect,
     sb_size: &egui::Vec2,
+    dark_mode: bool,
 ) -> Vec<egui::Shape> {
+    let wire_color = crate::color_scheme::crr_wire_color(dark_mode);
     let mut chan_y_shapes: Vec<egui::Shape> = Vec::with_capacity(crr_sb.chan_y_width);
     for chan_y_ptc in 0..crr_sb.chan_y_width {
         let left_conn_pt = get_ptc_loc(
@@ -857,7 +869,7 @@ fn build_chan_y_shapes(
                 left_conn_pt + chan_y_rect.left_top().to_vec2(),
                 left_conn_pt + chan_y_rect.left_bottom().to_vec2(),
             ],
-            egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+            egui::Stroke::new(chan_wire_stroke, wire_color),
         ));
     }
 
@@ -869,7 +881,9 @@ fn build_segment_connection_shapes(
     spacing_between_points: f32,
     chan_wire_stroke: f32,
     sb_rect: &egui::Rect,
+    dark_mode: bool,
 ) -> Vec<egui::Shape> {
+    let wire_color = crate::color_scheme::crr_wire_color(dark_mode);
     let mut segment_connection_shapes: Vec<egui::Shape> = Vec::new();
     for chan_x_lane in &crr_sb.chan_x_lanes {
         for i in 0..(chan_x_lane.segment_len - 1) {
@@ -908,14 +922,14 @@ fn build_segment_connection_shapes(
                     left_source_loc + sb_rect.min.to_vec2(),
                     right_sink_loc + sb_rect.min.to_vec2(),
                 ],
-                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                egui::Stroke::new(chan_wire_stroke, wire_color),
             ));
             segment_connection_shapes.push(egui::Shape::line_segment(
                 [
                     right_source_loc + sb_rect.min.to_vec2(),
                     left_sink_loc + sb_rect.min.to_vec2(),
                 ],
-                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                egui::Stroke::new(chan_wire_stroke, wire_color),
             ));
         }
     }
@@ -956,14 +970,14 @@ fn build_segment_connection_shapes(
                     top_source_loc + sb_rect.min.to_vec2(),
                     bottom_sink_loc + sb_rect.min.to_vec2(),
                 ],
-                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                egui::Stroke::new(chan_wire_stroke, wire_color),
             ));
             segment_connection_shapes.push(egui::Shape::line_segment(
                 [
                     bottom_source_loc + sb_rect.min.to_vec2(),
                     top_sink_loc + sb_rect.min.to_vec2(),
                 ],
-                egui::Stroke::new(chan_wire_stroke, egui::Color32::BLACK),
+                egui::Stroke::new(chan_wire_stroke, wire_color),
             ));
         }
     }
@@ -976,7 +990,9 @@ fn build_switch_connection_shapes(
     crr_sb_info: &CRRSwitchBlockDeserialized,
     spacing_between_points: f32,
     sb_rect: &egui::Rect,
+    dark_mode: bool,
 ) -> Vec<egui::Shape> {
+    let wire_color = crate::color_scheme::crr_wire_color(dark_mode);
     let mut switch_connection_shapes: Vec<egui::Shape> = Vec::new();
     for edge in &crr_sb_info.edges {
         let src_node = &crr_sb_info.source_nodes[edge.source_node_id];
@@ -997,7 +1013,7 @@ fn build_switch_connection_shapes(
                 src_node_loc + sb_rect.min.to_vec2(),
                 sink_node_loc + sb_rect.min.to_vec2(),
             ],
-            egui::Stroke::new(1.0, egui::Color32::BLACK),
+            egui::Stroke::new(1.0, wire_color),
         ));
     }
 
@@ -1012,7 +1028,9 @@ fn build_lb_connection_shapes(
     logic_block_renderer: &TileRenderer,
     tile_relative_offset: &egui::Vec2,
     sb_rect: &egui::Rect,
+    dark_mode: bool,
 ) -> Vec<egui::Shape> {
+    let wire_color = crate::color_scheme::crr_wire_color(dark_mode);
     let mut lb_connection_shapes: Vec<egui::Shape> = Vec::new();
 
     // Draw flylines from pins to their connections.
@@ -1089,7 +1107,7 @@ fn build_lb_connection_shapes(
             for sink_node_loc in &sink_node_locs {
                 lb_connection_shapes.push(egui::Shape::line_segment(
                     [src_node_loc.to_pos2(), sink_node_loc.to_pos2()],
-                    egui::Stroke::new(1.0, egui::Color32::BLACK),
+                    egui::Stroke::new(1.0, wire_color),
                 ));
             }
         }

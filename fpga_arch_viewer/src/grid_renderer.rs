@@ -1,4 +1,5 @@
 use crate::block_style::darken_color;
+use crate::color_scheme;
 use crate::grid::{DeviceGrid, GridCell};
 use crate::grid_view::GridState;
 use eframe::egui;
@@ -21,6 +22,7 @@ impl GridRenderer {
         grid: &DeviceGrid,
         tile_colors: &HashMap<String, egui::Color32>,
         zoom_factor: f32,
+        dark_mode: bool,
         ui: &egui::Ui,
     ) {
         self.grid_shapes.clear();
@@ -50,7 +52,10 @@ impl GridRenderer {
                                 self.grid_shapes[die_id].push(egui::Shape::rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
-                                    egui::Stroke::new(0.5, egui::Color32::DARK_GRAY),
+                                    egui::Stroke::new(
+                                        0.5,
+                                        color_scheme::theme_border_color(dark_mode),
+                                    ),
                                     egui::epaint::StrokeKind::Inside,
                                 ));
                             }
@@ -75,7 +80,7 @@ impl GridRenderer {
                                 let color = tile_colors
                                     .get(pb_type)
                                     .copied()
-                                    .unwrap_or(egui::Color32::from_rgb(0xD8, 0xE7, 0xFD));
+                                    .unwrap_or(color_scheme::grid_lb_color(dark_mode));
 
                                 let outline_color = darken_color(color, 0.5);
 
@@ -107,7 +112,7 @@ impl GridRenderer {
                                             egui::Align2::CENTER_CENTER,
                                             &tile_name_upper,
                                             egui::FontId::proportional(font_size),
-                                            egui::Color32::BLACK,
+                                            color_scheme::theme_text_color(dark_mode),
                                         ));
                                     });
                                 }
@@ -150,6 +155,7 @@ impl GridRenderer {
         grid: &DeviceGrid,
         arch: &FPGAArch,
         state: &GridState,
+        dark_mode: bool,
     ) -> Option<String> {
         // Cell size is based on the available space
         let cell_size = get_cell_size(grid, state.zoom_factor, ui);
@@ -229,7 +235,7 @@ impl GridRenderer {
                             };
                             noc_shapes.push(egui::Shape::line_segment(
                                 [from_pos, to_pos],
-                                egui::Stroke::new(2.0, egui::Color32::BLACK),
+                                egui::Stroke::new(2.0, color_scheme::theme_text_color(dark_mode)),
                             ));
                         }
                     }
@@ -239,7 +245,7 @@ impl GridRenderer {
                         noc_shapes.push(egui::Shape::circle_filled(
                             *router_position,
                             cell_size / 2.0,
-                            egui::Color32::BLACK,
+                            color_scheme::theme_text_color(dark_mode),
                         ));
                     }
 

@@ -193,7 +193,8 @@ impl TileView {
                         .get(&tile.name)
                         .copied()
                         .unwrap_or(color_scheme::grid_lb_color(dark_mode));
-                    let tile_renderer = build_render_tile(tile, &tile_bounding_box, &color, dark_mode);
+                    let tile_renderer =
+                        build_render_tile(tile, &tile_bounding_box, &color, dark_mode);
                     painter.extend(tile_renderer.lb_shapes);
                     painter.extend(tile_renderer.pin_shapes);
 

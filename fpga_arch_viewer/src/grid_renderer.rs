@@ -52,7 +52,10 @@ impl GridRenderer {
                                 self.grid_shapes[die_id].push(egui::Shape::rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
-                                    egui::Stroke::new(0.5, color_scheme::theme_border_color(dark_mode)),
+                                    egui::Stroke::new(
+                                        0.5,
+                                        color_scheme::theme_border_color(dark_mode),
+                                    ),
                                     egui::epaint::StrokeKind::Inside,
                                 ));
                             }

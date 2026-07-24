@@ -1013,7 +1013,7 @@ fn build_switch_connection_shapes(
                 src_node_loc + sb_rect.min.to_vec2(),
                 sink_node_loc + sb_rect.min.to_vec2(),
             ],
-            egui::Stroke::new(1.0, wire_color),
+            egui::Stroke::new(1.0_f32, wire_color),
         ));
     }
 
@@ -1107,7 +1107,7 @@ fn build_lb_connection_shapes(
             for sink_node_loc in &sink_node_locs {
                 lb_connection_shapes.push(egui::Shape::line_segment(
                     [src_node_loc.to_pos2(), sink_node_loc.to_pos2()],
-                    egui::Stroke::new(1.0, wire_color),
+                    egui::Stroke::new(1.0_f32, wire_color),
                 ));
             }
         }

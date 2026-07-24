@@ -45,7 +45,7 @@ pub fn build_render_tile(
     lb_shapes.push(egui::Shape::rect_stroke(
         *tile_bounding_box,
         egui::CornerRadius::ZERO,
-        egui::Stroke::new(2.0, block_style::darken_color(*color, 0.5)),
+        egui::Stroke::new(2.0_f32, block_style::darken_color(*color, 0.5)),
         egui::epaint::StrokeKind::Inside,
     ));
     // Draw lines to distinguish the grid-tile lines.
@@ -57,7 +57,7 @@ pub fn build_render_tile(
                 egui::pos2(x_offset, tile_bounding_box.top()),
                 egui::pos2(x_offset, tile_bounding_box.bottom()),
             ],
-            egui::Stroke::new(1.0, block_style::darken_color(*color, 0.5)),
+            egui::Stroke::new(1.0_f32, block_style::darken_color(*color, 0.5)),
         ));
     }
     for j in 1..tile.height {
@@ -68,7 +68,7 @@ pub fn build_render_tile(
                 egui::pos2(tile_bounding_box.left(), y_offset),
                 egui::pos2(tile_bounding_box.right(), y_offset),
             ],
-            egui::Stroke::new(1.0, block_style::darken_color(*color, 0.5)),
+            egui::Stroke::new(1.0_f32, block_style::darken_color(*color, 0.5)),
         ));
     }
 

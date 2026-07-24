@@ -53,7 +53,7 @@ impl GridRenderer {
                                     rect,
                                     egui::CornerRadius::ZERO,
                                     egui::Stroke::new(
-                                        0.5,
+                                        0.5_f32,
                                         color_scheme::theme_border_color(dark_mode),
                                     ),
                                     egui::epaint::StrokeKind::Inside,
@@ -96,7 +96,7 @@ impl GridRenderer {
                                 self.grid_shapes[die_id].push(egui::Shape::rect_stroke(
                                     rect,
                                     egui::CornerRadius::ZERO,
-                                    egui::Stroke::new(1.0, outline_color),
+                                    egui::Stroke::new(1.0_f32, outline_color),
                                     egui::epaint::StrokeKind::Inside,
                                 ));
 
@@ -133,7 +133,7 @@ impl GridRenderer {
                         egui::Pos2::new(cut_x, 0.0),
                         egui::Pos2::new(cut_x, grid.height as f32 * cell_size),
                     ],
-                    stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+                    stroke: egui::Stroke::new(2.0_f32, egui::Color32::RED),
                 });
             }
             for horizontal_cut in &grid.grid_layers[die_id].horizontal_interposer_cut_lines {
@@ -143,7 +143,7 @@ impl GridRenderer {
                         egui::Pos2::new(0.0, cut_y),
                         egui::Pos2::new(grid.width as f32 * cell_size, cut_y),
                     ],
-                    stroke: egui::Stroke::new(2.0, egui::Color32::RED),
+                    stroke: egui::Stroke::new(2.0_f32, egui::Color32::RED),
                 });
             }
         }
@@ -235,7 +235,10 @@ impl GridRenderer {
                             };
                             noc_shapes.push(egui::Shape::line_segment(
                                 [from_pos, to_pos],
-                                egui::Stroke::new(2.0, color_scheme::theme_text_color(dark_mode)),
+                                egui::Stroke::new(
+                                    2.0_f32,
+                                    color_scheme::theme_text_color(dark_mode),
+                                ),
                             ));
                         }
                     }

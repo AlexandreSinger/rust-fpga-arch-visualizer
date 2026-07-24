@@ -180,7 +180,7 @@ pub fn draw_block(
                 painter.rect_stroke(
                     rect,
                     egui::CornerRadius::ZERO,
-                    egui::Stroke::new(2.0, outline_color),
+                    egui::Stroke::new(2.0_f32, outline_color),
                     egui::epaint::StrokeKind::Inside,
                 );
             } // Future shapes can be added here

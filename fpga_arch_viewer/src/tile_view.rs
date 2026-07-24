@@ -304,7 +304,7 @@ impl TileView {
                     ui.separator();
 
                     for (idx, sub_tile) in tile.sub_tiles.iter().enumerate() {
-                        ui.collapsing(format!("[{}] {}", idx, &sub_tile.name), |ui| {
+                        ui.collapsing(format!("[{}] {}", idx, sub_tile.name), |ui| {
                             ui.label(format!("Capacity: {}", sub_tile.capacity));
                             ui.label(format!("Ports: {}", sub_tile.ports.len()));
 

@@ -1476,7 +1476,7 @@ fn draw_direct_connection(
             color_scheme::theme_interconnect_bg(dark_mode)
         };
 
-        let stroke_width = if is_highlighted { 2.5 } else { 1.5 };
+        let stroke_width = if is_highlighted { 2.5_f32 } else { 1.5_f32 };
         let stroke = egui::Stroke::new(stroke_width, stroke_color);
 
         // Check if this is a clock connection using port class instead of string matching
@@ -1885,7 +1885,7 @@ fn draw_interconnect_block(
     // route them via a top rail to avoid long horizontal segments cutting across many blocks.
     let top_rail_y = {
         let mut min_child_y = f32::INFINITY;
-        for (_, r) in state.pb_rects.iter() {
+        for r in state.pb_rects.values() {
             // Only consider children that are inside this parent PB rect.
             if parent_rect.contains(r.center()) {
                 min_child_y = min_child_y.min(r.min.y);

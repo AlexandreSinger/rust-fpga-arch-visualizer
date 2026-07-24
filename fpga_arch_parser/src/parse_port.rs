@@ -158,10 +158,10 @@ pub fn parse_port<R: BufRead>(
             }
             "port_class" => {
                 port_class = match port_class {
-                    None => match parse_port_class(&a.value, parser.position()) {
-                        Ok(pc) => Some(pc),
-                        Err(e) => return Err(e),
-                    },
+                    None => {
+                        let pc = parse_port_class(&a.value, parser.position())?;
+                        Some(pc)
+                    }
                     Some(_) => {
                         return Err(FPGAArchParseError::DuplicateAttribute(
                             a.to_string(),

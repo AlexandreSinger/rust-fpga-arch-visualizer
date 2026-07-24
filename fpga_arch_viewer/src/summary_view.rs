@@ -73,7 +73,7 @@ impl SummaryView {
 
                     for (tile_idx, tile) in arch.tiles.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            ui.collapsing(format!("[{}] Tile: {}", tile_idx, &tile.name), |ui| {
+                            ui.collapsing(format!("[{}] Tile: {}", tile_idx, tile.name), |ui| {
                                 ui.label(format!(
                                     "Dimensions: {}x{} (Area: {})",
                                     tile.width,
@@ -93,7 +93,7 @@ impl SummaryView {
                             });
 
                             if ui
-                                .button(format!("View {} Tile Details", &tile.name))
+                                .button(format!("View {} Tile Details", tile.name))
                                 .clicked()
                             {
                                 *selected_tile_name = Some(tile.name.clone());
@@ -165,7 +165,7 @@ impl SummaryView {
                     ui.collapsing("Segments", |ui| {
                         for (seg_idx, segment) in arch.segment_list.iter().enumerate() {
                             ui.collapsing(
-                                format!("[{}] L{}: {}", seg_idx, segment.length, &segment.name),
+                                format!("[{}] L{}: {}", seg_idx, segment.length, segment.name),
                                 |ui| {
                                     ui.label(format!("Axis: {:?}", segment.axis));
                                     ui.label(format!("Type: {:?}", segment.segment_type));
@@ -200,7 +200,7 @@ impl SummaryView {
                         for (pb_idx, pb_type) in arch.complex_block_list.iter().enumerate() {
                             ui.horizontal(|ui| {
                                 ui.collapsing(
-                                    format!("[{}] Complex Block: {}", pb_idx, &pb_type.name),
+                                    format!("[{}] Complex Block: {}", pb_idx, pb_type.name),
                                     |ui| {
                                         ui.label(format!("Number of blocks: {}", pb_type.num_pb));
                                         ui.label(format!("Modes: {}", pb_type.modes.len()));
